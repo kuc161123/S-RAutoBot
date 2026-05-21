@@ -334,6 +334,31 @@ class TelegramHandler:
         start_date = lifetime.get('start_date', 'Unknown')
         starting_balance = lifetime.get('starting_balance', 0) or balance
 
+        # === REAL WALLET MOVEMENT BREAKDOWN (Bybit transaction-log) ===
+        # Previously the dashboard labelled the residual (wallet - start - lifetime_pnl)
+        # as "funding", which also absorbed withdrawals, liquidations, transfers, and
+        # any P&L the local bot tracker missed. Now we pull the actual numbers.
+        start_ms = None
+        try:
+            if start_date and start_date != 'Unknown':
+                start_ms = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp() * 1000)
+        except Exception:
+            start_ms = None
+
+        movement = {}
+        if hasattr(self.bot.broker, 'get_wallet_movement_summary'):
+            try:
+                movement = await self.bot.broker.get_wallet_movement_summary(start_time_ms=start_ms)
+            except Exception as e:
+                logger.warning(f"[DASHBOARD] wallet movement summary failed: {e}")
+                movement = {}
+
+        real_funding = float(movement.get('funding', 0.0))
+        real_withdrawal = float(movement.get('withdrawal', 0.0))
+        real_deposit = float(movement.get('deposit', 0.0))
+        real_liquidation = float(movement.get('liquidation', 0.0))
+        real_trade_fee = float(movement.get('trade_fee', 0.0))
+
         lifetime_r = lifetime.get('total_r', 0.0)
         weighted_r = lifetime.get('weighted_total_r', 0.0)
         lifetime_pnl = lifetime.get('total_pnl', 0.0)
@@ -589,6 +614,31 @@ class TelegramHandler:
         else:
             edge_section = ""
 
+        # === COSTS / CASH-FLOW BREAKDOWN ===
+        # Honest accounting: show what we know from the exchange + a true residual.
+        # Unaccounted = wallet - starting - (all explained movements). Should converge
+        # to ~0 if Bybit's transaction-log is fully covered.
+        explained = (
+            lifetime_pnl
+            + real_funding
+            + real_withdrawal
+            + real_deposit
+            + real_liquidation
+        )
+        unaccounted = wallet_balance - starting_balance - explained
+        cost_rows = [f"\u251c Trades: ${lifetime_pnl:+,.2f}"]
+        if real_funding:
+            cost_rows.append(f"\u251c Funding: ${real_funding:+,.2f}")
+        if real_liquidation:
+            cost_rows.append(f"\u251c Liquidation: ${real_liquidation:+,.2f}")
+        if real_withdrawal:
+            cost_rows.append(f"\u251c Withdraw: ${real_withdrawal:+,.2f}")
+        if real_deposit:
+            cost_rows.append(f"\u251c Deposit: ${real_deposit:+,.2f}")
+        if abs(unaccounted) >= 0.01:
+            cost_rows.append(f"\u251c Unaccounted: ${unaccounted:+,.2f}")
+        costs_block = "\n".join(cost_rows) + "\n"
+
         # === BUILD ENHANCED DASHBOARD ===
         msg = f"""💰 **TRADING DASHBOARD**
 ━━━━━━━━━━━━━━━━━━━━
@@ -605,8 +655,7 @@ class TelegramHandler:
 🏆 **ALL-TIME** ({days_running} days)
 ├ 💰 ${starting_balance:,.0f} → ${balance:,.2f} ({pnl_emoji}{abs(pnl_return_pct):.1f}%)
 ├ Wallet: ${wallet_balance:,.2f} | Open P&L: ${unrealized_pnl:+,.2f}
-├ Costs: ${lifetime_pnl:+,.2f} (trades) | ${wallet_balance - starting_balance - lifetime_pnl:+,.2f} (funding)
-├ {lifetime_trades} trades | {lifetime_wins}W/{lifetime_losses}L ({lifetime_wr:.1f}% WR) | PF: {profit_factor_display}
+{costs_block}├ {lifetime_trades} trades | {lifetime_wins}W/{lifetime_losses}L ({lifetime_wr:.1f}% WR) | PF: {profit_factor_display}
 ├ R: {lifetime_r:+.1f} total | {weighted_r:+.1f} weighted | {account_r:+.1f} account
 ├ Max DD: {abs(max_dd):.1f}R | Avg: {expectancy_display}
 └ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L

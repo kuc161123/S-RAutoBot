@@ -567,6 +567,97 @@ class Bybit:
         except Exception as e:
             logger.warning(f"Failed to get funding rate for {symbol}: {e}")
             return None
+
+    async def get_transaction_log(self, start_time_ms: Optional[int] = None,
+                                  end_time_ms: Optional[int] = None,
+                                  account_type: str = "UNIFIED",
+                                  max_pages: int = 20) -> list:
+        """Fetch wallet transaction log entries from Bybit.
+
+        Each entry includes 'type', 'change' (signed wallet delta), 'cashFlow',
+        'funding', 'fee', 'transactionTime', etc. Pages through cursors.
+        """
+        try:
+            all_records: list = []
+            cursor = ""
+            for _ in range(max_pages):
+                params = {
+                    "accountType": account_type,
+                    "category": "linear",
+                    "limit": "50",
+                }
+                if start_time_ms:
+                    params["startTime"] = str(int(start_time_ms))
+                if end_time_ms:
+                    params["endTime"] = str(int(end_time_ms))
+                if cursor:
+                    params["cursor"] = cursor
+                resp = await self._request("GET", "/v5/account/transaction-log", params)
+                if not resp or not resp.get("result"):
+                    break
+                records = resp["result"].get("list", []) or []
+                all_records.extend(records)
+                cursor = resp["result"].get("nextPageCursor", "") or ""
+                if not cursor:
+                    break
+            return all_records
+        except Exception as e:
+            logger.warning(f"Failed to get transaction log: {e}")
+            return []
+
+    async def get_wallet_movement_summary(self, start_time_ms: Optional[int] = None) -> Dict[str, float]:
+        """Aggregate wallet movements by type since start_time_ms.
+
+        Returns signed USD totals (negative = wallet decreased) for keys:
+        funding, withdrawal, deposit, liquidation, trade_fee, realized_pnl, other.
+
+        - SETTLEMENT / FUNDING -> funding (perpetual funding fees)
+        - TRANSFER_OUT / WITHDRAWAL -> withdrawal
+        - TRANSFER_IN / DEPOSIT -> deposit
+        - LIQUIDATION -> liquidation (insurance-fund deductions)
+        - TRADE -> realized_pnl + trade_fee (we read change as net, fee separately if present)
+        """
+        buckets: Dict[str, float] = {
+            "funding": 0.0,
+            "withdrawal": 0.0,
+            "deposit": 0.0,
+            "liquidation": 0.0,
+            "trade_fee": 0.0,
+            "realized_pnl": 0.0,
+            "other": 0.0,
+        }
+        try:
+            records = await self.get_transaction_log(start_time_ms=start_time_ms)
+            for r in records:
+                t = (r.get("type") or "").upper()
+                try:
+                    delta = float(r.get("change", 0) or 0)
+                except (TypeError, ValueError):
+                    delta = 0.0
+                try:
+                    fee = float(r.get("fee", 0) or 0)
+                except (TypeError, ValueError):
+                    fee = 0.0
+                try:
+                    cash_flow = float(r.get("cashFlow", 0) or 0)
+                except (TypeError, ValueError):
+                    cash_flow = 0.0
+                if t in ("SETTLEMENT", "FUNDING"):
+                    buckets["funding"] += delta
+                elif t in ("TRANSFER_OUT", "WITHDRAWAL", "WITHDRAW"):
+                    buckets["withdrawal"] += delta
+                elif t in ("TRANSFER_IN", "DEPOSIT"):
+                    buckets["deposit"] += delta
+                elif t == "LIQUIDATION":
+                    buckets["liquidation"] += delta
+                elif t == "TRADE":
+                    buckets["realized_pnl"] += cash_flow if cash_flow else (delta + fee)
+                    buckets["trade_fee"] += -abs(fee) if fee else 0.0
+                else:
+                    buckets["other"] += delta
+        except Exception as e:
+            logger.warning(f"Failed to summarize wallet movements: {e}")
+        return buckets
     
     async def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False,
                       take_profit:float=None, stop_loss:float=None) -> Dict[str, Any]:

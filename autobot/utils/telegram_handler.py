@@ -199,17 +199,20 @@ class TelegramHandler:
         uptime_hrs = max(0, (datetime.now() - self.bot.start_time).total_seconds() / 3600)
         pending = sum(len(sigs) for sigs in self.bot.pending_signals.values())
 
-        # Fetch positions ONCE and reuse
+        # Fetch positions ONCE and reuse. Bybit is the source of truth; we only
+        # fall back to the internal tracker if the API call itself failed.
         positions = []
+        positions_fetched = False
         try:
             positions = await self.bot.broker.get_positions() or []
+            positions_fetched = True
         except Exception as e:
             logger.error(f"[DASHBOARD] Failed to get positions from Bybit: {e}")
 
         active_positions = [p for p in positions if float(p.get('size', 0)) > 0]
         active = len(active_positions)
-        if active == 0:
-            active = len(self.bot.active_trades)  # Fallback to internal tracking
+        if not positions_fetched:
+            active = len(self.bot.active_trades)  # API failure fallback only
         logger.info(f"[DASHBOARD] Bybit reports {active} active positions")
 
         enabled = len(self.bot.symbol_config.get_enabled_symbols())
@@ -231,7 +234,18 @@ class TelegramHandler:
             for threshold, risk in taper:
                 if wallet_balance >= threshold:
                     tapered_risk_pct = risk
-        base_risk_amount = balance * tapered_risk_pct if balance > 0 else 10
+        # Anchor the R denominator so dust balances don't blow up R math.
+        # Uses current balance normally; falls back to starting balance when
+        # the wallet has drained below $1 (otherwise R values explode to
+        # millions on a wiped account).
+        _starting_for_r = self.bot.lifetime_stats.get('starting_balance', 0) or 0
+        if balance >= 1.0:
+            _ref_balance = balance
+        elif _starting_for_r >= 1.0:
+            _ref_balance = _starting_for_r
+        else:
+            _ref_balance = 10.0
+        base_risk_amount = _ref_balance * tapered_risk_pct
 
         risk_usd = self.bot.risk_config.get('risk_amount_usd')
         if risk_usd:
@@ -593,12 +607,28 @@ class TelegramHandler:
         regime_stats = lifetime.get('regime_stats', {})
         chop_blocked = lifetime.get('chop_blocked', {})
 
-        # Count open positions per entry regime (only trades with known entry regime)
+        # Count open positions per entry regime. Use Bybit as source of truth
+        # for which positions are actually open, then enrich with the internal
+        # tracker's entry_regime_label. Stale internal entries are ignored.
         open_per_regime = {'favorable': 0, 'cautious': 0, 'adverse': 0, 'critical': 0}
-        for trade in self.bot.active_trades.values():
-            entry_regime = getattr(trade, 'entry_regime_label', '')
-            if entry_regime in open_per_regime:
-                open_per_regime[entry_regime] += 1
+        if positions_fetched:
+            bybit_keys = set()
+            for p in active_positions:
+                sym = p.get('symbol')
+                pside = 'long' if p.get('side') == 'Buy' else 'short'
+                bybit_keys.add(f"{sym}_{pside}")
+            for trade_key, trade in self.bot.active_trades.items():
+                if trade_key not in bybit_keys:
+                    continue
+                entry_regime = getattr(trade, 'entry_regime_label', '')
+                if entry_regime in open_per_regime:
+                    open_per_regime[entry_regime] += 1
+        else:
+            # API failure: fall back to internal tracker so something renders.
+            for trade in self.bot.active_trades.values():
+                entry_regime = getattr(trade, 'entry_regime_label', '')
+                if entry_regime in open_per_regime:
+                    open_per_regime[entry_regime] += 1
 
         edge_lines = []
         regime_icons = {'favorable': '\U0001f7e2', 'cautious': '\U0001f7e1', 'adverse': '\U0001f7e0', 'critical': '\U0001f534'}

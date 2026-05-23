@@ -353,9 +353,22 @@ class TelegramHandler:
                 logger.warning(f"[DASHBOARD] wallet movement summary failed: {e}")
                 movement = {}
 
+        # External cash flow (settled deposits/withdrawals) — comes from the
+        # asset endpoints, NOT the txn-log, because Unified accounts often
+        # don't surface external moves there.
+        external_cf = {"deposit": 0.0, "withdrawal": 0.0}
+        if hasattr(self.bot.broker, 'get_external_cash_flow'):
+            try:
+                external_cf = await self.bot.broker.get_external_cash_flow(start_time_ms=start_ms)
+            except Exception as e:
+                logger.warning(f"[DASHBOARD] external cash flow fetch failed: {e}")
+                external_cf = {"deposit": 0.0, "withdrawal": 0.0}
+
         real_funding = float(movement.get('funding', 0.0))
-        real_withdrawal = float(movement.get('withdrawal', 0.0))
-        real_deposit = float(movement.get('deposit', 0.0))
+        # Prefer the asset-endpoint figures for deposits/withdrawals; fall back
+        # to txn-log values if asset endpoints returned nothing.
+        real_withdrawal = float(external_cf.get('withdrawal', 0.0)) or float(movement.get('withdrawal', 0.0))
+        real_deposit = float(external_cf.get('deposit', 0.0)) or float(movement.get('deposit', 0.0))
         real_liquidation = float(movement.get('liquidation', 0.0))
         real_trade_fee = float(movement.get('trade_fee', 0.0))
 
@@ -615,9 +628,17 @@ class TelegramHandler:
             edge_section = ""
 
         # === COSTS / CASH-FLOW BREAKDOWN ===
-        # Show what we know from the exchange. The residual ("Unaccounted") was
-        # removed intentionally \u2014 it tended to absorb withdrawals/deposits that
-        # the txn-log endpoint doesn't surface, and was more noise than signal.
+        # Trades / Funding / Liquidation come from the local tracker + txn-log.
+        # Withdraw / Deposit come from the asset endpoints so external moves
+        # actually show up. Unaccounted = the residual after everything we know.
+        explained = (
+            lifetime_pnl
+            + real_funding
+            + real_withdrawal
+            + real_deposit
+            + real_liquidation
+        )
+        unaccounted = wallet_balance - starting_balance - explained
         cost_rows = [f"\u251c Trades: ${lifetime_pnl:+,.2f}"]
         if real_funding:
             cost_rows.append(f"\u251c Funding: ${real_funding:+,.2f}")
@@ -627,6 +648,8 @@ class TelegramHandler:
             cost_rows.append(f"\u251c Withdraw: ${real_withdrawal:+,.2f}")
         if real_deposit:
             cost_rows.append(f"\u251c Deposit: ${real_deposit:+,.2f}")
+        if abs(unaccounted) >= 0.01:
+            cost_rows.append(f"\u251c Unaccounted: ${unaccounted:+,.2f}")
         costs_block = "\n".join(cost_rows) + "\n"
 
         # === BUILD ENHANCED DASHBOARD ===

@@ -636,7 +636,111 @@ class Bybit:
         except Exception as e:
             logger.warning(f"Failed to summarize wallet movements: {e}")
         return buckets
-    
+
+    async def get_deposit_records(self, start_time_ms: Optional[int] = None,
+                                  end_time_ms: Optional[int] = None,
+                                  coin: Optional[str] = None,
+                                  max_pages: int = 10) -> list:
+        """Fetch external deposit records via /v5/asset/deposit/query-record.
+
+        Rows include 'coin', 'amount', 'status' (3 = success), 'successAt', etc.
+        """
+        try:
+            all_rows: list = []
+            cursor = ""
+            for _ in range(max_pages):
+                params = {"limit": "50"}
+                if start_time_ms:
+                    params["startTime"] = str(int(start_time_ms))
+                if end_time_ms:
+                    params["endTime"] = str(int(end_time_ms))
+                if coin:
+                    params["coin"] = coin
+                if cursor:
+                    params["cursor"] = cursor
+                resp = await self._request("GET", "/v5/asset/deposit/query-record", params)
+                if not resp or not resp.get("result"):
+                    break
+                rows = resp["result"].get("rows", []) or []
+                all_rows.extend(rows)
+                cursor = resp["result"].get("nextPageCursor", "") or ""
+                if not cursor:
+                    break
+            return all_rows
+        except Exception as e:
+            logger.warning(f"Failed to get deposit records: {e}")
+            return []
+
+    async def get_withdrawal_records(self, start_time_ms: Optional[int] = None,
+                                     end_time_ms: Optional[int] = None,
+                                     coin: Optional[str] = None,
+                                     max_pages: int = 10) -> list:
+        """Fetch withdrawal records via /v5/asset/withdraw/query-record.
+
+        Rows include 'coin', 'amount', 'status' ('success' = settled), 'updateTime', etc.
+        """
+        try:
+            all_rows: list = []
+            cursor = ""
+            for _ in range(max_pages):
+                params = {"limit": "50", "withdrawType": "2"}  # 2 = unified (both on-chain and internal)
+                if start_time_ms:
+                    params["startTime"] = str(int(start_time_ms))
+                if end_time_ms:
+                    params["endTime"] = str(int(end_time_ms))
+                if coin:
+                    params["coin"] = coin
+                if cursor:
+                    params["cursor"] = cursor
+                resp = await self._request("GET", "/v5/asset/withdraw/query-record", params)
+                if not resp or not resp.get("result"):
+                    break
+                rows = resp["result"].get("rows", []) or []
+                all_rows.extend(rows)
+                cursor = resp["result"].get("nextPageCursor", "") or ""
+                if not cursor:
+                    break
+            return all_rows
+        except Exception as e:
+            logger.warning(f"Failed to get withdrawal records: {e}")
+            return []
+
+    async def get_external_cash_flow(self, start_time_ms: Optional[int] = None,
+                                     coin: str = "USDT") -> Dict[str, float]:
+        """Sum *settled* external deposits and withdrawals in `coin` since start_time_ms.
+
+        Returns signed totals: deposit positive, withdrawal negative. Pending /
+        failed / cancelled records are excluded so the dashboard only counts
+        cash that actually moved.
+        """
+        summary = {"deposit": 0.0, "withdrawal": 0.0}
+        try:
+            deposits = await self.get_deposit_records(start_time_ms=start_time_ms, coin=coin)
+            for d in deposits:
+                if (d.get("coin") or "").upper() != coin.upper():
+                    continue
+                # Bybit v5 deposit success status = 3
+                if str(d.get("status")) != "3":
+                    continue
+                try:
+                    summary["deposit"] += float(d.get("amount", 0) or 0)
+                except (TypeError, ValueError):
+                    pass
+            withdrawals = await self.get_withdrawal_records(start_time_ms=start_time_ms, coin=coin)
+            for w in withdrawals:
+                if (w.get("coin") or "").upper() != coin.upper():
+                    continue
+                status = str(w.get("status", "")).lower()
+                if status != "success":
+                    continue
+                try:
+                    summary["withdrawal"] -= float(w.get("amount", 0) or 0)
+                except (TypeError, ValueError):
+                    pass
+        except Exception as e:
+            logger.warning(f"Failed to summarize external cash flow: {e}")
+        return summary
+
     async def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False,
                       take_profit:float=None, stop_loss:float=None) -> Dict[str, Any]:
         """Place market order with optional TP/SL (bracket order).

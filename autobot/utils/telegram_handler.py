@@ -659,16 +659,10 @@ class TelegramHandler:
 
         # === COSTS / CASH-FLOW BREAKDOWN ===
         # Trades / Funding / Liquidation come from the local tracker + txn-log.
-        # Withdraw / Deposit come from the asset endpoints so external moves
-        # actually show up. Unaccounted = the residual after everything we know.
-        explained = (
-            lifetime_pnl
-            + real_funding
-            + real_withdrawal
-            + real_deposit
-            + real_liquidation
-        )
-        unaccounted = wallet_balance - starting_balance - explained
+        # Withdraw / Deposit come from the asset endpoints when the API key has
+        # the required scope. The Unaccounted residual row was removed by user
+        # request \u2014 money that left the account through channels the bot can't
+        # see (e.g. withdrawals on a Trade-only API key) is no longer surfaced.
         cost_rows = [f"\u251c Trades: ${lifetime_pnl:+,.2f}"]
         if real_funding:
             cost_rows.append(f"\u251c Funding: ${real_funding:+,.2f}")
@@ -678,8 +672,6 @@ class TelegramHandler:
             cost_rows.append(f"\u251c Withdraw: ${real_withdrawal:+,.2f}")
         if real_deposit:
             cost_rows.append(f"\u251c Deposit: ${real_deposit:+,.2f}")
-        if abs(unaccounted) >= 0.01:
-            cost_rows.append(f"\u251c Unaccounted: ${unaccounted:+,.2f}")
         costs_block = "\n".join(cost_rows) + "\n"
 
         # === BUILD ENHANCED DASHBOARD ===

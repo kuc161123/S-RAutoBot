@@ -16,3 +16,12 @@ vwap_bot.log
 backtest_vwap_combos.log
 dashboard.log
 *.log
+
+# Heavy backtest artifacts (regenerable via the optimisation scripts)
+grid_trades.csv
+optimized_trades.csv
+trades_fresh_window.csv
+selection_report.csv
+
+# Backup configs are kept locally only
+config.yaml.backup_*

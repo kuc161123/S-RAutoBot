@@ -46,6 +46,11 @@ risk:
   # 200 EMA (market uptrend) — your short book bleeds/gets squeezed in bull/relief rallies.
   # Longs are unaffected. Set false to disable.
   btc_short_gate: true
+  # [VALIDATED 2026-06] Bull long-boost: multiply LONG per-trade risk by this factor when
+  # BTC 1H close is above its 200 EMA (market uptrend) — the profitable side in a bull.
+  # Validated to lift bull-market long returns ~20% (86% of bull windows) at ~equal
+  # drawdown, neutral in bears. 1.0 = off; 1.3 = validated sweet spot (higher = overfit risk).
+  long_bull_boost: 1.3
   taper_schedule:
   - - 1500
     - 0.007

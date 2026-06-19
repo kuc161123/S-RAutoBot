@@ -37,6 +37,15 @@ risk:
   max_daily_loss: 0.1
   max_position_size_pct: 0.15
   risk_per_trade: 0.012
+  # [VALIDATED 2026-06] Net-directional exposure cap: block a new entry if it would push
+  # |open long risk - open short risk| above this fraction of equity. Caps correlated
+  # one-sided (net-short) blowups. Validated to cut max drawdown ~30-40pts across bull+bear
+  # OOS windows with equal-or-better return. Set null/0 to disable.
+  net_directional_cap: 0.10
+  # [VALIDATED 2026-06] BTC short-gate: skip SHORT entries when BTC 1H close is above its
+  # 200 EMA (market uptrend) — your short book bleeds/gets squeezed in bull/relief rallies.
+  # Longs are unaffected. Set false to disable.
+  btc_short_gate: true
   taper_schedule:
   - - 1500
     - 0.007

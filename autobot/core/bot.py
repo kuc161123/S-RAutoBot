@@ -113,6 +113,7 @@ class Bot4H:
         self.pending_signals: Dict[str, List[PendingSignal]] = {}  # {symbol: [signals]}
         self.active_trades: Dict[str, ActiveTrade] = {}  # {symbol_side: trade} e.g. "BTCUSDT_long"
         self.confirmed_entries: Dict[str, DivergenceSignal] = {}  # {symbol_side: signal} - BOS confirmed, enter on NEXT candle
+        self._btc_trend_cache = {'bullish': None, 'ts': 0.0}  # BTC short-gate: cached BTC>200EMA state (~15min TTL)
         
         # [STARTUP PROTECTION] Track which symbols have been seen since startup
         # First candle for each symbol is used for initialization only (no trades)
@@ -649,6 +650,65 @@ class Bot4H:
             q = diagnostics['quality']
             logger.info(f"[RISK] Taper={base_risk*100:.2f}% Regime={label} (mult={multiplier:.2f}) → {final*100:.3f}%")
         return final
+
+    async def _is_btc_bullish(self):
+        """BTC short-gate helper: True if BTC 1H close is above its 200 EMA (market uptrend).
+
+        Result is cached ~15 min so we don't hit the API on every short signal.
+        Returns None when data is unavailable — callers treat None as "don't block".
+        Mirrors the validated overlay (BTC close > ewm(span=200) on 1H).
+        """
+        import time as _t
+        now = _t.time()
+        cache = getattr(self, '_btc_trend_cache', None) or {'bullish': None, 'ts': 0.0}
+        if cache.get('bullish') is not None and (now - cache.get('ts', 0.0)) < 900:
+            return cache['bullish']
+        try:
+            params = {'category': 'linear', 'symbol': 'BTCUSDT', 'interval': '60', 'limit': '300'}
+            resp = await self.broker._request("GET", "/v5/market/kline", params)
+            data = resp.get('result', {}).get('list', []) if resp else []
+            if len(data) < 200:
+                return cache.get('bullish')  # not enough data — fall back to last known
+            df = pd.DataFrame(data, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+            df['close'] = df['close'].astype(float)
+            df = df.iloc[::-1].reset_index(drop=True)  # API returns newest-first -> oldest-first
+            ema200 = df['close'].ewm(span=200, adjust=False).mean().iloc[-1]
+            bullish = bool(df['close'].iloc[-1] > ema200)
+            self._btc_trend_cache = {'bullish': bullish, 'ts': now}
+            return bullish
+        except Exception as e:
+            logger.warning(f"[BTC-GATE] Failed to fetch BTC trend, not blocking: {e}")
+            return cache.get('bullish')
+
+    def _net_directional_risk_ok(self, new_side, new_risk_usd, equity):
+        """Net-directional exposure cap.
+
+        Returns (ok, net_now, limit). ok is False when adding a `new_side` trade of
+        `new_risk_usd` would push |open long risk - open short risk| above
+        risk.net_directional_cap * equity. Disabled (always ok) when the cap is
+        unset/0 or equity is unavailable. Uses each open ActiveTrade's
+        risk_usd_at_entry; None/synced entries (unknown risk) are skipped.
+        """
+        cap = self.risk_config.get('net_directional_cap')
+        if not cap or cap <= 0 or not equity or equity <= 0:
+            return True, 0.0, 0.0
+        long_risk = 0.0
+        short_risk = 0.0
+        for t in self.active_trades.values():
+            if t is None:
+                continue
+            r = getattr(t, 'risk_usd_at_entry', 0.0) or 0.0
+            if getattr(t, 'side', '') == 'long':
+                long_risk += r
+            elif getattr(t, 'side', '') == 'short':
+                short_risk += r
+        if new_side == 'long':
+            long_risk += new_risk_usd
+        else:
+            short_risk += new_risk_usd
+        net = abs(long_risk - short_risk)
+        limit = cap * equity
+        return (net <= limit), net, limit
 
     def _track_divergence_detected(self):
         """Track a divergence detection"""
@@ -1369,6 +1429,22 @@ class Bot4H:
                         pass
                 return
 
+        # [BTC SHORT-GATE] Suppress SHORT entries when BTC (the market) is in a confirmed
+        # uptrend (1H close > 200 EMA). Validated: the short book bleeds / gets squeezed in
+        # bull & relief rallies; longs are unaffected. Disable via risk.btc_short_gate=false.
+        if signal.side == 'short' and self.risk_config.get('btc_short_gate', False):
+            btc_bull = await self._is_btc_bullish()
+            if btc_bull is True:
+                logger.info(f"[{symbol}] BTC SHORT-GATE blocked: BTC above 200EMA (market uptrend) — short skipped")
+                if hasattr(self, 'telegram') and self.telegram:
+                    try:
+                        asyncio.create_task(self.telegram.send_message(
+                            f"📈 **BTC SHORT-GATE** — {symbol} short skipped\n└ BTC above its 200 EMA (market uptrend)"
+                        ))
+                    except Exception:
+                        pass
+                return
+
         # Skip if already in a trade for this symbol+side (Internal Check)
         trade_key = f"{symbol}_{signal.side}"
         if trade_key in self.active_trades:
@@ -1442,7 +1518,26 @@ class Bot4H:
             else:
                 margin_pct = self.get_adaptive_risk(balance=wallet_balance)
                 risk_amount = account_balance * margin_pct
-            
+
+            # [NET-DIRECTIONAL CAP] Block if this entry would push the book's net
+            # long-vs-short open risk beyond risk.net_directional_cap * equity. Caps
+            # correlated one-sided (net-short) blowups. Validated to cut max drawdown
+            # ~30-40pts across bull+bear OOS windows with equal-or-better return.
+            nd_ok, nd_net, nd_limit = self._net_directional_risk_ok(signal.side, risk_amount, account_balance)
+            if not nd_ok:
+                cap_pct = self.risk_config.get('net_directional_cap', 0) * 100
+                logger.info(f"[{symbol}] NET-DIR CAP blocked: {signal.side} would set net directional "
+                            f"risk ${nd_net:.2f} > limit ${nd_limit:.2f} ({cap_pct:.0f}% equity)")
+                if hasattr(self, 'telegram') and self.telegram:
+                    try:
+                        asyncio.create_task(self.telegram.send_message(
+                            f"⚖️ **NET-DIR CAP** — {symbol} {signal.side} skipped\n"
+                            f"└ net directional risk ${nd_net:.0f} > ${nd_limit:.0f} cap ({cap_pct:.0f}% equity)"
+                        ))
+                    except Exception:
+                        pass
+                return
+
             # 2. Calculate Qty based on Risk
             # Qty = Risk / SL_Distance
             if sl_distance <= 0:

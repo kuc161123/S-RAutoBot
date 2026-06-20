@@ -674,6 +674,29 @@ class TelegramHandler:
             cost_rows.append(f"\u251c Deposit: ${real_deposit:+,.2f}")
         costs_block = "\n".join(cost_rows) + "\n"
 
+        # === CURRENT DRAWDOWN % (dollar equity peak-to-trough) ===
+        # Track peak equity in USD so we can show how far below the high-water mark we
+        # are right now, in percent — independent of the R-based DD above.
+        dd_pct_line = ""
+        try:
+            peak_usd = lifetime.get('peak_equity_usd', 0.0) or 0.0
+            if balance > peak_usd:
+                peak_usd = balance
+                lifetime['peak_equity_usd'] = peak_usd
+                self.bot.save_lifetime_stats()
+            cur_dd_pct = ((peak_usd - balance) / peak_usd * 100) if peak_usd > 0 else 0.0
+            # Worst DD% ever seen (for an at-a-glance "limit" reference).
+            worst_dd_pct = lifetime.get('max_drawdown_pct', 0.0) or 0.0
+            if cur_dd_pct > worst_dd_pct:
+                worst_dd_pct = cur_dd_pct
+                lifetime['max_drawdown_pct'] = worst_dd_pct
+                self.bot.save_lifetime_stats()
+            dd_emoji = "🟢" if cur_dd_pct < 15 else ("🟡" if cur_dd_pct < 30 else ("🟠" if cur_dd_pct < 45 else "🔴"))
+            dd_pct_line = (f"\n├ Drawdown: {dd_emoji} {cur_dd_pct:.1f}% from peak "
+                           f"${peak_usd:,.0f} (worst {worst_dd_pct:.1f}%)")
+        except Exception:
+            dd_pct_line = ""
+
         # === WITHDRAWAL ALERT + NET-DIR CAP STATUS ===
         rcfg = getattr(self.bot, 'risk_config', {}) or {}
         # Withdrawal alert: once wallet exceeds the target, show how much to pull out.
@@ -717,7 +740,7 @@ class TelegramHandler:
 └ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L
 {"" if not edge_section else chr(10) + edge_section + chr(10)}
 💼 **ACCOUNT**
-├ Equity: ${balance:,.2f} | Wallet: ${wallet_balance:,.2f}
+├ Equity: ${balance:,.2f} | Wallet: ${wallet_balance:,.2f}{dd_pct_line}
 ├ Available: ${available_balance:,.2f} ({available_pct:.0f}%){cap_line}
 ├ Risk/Trade: {risk_display}
 └ Return: {pnl_emoji}{abs(pnl_return_pct):.1f}% (Base: ${starting_balance:,.0f}){withdraw_line}

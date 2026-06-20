@@ -910,6 +910,10 @@ class Bot4H:
                          reward = abs(take_profit - entry_price) if take_profit > 0 else 0
                          rr_ratio = round(reward / risk, 1)
 
+                    # Recover the entry regime persisted when this trade first opened,
+                    # so the dashboard's "X open per regime" survives restarts/deploys.
+                    saved_regime = self.lifetime_stats.get('open_trade_regimes', {}).get(trade_key, '')
+
                     # Create trade object
                     new_trade = ActiveTrade(
                         symbol=symbol,
@@ -919,7 +923,8 @@ class Bot4H:
                         take_profit=take_profit,
                         rr_ratio=rr_ratio,
                         position_size=size,
-                        entry_time=entry_time
+                        entry_time=entry_time,
+                        entry_regime_label=saved_regime,
                     )
                     # Restore pre_reset flag for trades opened before last reset
                     if trade_key in pre_reset_keys:
@@ -1677,6 +1682,17 @@ class Bot4H:
         
         self.active_trades[trade_key] = trade
 
+        # [PERSIST ENTRY REGIME] entry_regime_label lives only on the in-memory
+        # ActiveTrade. Persist it keyed by trade so that after a restart/deploy the
+        # adopted position can recover its entry regime (otherwise the dashboard's
+        # "X open per regime" counts reset to 0). See sync_with_exchange adoption.
+        try:
+            otr = self.lifetime_stats.setdefault('open_trade_regimes', {})
+            otr[trade_key] = regime_label
+            self.save_lifetime_stats()
+        except Exception:
+            pass
+
         # [BOT-BACKTEST ALIGNMENT - CHANGE 2] Clear pending signals for this side when trade opens
         if symbol in self.pending_signals:
             self.pending_signals[symbol] = [
@@ -1744,6 +1760,12 @@ class Bot4H:
         if self.active_trades.pop(trade_key, None) is None:
             logger.warning(f"[{symbol}] Trade already removed from tracking — skipping duplicate exit")
             return
+
+        # Drop the persisted entry-regime record for this closed trade (hygiene).
+        try:
+            self.lifetime_stats.get('open_trade_regimes', {}).pop(trade_key, None)
+        except Exception:
+            pass
 
         logger.info(f"[{symbol}] Trade closed - processing exit...")
 

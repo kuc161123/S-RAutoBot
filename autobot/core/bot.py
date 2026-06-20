@@ -692,6 +692,12 @@ class Bot4H:
         cap = self.risk_config.get('net_directional_cap')
         if not cap or cap <= 0 or not equity or equity <= 0:
             return True, 0.0, 0.0
+        # [AUTO-RAMP] The cap only engages once the account is large enough to be
+        # worth protecting. Below this balance the book runs uncapped (max growth);
+        # at/above it the squeeze-protection turns on automatically.
+        min_bal = self.risk_config.get('net_directional_cap_min_balance', 0) or 0
+        if equity < min_bal:
+            return True, 0.0, 0.0
         long_risk = 0.0
         short_risk = 0.0
         for t in self.active_trades.values():

@@ -674,6 +674,27 @@ class TelegramHandler:
             cost_rows.append(f"\u251c Deposit: ${real_deposit:+,.2f}")
         costs_block = "\n".join(cost_rows) + "\n"
 
+        # === WITHDRAWAL ALERT + NET-DIR CAP STATUS ===
+        rcfg = getattr(self.bot, 'risk_config', {}) or {}
+        # Withdrawal alert: once wallet exceeds the target, show how much to pull out.
+        withdraw_line = ""
+        wd_target = rcfg.get('withdrawal_target', 0) or 0
+        if wd_target and wallet_balance > wd_target:
+            to_withdraw = wallet_balance - wd_target
+            withdraw_line = (f"\n💸 **WITHDRAW ${to_withdraw:,.2f}** "
+                             f"→ back to ${wd_target:,.0f} target")
+        # Net-directional cap status: shows whether the squeeze-protection is engaged,
+        # and (when ramping) the balance at which it auto-activates.
+        cap = rcfg.get('net_directional_cap', 0) or 0
+        cap_line = ""
+        if cap:
+            min_bal = rcfg.get('net_directional_cap_min_balance', 0) or 0
+            if balance >= min_bal:
+                cap_line = f"\n├ Net-Dir Cap: 🟢 ON ({cap*100:.0f}% of equity)"
+            else:
+                cap_line = (f"\n├ Net-Dir Cap: ⚪ OFF until ${min_bal:,.0f} "
+                            f"(${min_bal - balance:,.0f} to go)")
+
         # === BUILD ENHANCED DASHBOARD ===
         msg = f"""💰 **TRADING DASHBOARD**
 ━━━━━━━━━━━━━━━━━━━━
@@ -697,9 +718,9 @@ class TelegramHandler:
 {"" if not edge_section else chr(10) + edge_section + chr(10)}
 💼 **ACCOUNT**
 ├ Equity: ${balance:,.2f} | Wallet: ${wallet_balance:,.2f}
-├ Available: ${available_balance:,.2f} ({available_pct:.0f}%)
+├ Available: ${available_balance:,.2f} ({available_pct:.0f}%){cap_line}
 ├ Risk/Trade: {risk_display}
-└ Return: {pnl_emoji}{abs(pnl_return_pct):.1f}% (Base: ${starting_balance:,.0f})
+└ Return: {pnl_emoji}{abs(pnl_return_pct):.1f}% (Base: ${starting_balance:,.0f}){withdraw_line}
 
 {pos_section}
 

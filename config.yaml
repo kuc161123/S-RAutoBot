@@ -42,6 +42,15 @@ risk:
   # one-sided (net-short) blowups. Validated to cut max drawdown ~30-40pts across bull+bear
   # OOS windows with equal-or-better return. Set null/0 to disable.
   net_directional_cap: 0.10
+  # [AUTO-RAMP] The net-directional cap stays OFF (uncapped, max growth) until the
+  # account reaches this balance, then engages automatically to protect capital.
+  # Validated 2026-06: ramping the cap on at ~$25k beat both always-on and always-off
+  # over the last 7 months (more growth AND tail protection). Set 0 to cap always.
+  net_directional_cap_min_balance: 25000
+  # [WITHDRAWAL TARGET] When wallet balance exceeds this, the dashboard shows how much
+  # to withdraw to bring it back to target. Compounding above this adds little growth
+  # (taper floors risk) but raises absolute drawdown $. Set 0 to disable the alert.
+  withdrawal_target: 50000
   # [VALIDATED 2026-06] BTC short-gate: skip SHORT entries when BTC 1H close is above its
   # 200 EMA (market uptrend) — your short book bleeds/gets squeezed in bull/relief rallies.
   # Longs are unaffected. Set false to disable.

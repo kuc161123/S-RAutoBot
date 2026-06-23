@@ -680,6 +680,26 @@ class Bot4H:
             logger.warning(f"[BTC-GATE] Failed to fetch BTC trend, not blocking: {e}")
             return cache.get('bullish')
 
+    def _overlays_ramped_on(self, balance):
+        """Unified AUTO-RAMP gate for ALL risk overlays (net-dir cap, BTC short-gate,
+        bull long-boost). Below risk.overlay_ramp_min_balance the account runs in pure
+        max-growth mode (every overlay OFF); at/above it they all engage together.
+
+        Validated 2026-06: in a bear/chop, the gates COST growth while small (they remove
+        winning shorts and add drawdown) — so ramping them on at ~$25k beat both
+        always-on and pure all-off in ~90% of windows. Falls back to the legacy
+        net_directional_cap_min_balance key, then 0 (always-on) for back-compat.
+        """
+        thr = self.risk_config.get('overlay_ramp_min_balance')
+        if thr is None:
+            thr = self.risk_config.get('net_directional_cap_min_balance', 0)
+        thr = thr or 0
+        if thr <= 0:
+            return True  # no ramp configured -> overlays always active
+        if balance is None:
+            return True  # unknown balance -> fail safe (overlays on)
+        return balance >= thr
+
     def _net_directional_risk_ok(self, new_side, new_risk_usd, equity):
         """Net-directional exposure cap.
 
@@ -695,8 +715,7 @@ class Bot4H:
         # [AUTO-RAMP] The cap only engages once the account is large enough to be
         # worth protecting. Below this balance the book runs uncapped (max growth);
         # at/above it the squeeze-protection turns on automatically.
-        min_bal = self.risk_config.get('net_directional_cap_min_balance', 0) or 0
-        if equity < min_bal:
+        if not self._overlays_ramped_on(equity):
             return True, 0.0, 0.0
         long_risk = 0.0
         short_risk = 0.0
@@ -1444,8 +1463,10 @@ class Bot4H:
         # uptrend (1H close > 200 EMA). Validated: the short book bleeds / gets squeezed in
         # bull & relief rallies; longs are unaffected. Disable via risk.btc_short_gate=false.
         if signal.side == 'short' and self.risk_config.get('btc_short_gate', False):
-            btc_bull = await self._is_btc_bullish()
-            if btc_bull is True:
+            # AUTO-RAMP: only gate shorts once the account is above the ramp threshold;
+            # below it the book runs uncapped for max growth (balance fetched lazily).
+            gate_bal = await self.broker.get_balance()
+            if self._overlays_ramped_on(gate_bal) and await self._is_btc_bullish() is True:
                 logger.info(f"[{symbol}] BTC SHORT-GATE blocked: BTC above 200EMA (market uptrend) — short skipped")
                 if hasattr(self, 'telegram') and self.telegram:
                     try:
@@ -1534,8 +1555,9 @@ class Bot4H:
             # uptrend (1H close > 200 EMA) — the profitable side in a bull. Validated to lift
             # bull-market long returns ~20% at ~equal drawdown, neutral in bears. Stacks on
             # top of regime sizing. Configurable via risk.long_bull_boost (1.0 = off).
+            # AUTO-RAMP: boost only engages above the ramp threshold (max growth below it).
             long_boost = self.risk_config.get('long_bull_boost', 1.0) or 1.0
-            if signal.side == 'long' and long_boost != 1.0:
+            if signal.side == 'long' and long_boost != 1.0 and self._overlays_ramped_on(account_balance):
                 if await self._is_btc_bullish() is True:
                     risk_amount *= long_boost
                     logger.info(f"[{symbol}] BULL LONG-BOOST: risk x{long_boost} (BTC uptrend) → ${risk_amount:.2f}")

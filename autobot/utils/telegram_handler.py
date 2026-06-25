@@ -706,18 +706,12 @@ class TelegramHandler:
             to_withdraw = wallet_balance - wd_target
             withdraw_line = (f"\n💸 **WITHDRAW ${to_withdraw:,.2f}** "
                              f"→ back to ${wd_target:,.0f} target")
-        # Overlay ramp status: ALL risk overlays (net-dir cap + BTC short-gate + bull
-        # long-boost) engage together at the ramp threshold; below it = pure max growth.
+        # Overlay status: net-dir cap + BTC short-gate + bull long-boost.
         cap = rcfg.get('net_directional_cap', 0) or 0
         cap_line = ""
-        ramp_bal = rcfg.get('overlay_ramp_min_balance', rcfg.get('net_directional_cap_min_balance', 0)) or 0
         if cap or rcfg.get('btc_short_gate') or (rcfg.get('long_bull_boost', 1.0) or 1.0) != 1.0:
-            if balance >= ramp_bal:
-                cap_line = (f"\n├ Protection: 🟢 ON (cap {cap*100:.0f}%, "
-                            f"short-gate, long-boost)")
-            else:
-                cap_line = (f"\n├ Protection: ⚪ OFF (max growth) until ${ramp_bal:,.0f} "
-                            f"(${ramp_bal - balance:,.0f} to go)")
+            cap_line = (f"\n├ Protection: 🟢 ON (cap {cap*100:.0f}%, "
+                        f"short-gate, long-boost)")
 
         # === BUILD ENHANCED DASHBOARD ===
         msg = f"""💰 **TRADING DASHBOARD**

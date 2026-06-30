@@ -80,6 +80,11 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("debug", self.cmd_debug))
         self.app.add_handler(CommandHandler("setbalance", self.cmd_setbalance))
         self.app.add_handler(CommandHandler("setregime", self.cmd_setregime))
+        # New drill-down views (read-only, presentation-only)
+        self.app.add_handler(CommandHandler("pnl", self.cmd_pnl))
+        self.app.add_handler(CommandHandler("edge", self.cmd_edge))
+        self.app.add_handler(CommandHandler("regime", self.cmd_regime))
+        self.app.add_handler(CommandHandler("blocks", self.cmd_blocks))
 
         # Start polling with longer interval to avoid rate limits
         await self.app.initialize()
@@ -159,6 +164,10 @@ class TelegramHandler:
 
 📊 **MONITORING**
 ├ /dashboard - Live trading dashboard
+├ /pnl - True P&L (trading vs deposits)
+├ /edge - Edge by regime
+├ /regime - Regime timeline & time-share
+├ /blocks - Signals filtered (CHOP)
 ├ /positions - All active positions
 ├ /stats - Performance statistics (all-time)
 ├ /performance - Symbol leaderboard (R values)
@@ -188,6 +197,16 @@ class TelegramHandler:
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
+    @staticmethod
+    def _bar(frac, n=10):
+        """Render a simple n-cell ASCII meter from a 0..1 fraction (mobile-safe)."""
+        try:
+            f = max(0.0, min(1.0, float(frac)))
+        except (TypeError, ValueError):
+            f = 0.0
+        filled = int(round(f * n))
+        return '█' * filled + '░' * (n - filled)
+
     async def build_dashboard_message(self) -> str:
         """Build the full dashboard message string (reusable for auto-send and /dashboard command)"""
         from datetime import datetime, timedelta
@@ -512,6 +531,7 @@ class TelegramHandler:
         # === REGIME STATUS (V2: multi-signal safety system) ===
         regime_display = "Building data..."
         regime_detail = ""
+        regime_label, regime_mult = 'unknown', 1.0
         try:
             regime_label, regime_mult, regime_diag = self.bot.get_regime_status()
             n_trades = len(self.bot.recent_trades)
@@ -566,6 +586,7 @@ class TelegramHandler:
         # BTC market data (shared by ADX and CHOP display)
         btc_adx_display = ""
         btc_chop_display = ""
+        current_adx, btc_chop = None, None
         try:
             params = {'category':'linear','symbol':'BTCUSDT','interval':'60','limit':'60'}
             kline_resp = await self.bot.broker._request("GET", "/v5/market/kline", params)
@@ -678,6 +699,7 @@ class TelegramHandler:
         # Track peak equity in USD so we can show how far below the high-water mark we
         # are right now, in percent — independent of the R-based DD above.
         dd_pct_line = ""
+        cur_dd_pct = 0.0
         try:
             peak_usd = lifetime.get('peak_equity_usd', 0.0) or 0.0
             if balance > peak_usd:
@@ -713,45 +735,62 @@ class TelegramHandler:
             cap_line = (f"\n├ Protection: 🟢 ON (cap {cap*100:.0f}%, "
                         f"short-gate, long-boost)")
 
-        # === BUILD ENHANCED DASHBOARD ===
-        msg = f"""💰 **TRADING DASHBOARD**
+        # === REDESIGN DERIVED DISPLAY (presentation only, existing data) ===
+        trading_pnl = lifetime_pnl                       # trading-only realized P&L
+        trading_roi = (trading_pnl / starting_balance * 100) if starting_balance > 0 else 0.0
+        troi_emoji = "🟢" if trading_roi >= 0 else "🔴"
+        size_bar = self._bar(regime_mult)
+        dd_bar = self._bar(cur_dd_pct / 20.0)            # ~20% historical DD band reference
+        badge = {'favorable': '🟢 HUNTING', 'cautious': '🟡 SELECTIVE',
+                 'adverse': '🟠 CAUTIOUS', 'critical': '🔴 DEFENSIVE',
+                 'halted': '🛑 HALTED', 'unknown': '⏳ WARMING UP'}.get(regime_label, '⚪ ACTIVE')
+        r_icon = regime_icons.get(regime_label, '')
+
+        # === BUILD ENHANCED DASHBOARD (mobile-tuned, stacked) ===
+        msg = f"""⚡ **AUTOBOT** · {badge}
 ━━━━━━━━━━━━━━━━━━━━
 
-📈 **TODAY'S P&L**
-├ 💵 Realized: ${realized_pnl:+,.2f} ({realized_r:+.1f}R) | {today_wins}W/{today_losses}L
-├ 📊 Unrealized: ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R) | {active} open
-└ {net_emoji} **Net: ${net_pnl:+,.2f} ({net_r:+.1f}R)**
+🧠 **WHY**
+├ Regime: {regime_label.title()} {r_icon}
+├ Sizing {regime_mult:.0%} · {risk_display}
+│ [{size_bar}] of normal{regime_detail}{btc_adx_display}{btc_chop_display}
 
-📅 **7-DAY P&L**
-├ Realized: ${weekly_pnl:+,.2f} ({weekly_r:+.1f}R) | {weekly_trades} trades
-└ Record: {weekly_wins}W/{weekly_losses}L
-
-🏆 **ALL-TIME** ({days_running} days)
-├ 💰 ${starting_balance:,.0f} → ${balance:,.2f} ({pnl_emoji}{abs(pnl_return_pct):.1f}%)
-├ Wallet: ${wallet_balance:,.2f} | Open P&L: ${unrealized_pnl:+,.2f}
-{costs_block}├ {lifetime_trades} trades | {lifetime_wins}W/{lifetime_losses}L ({lifetime_wr:.1f}% WR) | PF: {profit_factor_display}
-├ R: {lifetime_r:+.1f} total | {weighted_r:+.1f} weighted | {account_r:+.1f} account
-├ Max DD: {abs(max_dd):.1f}R | Avg: {expectancy_display}
-└ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L
-{"" if not edge_section else chr(10) + edge_section + chr(10)}
 💼 **ACCOUNT**
-├ Equity: ${balance:,.2f} | Wallet: ${wallet_balance:,.2f}{dd_pct_line}
-├ Available: ${available_balance:,.2f} ({available_pct:.0f}%){cap_line}
-├ Risk/Trade: {risk_display}
-└ Return: {pnl_emoji}{abs(pnl_return_pct):.1f}% (Base: ${starting_balance:,.0f}){withdraw_line}
+├ Equity: ${balance:,.2f}{dd_pct_line}
+│ [{dd_bar}] DD vs ~20% band
+├ Wallet: ${wallet_balance:,.2f}{cap_line}{withdraw_line}
+└ Free: ${available_balance:,.2f} ({available_pct:.0f}%)
 
+💰 **TRUE P&L** (from ${starting_balance:,.0f})
+├ 📉 Trading: ${trading_pnl:+,.2f}
+├ 💵 Funding: ${real_funding:+,.2f}
+├ 🧾 Fees: ${real_trade_fee:+,.2f}
+├ 🏦 Deposits: ${real_deposit:+,.2f}
+│ (deposits are NOT profit)
+└ {troi_emoji} Trading ROI: {trading_roi:+.1f}%
+
+📈 **TODAY** {net_emoji} ${net_pnl:+,.2f} ({net_r:+.1f}R)
+├ Realized ${realized_pnl:+,.2f} · {today_wins}W/{today_losses}L
+└ Open ${unrealized_pnl:+,.2f} · {active} pos
+
+📅 **7-DAY** ${weekly_pnl:+,.2f} · {weekly_wins}W/{weekly_losses}L
+└ {weekly_trades} trades ({weekly_r:+.1f}R)
+
+🏆 **ALL-TIME** ({days_running}d)
+├ {lifetime_trades}t · {lifetime_wr:.1f}% WR · PF {profit_factor_display}
+├ R {lifetime_r:+.1f} · wtd {weighted_r:+.1f} · maxDD {abs(max_dd):.0f}R
+└ Streak {abs(current_streak)}{streak_type} · Best {longest_win_streak}W/{longest_loss_streak}L
+{"" if not edge_section else chr(10) + edge_section + chr(10)}
 {pos_section}
 
-⏰ **SYSTEM HEALTH**
-├ Uptime: {uptime_hrs:.1f}h ✅
-├ Regime: {regime_display}{regime_detail}{btc_adx_display}{btc_chop_display}
-├ Next Scan: ~{next_scan_mins}m
-├ Symbols: {enabled} | Signals: {divs_today}D/{bos_today}BOS
-├ ⏳ Pending BOS: {pending} signals
+⏰ **SYSTEM**
+├ Uptime {uptime_hrs:.1f}h · Next scan ~{next_scan_mins}m
+├ Symbols {enabled} · Signals {divs_today}D/{bos_today}BOS
+├ Pending BOS: {pending}
 └ 🔑 API: {key_status}
 
 ━━━━━━━━━━━━━━━━━━━━
-/positions | /radar | /stats | /performance
+/pnl /edge /regime /blocks /positions /radar
 """
         return msg
 
@@ -783,7 +822,219 @@ class TelegramHandler:
             import traceback
             logger.error(traceback.format_exc())
 
-    
+    async def cmd_pnl(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """True P&L breakdown — trading vs funding vs fees vs deposits/withdrawals."""
+        from datetime import datetime
+        try:
+            lifetime = self.bot.lifetime_stats
+            start_date = lifetime.get('start_date', 'Unknown')
+            starting_balance = lifetime.get('starting_balance', 0) or 0
+            trading_pnl = lifetime.get('total_pnl', 0.0)
+            trading_r = lifetime.get('total_r', 0.0)
+            lt_trades = lifetime.get('total_trades', 0)
+            lt_wins = lifetime.get('wins', 0)
+            lt_losses = lt_trades - lt_wins
+
+            try:
+                balance = await self.bot.broker.get_balance() or 0
+            except Exception:
+                balance = 0
+
+            start_ms = None
+            try:
+                if start_date and start_date != 'Unknown':
+                    start_ms = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp() * 1000)
+            except Exception:
+                start_ms = None
+
+            movement = {}
+            if hasattr(self.bot.broker, 'get_wallet_movement_summary'):
+                try:
+                    movement = await self.bot.broker.get_wallet_movement_summary(start_time_ms=start_ms) or {}
+                except Exception:
+                    movement = {}
+            external_cf = {"deposit": 0.0, "withdrawal": 0.0}
+            if hasattr(self.bot.broker, 'get_external_cash_flow'):
+                try:
+                    external_cf = await self.bot.broker.get_external_cash_flow(start_time_ms=start_ms) or external_cf
+                except Exception:
+                    pass
+
+            real_funding = float(movement.get('funding', 0.0))
+            real_fee = float(movement.get('trade_fee', 0.0))
+            real_liq = float(movement.get('liquidation', 0.0))
+            real_deposit = float(external_cf.get('deposit', 0.0)) or float(movement.get('deposit', 0.0))
+            real_withdrawal = float(external_cf.get('withdrawal', 0.0)) or float(movement.get('withdrawal', 0.0))
+            roi = (trading_pnl / starting_balance * 100) if starting_balance > 0 else 0.0
+            roi_emoji = "🟢" if roi >= 0 else "🔴"
+
+            # 14-day R sparkline from daily_r
+            spark = ""
+            daily_r = lifetime.get('daily_r', {}) or {}
+            if daily_r:
+                keys = sorted(daily_r.keys())[-14:]
+                vals = [daily_r[k] for k in keys]
+                if vals:
+                    blocks = "▁▂▃▄▅▆▇█"
+                    lo, hi = min(vals), max(vals)
+                    rng = (hi - lo) or 1
+                    spark = "".join(blocks[min(7, int((v - lo) / rng * 7))] for v in vals)
+
+            liq_line = f"\n├ ⚠️ Liquidation: ${real_liq:+,.2f}" if real_liq else ""
+            wd_line = f"\n🏧 Withdrawn: ${real_withdrawal:+,.2f}" if real_withdrawal else ""
+            spark_line = f"\n14-day R {spark}" if spark else ""
+
+            msg = f"""💵 **TRUE P&L BREAKDOWN**
+━━━━━━━━━━━━━━━━━━━━
+from ${starting_balance:,.0f} start
+
+📉 **Trading: ${trading_pnl:+,.2f}**
+├ {trading_r:+.1f}R total
+├ {lt_trades}t · {lt_wins}W / {lt_losses}L{liq_line}
+
+💵 Funding: ${real_funding:+,.2f}
+🧾 Fees: ${real_fee:+,.2f}
+──────────────────
+🏦 Deposits: ${real_deposit:+,.2f}{wd_line}
+(deposits/withdrawals are NOT trading)
+──────────────────
+= Equity: ${balance:,.2f}
+{roi_emoji} Trading ROI: {roi:+.1f}%{spark_line}
+
+💡 /dashboard /edge /regime
+"""
+            await update.message.reply_text(msg, parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"pnl command error: {e}")
+
+    async def cmd_edge(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Edge by regime — where the strategy makes/loses money (read-only)."""
+        try:
+            lifetime = self.bot.lifetime_stats
+            regime_stats = lifetime.get('regime_stats', {})
+            chop_blocked = lifetime.get('chop_blocked', {})
+            icons = {'favorable': '🟢', 'cautious': '🟡', 'adverse': '🟠', 'critical': '🔴'}
+            blocks = []
+            for rk in ['critical', 'adverse', 'cautious', 'favorable']:
+                rs = regime_stats.get(rk, {})
+                t = rs.get('trades', 0)
+                blocked = chop_blocked.get(rk, 0)
+                if t == 0 and blocked == 0:
+                    continue
+                w = rs.get('wins', 0)
+                wr = w / t * 100 if t > 0 else 0
+                gp = rs.get('gross_profit_r', 0.0)
+                gl = abs(rs.get('gross_loss_r', 0.0))
+                pf = f"{gp/gl:.1f}" if gl > 0 else ("∞" if gp > 0 else "N/A")
+                net = rs.get('net_pnl_usd', 0.0)
+                blocks.append(
+                    f"{icons.get(rk,'⚪')} **{rk.upper()}** ({t}t)\n"
+                    f"├ {wr:.0f}% WR · PF {pf}\n"
+                    f"├ net ${net:+,.0f}\n"
+                    f"└ {blocked} blocked"
+                )
+            if not blocks:
+                await update.message.reply_text("🎯 No regime data yet — need closed trades.")
+                return
+            body = "\n\n".join(blocks)
+            msg = f"""🎯 **EDGE BY REGIME**
+━━━━━━━━━━━━━━━━━━━━
+(all-time, where money is made)
+
+{body}
+
+💡 /dashboard /pnl /blocks
+"""
+            await update.message.reply_text(msg, parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"edge command error: {e}")
+
+    async def cmd_regime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Regime timeline & 7-day time-share (read-only)."""
+        from datetime import datetime
+        try:
+            lifetime = self.bot.lifetime_stats
+            icons = {'favorable': '🟢', 'cautious': '🟡', 'adverse': '🟠',
+                     'critical': '🔴', 'halted': '🛑', 'unknown': '⏳'}
+            try:
+                regime_label, regime_mult, _ = self.bot.get_regime_status()
+            except Exception:
+                regime_label, regime_mult = 'unknown', 1.0
+            since_txt = ""
+            since = lifetime.get('current_regime_since')
+            if since:
+                try:
+                    hrs = (datetime.now() - datetime.fromisoformat(since)).total_seconds() / 3600
+                    since_txt = f" · {hrs/24:.1f}d" if hrs >= 24 else f" · {hrs:.0f}h"
+                except Exception:
+                    pass
+            history = lifetime.get('regime_history', []) or []
+            recent_lines = []
+            for h in history[-6:][::-1]:
+                lbl = h.get('label', '?')
+                dh = h.get('duration_hours', 0)
+                dur = f"{dh/24:.1f}d" if dh >= 24 else f"{dh:.0f}h"
+                recent_lines.append(f"├ {icons.get(lbl,'⚪')} {lbl.title()} {dur}")
+            recent_block = "\n".join(recent_lines) if recent_lines else "├ (no history yet)"
+            buckets = {'favorable': 0.0, 'cautious': 0.0, 'adverse': 0.0, 'critical': 0.0}
+            for h in history:
+                lbl = h.get('label')
+                if lbl in buckets:
+                    buckets[lbl] += h.get('duration_hours', 0)
+            total = sum(buckets.values())
+            share_block = ""
+            if total > 0:
+                lines = []
+                for lbl in ['favorable', 'cautious', 'adverse', 'critical']:
+                    pct = buckets[lbl] / total * 100
+                    lines.append(f"{icons[lbl]} [{self._bar(pct/100)}] {pct:.0f}%")
+                share_block = "\nTime share:\n" + "\n".join(lines)
+            msg = f"""🧠 **REGIME TIMELINE**
+━━━━━━━━━━━━━━━━━━━━
+Now: {icons.get(regime_label,'⚪')} {regime_label.title()}{since_txt}
+Risk: {regime_mult:.0%} of normal
+
+Recent changes:
+{recent_block}
+{share_block}
+
+💡 /dashboard /edge /blocks
+"""
+            await update.message.reply_text(msg, parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"regime command error: {e}")
+
+    async def cmd_blocks(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """What's being filtered — CHOP blocks per regime (read-only)."""
+        try:
+            lifetime = self.bot.lifetime_stats
+            chop_blocked = lifetime.get('chop_blocked', {}) or {}
+            icons = {'favorable': '🟢', 'cautious': '🟡', 'adverse': '🟠', 'critical': '🔴'}
+            total = sum(chop_blocked.get(k, 0) for k in icons)
+            lines = []
+            for rk in ['critical', 'adverse', 'cautious', 'favorable']:
+                c = chop_blocked.get(rk, 0)
+                if c:
+                    lines.append(f"├ {icons[rk]} {rk.title()}: {c}")
+            body = "\n".join(lines) if lines else "├ none yet"
+            msg = f"""🚦 **BLOCKED (CHOP filter)**
+━━━━━━━━━━━━━━━━━━━━
+{body}
+└ total: {total} signals filtered
+
+ℹ️ Short-gate & net-dir-cap blocks
+   are recorded in logs only.
+
+💡 /dashboard /edge /regime
+"""
+            await update.message.reply_text(msg, parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"blocks command error: {e}")
+
     async def cmd_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show all active positions"""
         try:
@@ -799,6 +1050,10 @@ class TelegramHandler:
                     msg += f"┌─ ⚪ `{symbol}` (synced, no details)\n\n"
                     continue
                 side_icon = "🟢" if trade.side == 'long' else "🔴"
+                _reg = getattr(trade, 'entry_regime_label', '') or '—'
+                _reg_icon = {'favorable': '🟢', 'cautious': '🟡', 'adverse': '🟠',
+                             'critical': '🔴'}.get(_reg, '⚪')
+                _reg_txt = _reg.title() if _reg != '—' else _reg
 
                 msg += f"""
 ┌─ {side_icon} {trade.side.upper()} `{trade.symbol}`
@@ -806,7 +1061,8 @@ class TelegramHandler:
 ├ Stop Loss: ${trade.stop_loss:,.2f}
 ├ Take Profit: ${trade.take_profit:,.2f}
 ├ R:R: {trade.rr_ratio}:1
-└ Size: {trade.position_size:.4f}
+├ Size: {trade.position_size:.4f}
+└ Entry regime: {_reg_icon} {_reg_txt}
 
 """
             
@@ -987,14 +1243,40 @@ To resume: `/start`
             current_risk_usd = balance * current_risk_pct
             
             if not context.args:
-                # View current risk
+                # View current risk (enriched: taper rung + regime mult + protections)
+                rcfg = self.bot.risk_config or {}
+                cap = rcfg.get('net_directional_cap', 0) or 0
+                sg = rcfg.get('btc_short_gate', False)
+                lb = rcfg.get('long_bull_boost', 1.0) or 1.0
+                try:
+                    _rl, _rm, _ = self.bot.get_regime_status()
+                except Exception:
+                    _rl, _rm = 'unknown', 1.0
+                try:
+                    adaptive_pct = self.bot.get_adaptive_risk(balance=balance) * 100
+                except Exception:
+                    adaptive_pct = current_risk_pct * 100
+                adaptive_usd = balance * adaptive_pct / 100 if balance > 0 else 0
+                _prot = []
+                if cap:
+                    _prot.append(f"cap {cap*100:.0f}%")
+                if sg:
+                    _prot.append("short-gate")
+                if lb != 1.0:
+                    _prot.append("long-boost")
+                prot_line = " · ".join(_prot) if _prot else "none"
                 msg = f"""💰 **CURRENT RISK SETTINGS**
 ━━━━━━━━━━━━━━━━━━━━
 
 📊 **Per Trade Risk**
-├ Percentage: {current_risk_pct*100:.2f}%
-├ USD Amount: ${current_risk_usd:.2f}
+├ Base (taper): {current_risk_pct*100:.2f}%
+├ After regime: {adaptive_pct:.2f}% ({_rm:.0%})
+├ USD now: ${adaptive_usd:.2f}
 └ Balance: ${balance:,.2f}
+
+🛡 **Protections**
+├ Regime: {_rl.title()}
+└ {prot_line}
 
 ⚙️ **To Update**:
 ├ `/risk 0.5` or `/risk 0.5%` → Set to 0.5%

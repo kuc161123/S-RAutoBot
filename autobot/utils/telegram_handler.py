@@ -1743,6 +1743,17 @@ Your P&L Return will now be calculated from ${new_balance:,.0f}.
             # Update lifetime stats
             old_balance = self.bot.lifetime_stats.get('starting_balance', 0)
             self.bot.lifetime_stats['starting_balance'] = new_balance
+            # Re-anchor the drawdown to this capital base so it measures pure trading
+            # from here on, immune to deposits/withdrawals. Clears the stale peak/worst
+            # carried over from the old base.
+            self.bot.lifetime_stats['peak_trading_equity_usd'] = new_balance
+            self.bot.lifetime_stats['max_trading_drawdown_pct'] = 0.0
+            try:
+                _cur_bal = await self.bot.broker.get_balance() or new_balance
+            except Exception:
+                _cur_bal = new_balance
+            self.bot.lifetime_stats['peak_equity_usd'] = _cur_bal
+            self.bot.lifetime_stats['max_drawdown_pct'] = 0.0
             self.bot.save_lifetime_stats()
             
             msg = f"""✅ **BASELINE UPDATED**
@@ -1752,7 +1763,9 @@ Your P&L Return will now be calculated from ${new_balance:,.0f}.
 ├ Previous: ${old_balance:,.2f}
 └ Change: ${new_balance - old_balance:+,.2f}
 
-💡 P&L Return % will now be calculated relative to ${new_balance:,.0f}.
+💡 P&L Return % now relative to ${new_balance:,.0f}.
+📉 Drawdown re-anchored to this capital base
+   (trading-only, immune to deposits/withdrawals).
 """
             await update.message.reply_text(msg, parse_mode='Markdown')
             logger.info(f"[SETBALANCE] Updated baseline from ${old_balance:.2f} to ${new_balance:.2f} by user command")

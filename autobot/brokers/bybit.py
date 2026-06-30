@@ -1516,17 +1516,8 @@ class Bybit:
             logger.error(f"Failed to get klines for {symbol}: {e}")
             return []
 
-    async def get_api_key_info(self) -> Optional[Dict[str, Any]]:
-        """Get information about the current API key, including expiration."""
-        try:
-            resp = await self._request("GET", "/v5/user/query-api")
-            if resp and resp.get("result"):
-                api_keys = resp["result"].get("list", [])
-                # Find the key that is currently being used
-                for key_info in api_keys:
-                    if key_info.get("apiKey") == self.cfg.api_key:
-                        return key_info
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get API key info: {e}")
-            return None
+    # NOTE: get_api_key_info() is defined earlier in this class and parses
+    # /v5/user/query-api correctly (Bybit returns the key object directly in
+    # `result`, NOT inside result.list[]). A buggy duplicate that looked for
+    # result.list[] used to override it here — it ALWAYS returned None, which made
+    # the dashboard show "API Check Failed" no matter how valid the key was. Removed.

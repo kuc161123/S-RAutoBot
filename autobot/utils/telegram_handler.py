@@ -698,24 +698,39 @@ class TelegramHandler:
         # === CURRENT DRAWDOWN % (dollar equity peak-to-trough) ===
         # Track peak equity in USD so we can show how far below the high-water mark we
         # are right now, in percent — independent of the R-based DD above.
+        # The TRADING-equity curve = starting balance + cumulative trading P&L, so
+        # deposits/withdrawals NEVER affect it — the drawdown reflects pure trading.
+        # Raw wallet-equity DD is kept as a secondary reference (it moves when you
+        # add/remove funds).
         dd_pct_line = ""
         cur_dd_pct = 0.0
+        worst_trade_dd = 0.0
         try:
+            trading_equity = starting_balance + lifetime_pnl
+            stored_peak = lifetime.get('peak_trading_equity_usd', 0.0) or 0.0
+            peak_trade = max(stored_peak, starting_balance, trading_equity)
+            if peak_trade != stored_peak:
+                lifetime['peak_trading_equity_usd'] = peak_trade
+                self.bot.save_lifetime_stats()
+            cur_dd_pct = ((peak_trade - trading_equity) / peak_trade * 100) if peak_trade > 0 else 0.0
+            worst_trade_dd = lifetime.get('max_trading_drawdown_pct', 0.0) or 0.0
+            if cur_dd_pct > worst_trade_dd:
+                worst_trade_dd = cur_dd_pct
+                lifetime['max_trading_drawdown_pct'] = worst_trade_dd
+                self.bot.save_lifetime_stats()
+
+            # Secondary: raw wallet-equity drawdown (moves with deposits/withdrawals)
             peak_usd = lifetime.get('peak_equity_usd', 0.0) or 0.0
             if balance > peak_usd:
                 peak_usd = balance
                 lifetime['peak_equity_usd'] = peak_usd
                 self.bot.save_lifetime_stats()
-            cur_dd_pct = ((peak_usd - balance) / peak_usd * 100) if peak_usd > 0 else 0.0
-            # Worst DD% ever seen (for an at-a-glance "limit" reference).
-            worst_dd_pct = lifetime.get('max_drawdown_pct', 0.0) or 0.0
-            if cur_dd_pct > worst_dd_pct:
-                worst_dd_pct = cur_dd_pct
-                lifetime['max_drawdown_pct'] = worst_dd_pct
-                self.bot.save_lifetime_stats()
+            eq_dd_pct = ((peak_usd - balance) / peak_usd * 100) if peak_usd > 0 else 0.0
+
             dd_emoji = "🟢" if cur_dd_pct < 15 else ("🟡" if cur_dd_pct < 30 else ("🟠" if cur_dd_pct < 45 else "🔴"))
-            dd_pct_line = (f"\n├ Drawdown: {dd_emoji} {cur_dd_pct:.1f}% from peak "
-                           f"${peak_usd:,.0f} (worst {worst_dd_pct:.1f}%)")
+            dd_bar2 = self._bar(cur_dd_pct / worst_trade_dd if worst_trade_dd > 0 else 0)
+            dd_pct_line = (f"\n├ DD: {dd_emoji} {cur_dd_pct:.1f}% trading · {eq_dd_pct:.0f}% equity"
+                           f"\n│ [{dd_bar2}] peak ${peak_trade:,.0f} · worst {worst_trade_dd:.1f}%")
         except Exception:
             dd_pct_line = ""
 
@@ -740,7 +755,6 @@ class TelegramHandler:
         trading_roi = (trading_pnl / starting_balance * 100) if starting_balance > 0 else 0.0
         troi_emoji = "🟢" if trading_roi >= 0 else "🔴"
         size_bar = self._bar(regime_mult)
-        dd_bar = self._bar(cur_dd_pct / 20.0)            # ~20% historical DD band reference
         badge = {'favorable': '🟢 HUNTING', 'cautious': '🟡 SELECTIVE',
                  'adverse': '🟠 CAUTIOUS', 'critical': '🔴 DEFENSIVE',
                  'halted': '🛑 HALTED', 'unknown': '⏳ WARMING UP'}.get(regime_label, '⚪ ACTIVE')
@@ -757,7 +771,6 @@ class TelegramHandler:
 
 💼 **ACCOUNT**
 ├ Equity: ${balance:,.2f}{dd_pct_line}
-│ [{dd_bar}] DD vs ~20% band
 ├ Wallet: ${wallet_balance:,.2f}{cap_line}{withdraw_line}
 └ Free: ${available_balance:,.2f} ({available_pct:.0f}%)
 
@@ -784,9 +797,8 @@ class TelegramHandler:
 {pos_section}
 
 ⏰ **SYSTEM**
-├ Uptime {uptime_hrs:.1f}h · Next scan ~{next_scan_mins}m
-├ Symbols {enabled} · Signals {divs_today}D/{bos_today}BOS
-├ Pending BOS: {pending}
+├ Up {uptime_hrs:.1f}h · scan ~{next_scan_mins}m · {enabled} sym
+├ Signals {divs_today}D/{bos_today}BOS · pending {pending}
 └ 🔑 API: {key_status}
 
 ━━━━━━━━━━━━━━━━━━━━

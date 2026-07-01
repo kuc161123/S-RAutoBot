@@ -205,6 +205,13 @@ class Bot4H:
         self.storage = StorageHandler()
         # Load lifetime stats from PostgreSQL (or fallback to local file)
         self.lifetime_stats = self.storage.load_lifetime_stats()
+        # [SHADOW] Observational learner (Postgres). OBSERVATION ONLY — never affects trading.
+        self.shadow_logger = None
+        try:
+            from autobot.core.shadow_logger import ShadowLogger
+            self.shadow_logger = ShadowLogger(os.getenv('DATABASE_URL'))
+        except Exception as e:
+            logger.warning(f"[SHADOW] init failed (disabled): {e}")
         # Restore recent trades for regime detection
         saved_trades = self.lifetime_stats.get('recent_trades', [])
         for t in saved_trades[-100:]:
@@ -1426,6 +1433,14 @@ class Bot4H:
             use_candle_open: If True, use current candle's open price for SL/TP calculation
                              (backtest-aligned entry on next candle after BOS)
         """
+        # [SHADOW] Log every evaluated signal (executed OR blocked) for the learner.
+        # OBSERVATION ONLY — fully wrapped so it can never affect trading.
+        _shadow_sid = None
+        try:
+            _shadow_sid = self.shadow_logger.log_signal(self, symbol, signal, df, use_candle_open)
+        except Exception:
+            pass
+
         # [REGIME V2] Halt check — block trade if multiplier is 0
         regime_label, regime_mult, regime_diag = self.get_regime_status()
         if regime_mult == 0.0:
@@ -1701,8 +1716,13 @@ class Bot4H:
             entry_regime_label=regime_label,  # Regime at ENTRY (not exit)
             entry_regime_mult=regime_mult,
         )
-        
+
         self.active_trades[trade_key] = trade
+        # [SHADOW] mark this evaluated signal as executed (observational; wrapped)
+        try:
+            self.shadow_logger.mark_executed(_shadow_sid)
+        except Exception:
+            pass
 
         # [PERSIST ENTRY REGIME] entry_regime_label lives only on the in-memory
         # ActiveTrade. Persist it keyed by trade so that after a restart/deploy the
@@ -2274,6 +2294,13 @@ Next scan in ~60 mins ⏳
                         last_sync = datetime.now()
                     except Exception as e:
                         logger.error(f"[SYNC] Periodic sync failed: {e}")
+
+                # [SHADOW] Resolve a small batch of pending signal outcomes from klines.
+                # OBSERVATION ONLY — throttled + fully wrapped; never affects trading.
+                try:
+                    await self.shadow_logger.resolve_pending(self.broker)
+                except Exception:
+                    pass
 
                 # Sleep for 1 minute before next check
                 await asyncio.sleep(60)

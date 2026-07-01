@@ -85,6 +85,7 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("edge", self.cmd_edge))
         self.app.add_handler(CommandHandler("regime", self.cmd_regime))
         self.app.add_handler(CommandHandler("blocks", self.cmd_blocks))
+        self.app.add_handler(CommandHandler("learn", self.cmd_learn))
 
         # Start polling with longer interval to avoid rate limits
         await self.app.initialize()
@@ -168,6 +169,7 @@ class TelegramHandler:
 ├ /edge - Edge by regime
 ├ /regime - Regime timeline & time-share
 ├ /blocks - Signals filtered (CHOP)
+├ /learn - Shadow learner (edge discovery)
 ├ /positions - All active positions
 ├ /stats - Performance statistics (all-time)
 ├ /performance - Symbol leaderboard (R values)
@@ -1046,6 +1048,129 @@ Recent changes:
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
             logger.error(f"blocks command error: {e}")
+
+    # ---- shadow learner (observational; reads shadow_signals) ----
+    @staticmethod
+    def _learn_line(r, use_lb=True):
+        turn = r.get('turnover') or 0
+        liq = '🟢' if turn > 1e5 else ('🟡' if turn > 3e4 else '🔴')
+        wr = (r['lb'] if use_lb else r['wr']) * 100
+        return (f"{r['symbol'][:9]} {r['side'][:1]} {r['div_type'].split('_')[0]} "
+                f"{wr:.0f}%·{r['n']}·{r['avg_r']:+.1f} {liq}")
+
+    def _learn_list(self, rows, worst=False):
+        if worst:
+            sel = sorted([r for r in rows if r['cat'] == 'negative'], key=lambda r: r['avg_r'])[:20]
+            title = "🚫 **DRAG LEADERBOARD**\nLBwr · N · avgR · liq"
+        else:
+            sel = sorted([r for r in rows if r['cat'] in ('edge', 'promising')],
+                         key=lambda r: -r['lb'])[:20]
+            title = "🏅 **EDGE LEADERBOARD**\nLBwr · N · avgR · liq"
+        if not sel:
+            return title.split(chr(10))[0] + "\n(no combos with enough data yet)"
+        return title + "\n" + "\n".join(self._learn_line(r, use_lb=not worst) for r in sel)
+
+    def _learn_sym(self, rows, symbol):
+        sub = [r for r in rows if r['symbol'] == symbol]
+        if not sub:
+            return f"🔬 {symbol}\nNo resolved signals yet."
+        cat_icon = {'edge': '🟢', 'promising': '🟡', 'negative': '🔴'}
+        lines = [f"🔬 **{symbol}**"]
+        for r in sorted(sub, key=lambda r: -r['lb']):
+            lines.append(f"{cat_icon.get(r['cat'],'⚪')} {r['side']} {r['div_type']} "
+                         f"{r['wr']*100:.0f}%wr LB{r['lb']*100:.0f}% N{r['n']} {r['avg_r']:+.1f}R")
+        return "\n".join(lines)
+
+    async def cmd_learn(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Shadow learner — edge discovery across all evaluated signals (observational)."""
+        try:
+            sl = getattr(self.bot, 'shadow_logger', None)
+            if sl is None or not getattr(sl, 'enabled', False):
+                await update.message.reply_text(
+                    "🧪 **SHADOW LEARNER**\n━━━━━━━━━━━━━━━━━━━━\n"
+                    "⏳ Not active (no database configured).\n"
+                    "Once DATABASE_URL is set it auto-logs every\n"
+                    "evaluated signal. Nothing to do — it's passive.",
+                    parse_mode='Markdown')
+                return
+            rows = sl.edge_rows()
+            arg = context.args[0].lower() if context.args else ''
+            if arg == 'top':
+                await update.message.reply_text(self._learn_list(rows, worst=False), parse_mode='Markdown'); return
+            if arg == 'worst':
+                await update.message.reply_text(self._learn_list(rows, worst=True), parse_mode='Markdown'); return
+            if arg == 'sym' and len(context.args) >= 2:
+                await update.message.reply_text(self._learn_sym(rows, context.args[1].upper()), parse_mode='Markdown'); return
+
+            s = sl.summary()
+            total = s.get('total', 0) or 0
+            execd = s.get('executed', 0) or 0
+            resolved = s.get('resolved', 0) or 0
+            syms = s.get('symbols', 0) or 0
+            combos = s.get('combos', 0) or 0
+            first = s.get('first_ts')
+            from datetime import datetime, timezone
+            days = 0
+            if first:
+                try:
+                    days = max(0, (datetime.now(timezone.utc) - first).days)
+                except Exception:
+                    try:
+                        days = max(0, (datetime.now() - first.replace(tzinfo=None)).days)
+                    except Exception:
+                        days = 0
+            mat = min(1.0, days / 30.0)
+            resolved_pct = (resolved / total * 100) if total else 0
+            ready = days >= 21 and resolved >= 1000
+            status = "🟢 READY" if ready else "🟡 ACCUMULATING"
+            edge = sum(1 for r in rows if r['cat'] == 'edge')
+            prom = sum(1 for r in rows if r['cat'] == 'promising')
+            neg = sum(1 for r in rows if r['cat'] == 'negative')
+
+            msg = f"""🧪 **SHADOW LEARNER**
+━━━━━━━━━━━━━━━━━━━━
+Status: {status} · {days}d
+
+📥 **DATA**
+├ Signals: {total:,}
+│ ├ executed {execd:,}
+│ └ phantom {total-execd:,}
+├ Symbols {syms} · combos {combos}
+├ Resolved {resolved_pct:.0f}%
+└ Maturity [{self._bar(mat)}] {mat*100:.0f}%"""
+
+            if resolved < 200:
+                msg += ("\n\n⏳ Too little resolved data for\n"
+                        "significant edges yet. It's running —\n"
+                        "re-check /learn as it fills.")
+            else:
+                top = sorted([r for r in rows if r['cat'] in ('edge', 'promising')],
+                             key=lambda r: -r['lb'])[:4]
+                worst = sorted([r for r in rows if r['cat'] == 'negative' and r['n'] >= sl.MIN_N],
+                               key=lambda r: r['avg_r'])[:4]
+                msg += f"""
+
+🎯 **EDGE MAP** (Wilson95 LB
+   vs per-combo breakeven)
+├ 🟢 edge: {edge}
+├ 🟡 promising: {prom}
+└ 🔴 negative: {neg}
+
+🏅 **TOP** (LBwr·N·avgR·liq)"""
+                for r in top:
+                    msg += "\n├ " + self._learn_line(r, use_lb=True)
+                msg += "\n└ full → /learn top"
+                if worst:
+                    msg += "\n\n🚫 **DRAG** (drop candidates)"
+                    for r in worst:
+                        msg += "\n├ " + self._learn_line(r, use_lb=False)
+                    msg += "\n└ full → /learn worst"
+
+            msg += "\n\n/learn top · worst · sym X"
+            await update.message.reply_text(msg, parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"❌ Learn error: {e}")
+            logger.error(f"learn command error: {e}")
 
     async def cmd_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show all active positions"""

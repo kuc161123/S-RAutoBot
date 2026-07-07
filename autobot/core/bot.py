@@ -212,6 +212,22 @@ class Bot4H:
             self.shadow_logger = ShadowLogger(os.getenv('DATABASE_URL'))
         except Exception as e:
             logger.warning(f"[SHADOW] init failed (disabled): {e}")
+        # [SHADOW-SCAN] Second-family + candidate scanner (Phase 1b). OBSERVATION ONLY —
+        # rides the live data fetches, writes only to shadow_signals, never trades.
+        self.shadow_scanner = None
+        try:
+            from autobot.core.shadow_scanner import ShadowScanner
+            self.shadow_scanner = ShadowScanner(self.shadow_logger, bot=self)
+        except Exception as e:
+            logger.warning(f"[SHADOW-SCAN] init failed (disabled): {e}")
+        # [SHADOW-ANALYST] Read-only intelligence + advisory alerts (Phase 1c).
+        # Measures, proposes, alerts — NEVER gates a trade.
+        self.shadow_analyst = None
+        try:
+            from autobot.core.shadow_analyst import ShadowAnalyst
+            self.shadow_analyst = ShadowAnalyst(self.shadow_logger)
+        except Exception as e:
+            logger.warning(f"[SHADOW-ANALYST] init failed (disabled): {e}")
         # Restore recent trades for regime detection
         saved_trades = self.lifetime_stats.get('recent_trades', [])
         for t in saved_trades[-100:]:
@@ -1095,6 +1111,13 @@ class Bot4H:
 
         # Prepare indicators
         df = prepare_dataframe(df)
+
+        # [SHADOW-SCAN] Second-family shadow detection on the same df (observation only)
+        try:
+            if self.shadow_scanner:
+                self.shadow_scanner.observe_df(symbol, df)
+        except Exception:
+            pass
 
         # [BACKTEST ALIGNMENT] Execute any queued entries from previous candle's BOS confirmation.
         # Entry uses the OPEN of the current (new) candle, matching the backtest exactly.
@@ -2299,6 +2322,24 @@ Next scan in ~60 mins ⏳
                 # OBSERVATION ONLY — throttled + fully wrapped; never affects trading.
                 try:
                     await self.shadow_logger.resolve_pending(self.broker)
+                except Exception:
+                    pass
+
+                # [SHADOW-SCAN] Out-of-universe candidate sweep (daily discovery,
+                # ~hourly scan; internally throttled). OBSERVATION ONLY.
+                try:
+                    if self.shadow_scanner and self.startup_scan_done:
+                        await self.shadow_scanner.tick(self.broker)
+                except Exception:
+                    pass
+
+                # [SHADOW-ANALYST] Advisory alerts (~hourly, cooldowns + daily cap).
+                # Read-only; suggests, never gates.
+                try:
+                    if self.shadow_analyst and self.telegram and self.startup_scan_done:
+                        alerts_on = self.lifetime_stats.get('shadow_alerts_enabled', True)
+                        for _msg in self.shadow_analyst.alert_tick(alerts_enabled=alerts_on):
+                            await self.telegram.send_message(_msg)
                 except Exception:
                     pass
 

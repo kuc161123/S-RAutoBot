@@ -546,6 +546,19 @@ class Bybit:
             logger.error(f"Failed to get ticker for {symbol}: {e}")
         return {}
 
+    async def get_all_tickers(self) -> list:
+        """Get tickers for ALL linear contracts in one public call.
+
+        Each row includes symbol, lastPrice, turnover24h, volume24h, etc.
+        Read-only; used by the shadow scanner for candidate discovery."""
+        try:
+            resp = await self._request("GET", "/v5/market/tickers", {"category": "linear"})
+            if resp and resp.get("result"):
+                return resp["result"].get("list", []) or []
+        except Exception as e:
+            logger.error(f"Failed to get all tickers: {e}")
+        return []
+
     async def get_transaction_log(self, start_time_ms: Optional[int] = None,
                                   end_time_ms: Optional[int] = None,
                                   account_type: str = "UNIFIED",
@@ -1498,7 +1511,7 @@ class Bybit:
                 "category": "linear",
                 "symbol": symbol,
                 "interval": interval,  # 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
-                "limit": str(min(limit, 200))  # Max 200 per request
+                "limit": str(min(limit, 1000))  # Bybit v5 kline max is 1000 per request
             }
             if start is not None:
                 params["start"] = str(int(start))

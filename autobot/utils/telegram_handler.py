@@ -170,6 +170,14 @@ class TelegramHandler:
 ├ /regime - Regime timeline & time-share
 ├ /blocks - Signals filtered (CHOP)
 ├ /learn - Shadow learner (edge discovery)
+├ /learn week - Weekly shadow R (advisory)
+├ /learn family - DIV vs DONCH vs scouts
+├ /learn rr [SYM] - Counterfactual R:R grid
+├ /learn regime - Shadow edge by regime
+├ /learn candidates - Promotion/bench proposals
+├ /learn top|worst - Edge/drag leaderboards
+├ /learn sym X - One symbol's combos
+├ /learn alerts on|off - Advisory alerts toggle
 ├ /positions - All active positions
 ├ /stats - Performance statistics (all-time)
 ├ /performance - Symbol leaderboard (R values)
@@ -195,7 +203,7 @@ class TelegramHandler:
 
 ━━━━━━━━━━━━━━━━━━━━
 **Strategy**: 1H Precision Divergence
-**Portfolio**: {enabled_count} Symbols | 0.1% Risk
+**Portfolio**: {enabled_count} Symbols | risk auto-tapered by balance & regime (/risk)
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
@@ -1081,6 +1089,97 @@ Recent changes:
                          f"{r['wr']*100:.0f}%wr LB{r['lb']*100:.0f}% N{r['n']} {r['avg_r']:+.1f}R")
         return "\n".join(lines)
 
+    # ---- Phase 1c analyst renderers (read-only views) ----
+    @staticmethod
+    def _learn_week(an):
+        wk = an.weekly_r()
+        icon = {'OK': '🟢', 'WARN': '🟠', 'CRIT': '🔴'}[wk['state']]
+        lines = [f"📅 **SHADOW WEEK** {icon} {wk['state']} _(advisory only)_",
+                 "━━━━━━━━━━━━━━━━━━━━",
+                 f"├ Trailing 7d:  **{wk['trailing_7d_r']:+.1f}R**",
+                 f"├ Trailing 21d: {wk['trailing_21d_r']:+.1f}R",
+                 f"├ Bands: warn ≤{wk['warn_at']:.0f}R · crit ≤{wk['crit_at']:.0f}R",
+                 f"└ Suggested size mult (paper): **{wk['suggested_mult']:.1f}x**",
+                 "",
+                 "**Weekly shadow R** (all evaluated signals, cost-adj)"]
+        for w, r in wk['series'].items():
+            bar = '█' * min(10, int(abs(r) / 8)) or '·'
+            lines.append(f"`{w[-3:]}` {'🟩' if r >= 0 else '🟥'} {r:+7.1f}R {bar}")
+        lines.append("\n_Losses cluster in time — this is the validated_")
+        lines.append("_early-warning signal. It never gates trades._")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _learn_family(an):
+        fams = an.rolling_edge()
+        if not fams:
+            return "👪 No family data yet."
+        lines = ["👪 **SIGNAL FAMILIES** (shadow, cost-adj)",
+                 "━━━━━━━━━━━━━━━━━━━━",
+                 "`family      7d R   21d R   60d R  PF60`"]
+        names = {'DIV': 'DIV live ', 'DIV‡': 'DIV scout', 'DONCH': 'DONCH    '}
+        for f in fams:
+            nm = names.get(f['family'], f['family'][:9].ljust(9))
+            pf = f.get('pf_60d')
+            lines.append(f"`{nm} {f.get('r_7d', 0):+6.1f} {f.get('r_21d', 0):+7.1f} "
+                         f"{f.get('r_60d', 0):+7.1f}  {pf if pf is not None else ' —'}`")
+        lines.append(f"\n├ Coverage: " + " · ".join(
+            f"{names.get(f['family'], f['family']).strip()} {f['span_days']:.0f}d/{f['n_total']}sig" for f in fams))
+        lines.append("└ Promotion gate: 60d span · 100 resolved · PF ≥1.3")
+        lines.append("_‡ = out-of-universe scout · DONCH = validated 2nd family_")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _learn_rr(an, symbol=None):
+        grid = an.rr_grid(symbol=symbol)
+        if not grid:
+            return ("🎯 No counterfactual data yet (mfe\\_to\\_sl fills as new "
+                    "signals resolve; backfill available).")
+        hdr = f"🎯 **COUNTERFACTUAL R:R** {'— ' + symbol if symbol else '(all DIV)'}"
+        lines = [hdr, "━━━━━━━━━━━━━━━━━━━━",
+                 "_Same signals & stops, TP moved to RR′:_",
+                 "`RR    WR%    exp/trade   PF`"]
+        best = max(grid, key=lambda g: g['exp_r'])
+        for g in grid:
+            mark = ' ⭐' if g is best else ''
+            lines.append(f"`{g['rr']:>2}   {g['wr']*100:4.1f}%   {g['exp_r']:+7.3f}R   "
+                         f"{g['pf'] if g['pf'] is not None else '—'}`{mark}")
+        lines.append(f"\n└ n={grid[0]['n']} resolved signals with excursion data")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _learn_regime(an):
+        rows = an.regime_edges()
+        if not rows:
+            return "🌡 No regime-tagged shadow data yet."
+        lines = ["🌡 **SHADOW EDGE BY REGIME** (cost-adj)",
+                 "━━━━━━━━━━━━━━━━━━━━",
+                 "`regime     btc      n   WR%    R     PF`"]
+        for r in rows:
+            lines.append(f"`{r['regime'][:9]:<9} {r['btc']:<7} {r['n']:>4} "
+                         f"{r['wr']*100:4.0f}% {r['sum_r']:+7.1f} "
+                         f"{r['pf'] if r['pf'] is not None else '—'}`")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _learn_candidates(an):
+        props = an.proposals_check()
+        cands = an.sl.get_candidates()
+        lines = ["🌱 **LEARNER CANDIDATES** _(proposals — nothing auto-applies)_",
+                 "━━━━━━━━━━━━━━━━━━━━"]
+        if props:
+            for p in props[:8]:
+                icon = '🚀' if p['kind'] == 'promote_family' else '🚫'
+                lines.append(f"{icon} {p['kind']}: **{p['target']}**")
+                lines.append(f"   └ {p['note']}")
+        else:
+            lines.append("No combos/families meet the evidence gates yet.")
+            lines.append("Gates: promote = 60d·100sig·PF1.3+ | bench = 60sig·UB<breakeven·stable·neighbors")
+        if cands:
+            lines.append(f"\n👀 Watching {len(cands)} out-of-universe symbols "
+                         f"(top: {', '.join(s for s, _ in cands[:5])})")
+        return "\n".join(lines)
+
     async def cmd_learn(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Shadow learner — edge discovery across all evaluated signals (observational)."""
         try:
@@ -1101,6 +1200,31 @@ Recent changes:
                 await update.message.reply_text(self._learn_list(rows, worst=True), parse_mode='Markdown'); return
             if arg == 'sym' and len(context.args) >= 2:
                 await update.message.reply_text(self._learn_sym(rows, context.args[1].upper()), parse_mode='Markdown'); return
+            # Phase 1c analyst views (read-only)
+            an = getattr(self.bot, 'shadow_analyst', None)
+            if arg in ('week', 'family', 'rr', 'regime', 'candidates', 'alerts'):
+                if an is None or not an.enabled:
+                    await update.message.reply_text("🧪 Analyst not active (no database)."); return
+                if arg == 'week':
+                    await update.message.reply_text(self._learn_week(an), parse_mode='Markdown'); return
+                if arg == 'family':
+                    await update.message.reply_text(self._learn_family(an), parse_mode='Markdown'); return
+                if arg == 'rr':
+                    sym = context.args[1].upper() if len(context.args) >= 2 else None
+                    await update.message.reply_text(self._learn_rr(an, sym), parse_mode='Markdown'); return
+                if arg == 'regime':
+                    await update.message.reply_text(self._learn_regime(an), parse_mode='Markdown'); return
+                if arg == 'candidates':
+                    await update.message.reply_text(self._learn_candidates(an), parse_mode='Markdown'); return
+                if arg == 'alerts':
+                    onoff = context.args[1].lower() if len(context.args) >= 2 else ''
+                    if onoff in ('on', 'off'):
+                        self.bot.lifetime_stats['shadow_alerts_enabled'] = (onoff == 'on')
+                        self.bot.save_lifetime_stats()
+                    state = self.bot.lifetime_stats.get('shadow_alerts_enabled', True)
+                    await update.message.reply_text(
+                        f"🔔 Shadow alerts: {'ON' if state else 'OFF'}\n"
+                        f"Toggle: /learn alerts on|off"); return
 
             s = sl.summary()
             total = s.get('total', 0) or 0
@@ -1166,7 +1290,18 @@ Status: {status} · {days}d
                         msg += "\n├ " + self._learn_line(r, use_lb=False)
                     msg += "\n└ full → /learn worst"
 
-            msg += "\n\n/learn top · worst · sym X"
+            # Weekly shadow-R snapshot (flagship advisory signal)
+            try:
+                an = getattr(self.bot, 'shadow_analyst', None)
+                if an is not None and an.enabled:
+                    wk = an.weekly_r()
+                    icon = {'OK': '🟢', 'WARN': '🟠', 'CRIT': '🔴'}[wk['state']]
+                    msg += (f"\n\n📅 **WEEK** {icon} 7d {wk['trailing_7d_r']:+.1f}R · "
+                            f"21d {wk['trailing_21d_r']:+.1f}R → /learn week")
+            except Exception:
+                pass
+
+            msg += "\n\n/learn top · worst · sym X\n/learn week · family · rr · regime · candidates · alerts"
             await update.message.reply_text(msg, parse_mode='Markdown')
         except Exception as e:
             await update.message.reply_text(f"❌ Learn error: {e}")

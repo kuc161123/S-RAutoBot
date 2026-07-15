@@ -703,6 +703,44 @@ class Bot4H:
             logger.warning(f"[BTC-GATE] Failed to fetch BTC trend, not blocking: {e}")
             return cache.get('bullish')
 
+    async def _is_btc_impulse_bull(self):
+        """SHORT-GATE v2 helper: True only during a SUSTAINED IMPULSE bull —
+        BTC's trailing 30-day return (daily closes, causal: last CLOSED day vs the
+        close 30 days earlier) above risk.short_gate_ret30 (default +10%).
+
+        Why not the 1H EMA200 (_is_btc_bullish)? That signal flips ~26x/month and
+        blocks profitable ordinary-bull shorts; research 2026-07 showed shorts are
+        net-positive in causal bull states and only sustained impulse bulls hurt
+        them. This daily signal flips ~1.5x/month. Cached ~1h. Returns None when
+        data is unavailable — callers treat None as "don't block" (fail-open).
+        The long-boost intentionally KEEPS using _is_btc_bullish (best boost trigger).
+        """
+        import time as _t
+        now = _t.time()
+        cache = getattr(self, '_btc_impulse_cache', None) or {'impulse': None, 'ts': 0.0}
+        if cache.get('impulse') is not None and (now - cache.get('ts', 0.0)) < 3600:
+            return cache['impulse']
+        try:
+            params = {'category': 'linear', 'symbol': 'BTCUSDT', 'interval': 'D', 'limit': '40'}
+            resp = await self.broker._request("GET", "/v5/market/kline", params)
+            data = resp.get('result', {}).get('list', []) if resp else []
+            if len(data) < 32:
+                return cache.get('impulse')  # not enough data — fall back to last known
+            # API returns newest-first; row 0 is the CURRENT (unclosed) day.
+            closes = [float(r[4]) for r in data]
+            last_closed = closes[1]
+            close_30d_ago = closes[31]
+            if close_30d_ago <= 0:
+                return cache.get('impulse')
+            ret30 = last_closed / close_30d_ago - 1.0
+            thr = float(self.risk_config.get('short_gate_ret30', 0.10) or 0.10)
+            impulse = bool(ret30 > thr)
+            self._btc_impulse_cache = {'impulse': impulse, 'ts': now, 'ret30': ret30}
+            return impulse
+        except Exception as e:
+            logger.warning(f"[BTC-GATE] Failed to fetch BTC 30d return, not blocking: {e}")
+            return cache.get('impulse')
+
     def _overlays_ramped_on(self, balance):
         """Unified AUTO-RAMP gate for ALL risk overlays (net-dir cap, BTC short-gate,
         bull long-boost). Below risk.overlay_ramp_min_balance the account runs in pure
@@ -757,6 +795,28 @@ class Bot4H:
         net = abs(long_risk - short_risk)
         limit = cap * equity
         return (net <= limit), net, limit
+
+    def _gross_risk_ok(self, new_risk_usd, equity):
+        """GROSS open-risk cap: block a new entry if it would push the SUM of all
+        open positions' risk_usd_at_entry above risk.gross_open_risk_cap * equity.
+
+        Bounds the "every open SL hits at once" scenario (gap/flash-crash), which
+        the NET cap does not: a hedged 15% long + 15% short book is net-0 but 30%
+        gross at risk. Validated 2026-07: at the 30% default this cap produced
+        outputs identical to baseline on every historical window — pure tail
+        insurance with zero cost to normal operation. Disable via
+        risk.gross_open_risk_cap: 0. Returns (ok, gross_now, limit).
+        """
+        cap = self.risk_config.get('gross_open_risk_cap', 0.30)
+        if not cap or cap <= 0 or not equity or equity <= 0:
+            return True, 0.0, 0.0
+        gross = new_risk_usd
+        for t in self.active_trades.values():
+            if t is None:
+                continue
+            gross += getattr(t, 'risk_usd_at_entry', 0.0) or 0.0
+        limit = cap * equity
+        return (gross <= limit), gross, limit
 
     def _track_divergence_detected(self):
         """Track a divergence detection"""
@@ -1464,6 +1524,13 @@ class Bot4H:
         except Exception:
             pass
 
+        # [/stop GATE] Manual emergency stop — placed after shadow logging so
+        # observation continues while trading is halted. Before this fix the
+        # trading_enabled flag was set by /stop but never checked anywhere.
+        if not self.trading_enabled:
+            logger.warning(f"[{symbol}] TRADE BLOCKED — trading disabled via /stop ({signal.side})")
+            return
+
         # [REGIME V2] Halt check — block trade if multiplier is 0
         regime_label, regime_mult, regime_diag = self.get_regime_status()
         if regime_mult == 0.0:
@@ -1497,19 +1564,25 @@ class Bot4H:
                         pass
                 return
 
-        # [BTC SHORT-GATE] Suppress SHORT entries when BTC (the market) is in a confirmed
-        # uptrend (1H close > 200 EMA). Validated: the short book bleeds / gets squeezed in
-        # bull & relief rallies; longs are unaffected. Disable via risk.btc_short_gate=false.
+        # [BTC SHORT-GATE v2] Suppress SHORT entries only during a SUSTAINED IMPULSE
+        # bull: BTC trailing 30-day return > threshold (default +10%, daily closes,
+        # causal). Validated 2026-07 (research program): the old 1H-EMA200 signal
+        # flipped ~26x/month and blocked profitable ordinary-bull shorts — shorts are
+        # net-POSITIVE in causal bull states; only impulse bulls hurt them. The swap
+        # beat the old gate on 4/5 windows incl. the bear control (+704%→+871%) and
+        # turned the 2023/24 disaster bull from −39% into −10%.
+        # Disable via risk.btc_short_gate=false; threshold via risk.short_gate_ret30.
         if signal.side == 'short' and self.risk_config.get('btc_short_gate', False):
             # AUTO-RAMP: only gate shorts once the account is above the ramp threshold;
             # below it the book runs uncapped for max growth (balance fetched lazily).
             gate_bal = await self.broker.get_balance()
-            if self._overlays_ramped_on(gate_bal) and await self._is_btc_bullish() is True:
-                logger.info(f"[{symbol}] BTC SHORT-GATE blocked: BTC above 200EMA (market uptrend) — short skipped")
+            if self._overlays_ramped_on(gate_bal) and await self._is_btc_impulse_bull() is True:
+                thr = float(self.risk_config.get('short_gate_ret30', 0.10) or 0.10) * 100
+                logger.info(f"[{symbol}] BTC SHORT-GATE blocked: BTC 30d return > +{thr:.0f}% (impulse bull) — short skipped")
                 if hasattr(self, 'telegram') and self.telegram:
                     try:
                         asyncio.create_task(self.telegram.send_message(
-                            f"📈 **BTC SHORT-GATE** — {symbol} short skipped\n└ BTC above its 200 EMA (market uptrend)"
+                            f"📈 **BTC SHORT-GATE** — {symbol} short skipped\n└ BTC 30d return > +{thr:.0f}% (sustained impulse bull)"
                         ))
                     except Exception:
                         pass
@@ -1535,6 +1608,24 @@ class Bot4H:
                         logger.warning(f"[{symbol}] {signal.side} position already exists on EXCHANGE! Skipping to prevent pyramiding.")
                         # Sync internal state
                         self.active_trades[trade_key] = None
+                        return
+                    # [OPPOSITE-SIDE GUARD] The account trades in one-way mode
+                    # (positionIdx=0): an opposite-side market entry would NOT hedge —
+                    # it would market-CLOSE this position, bypassing its bracket SL/TP.
+                    # Backtests model both sides as independent coexisting positions and
+                    # never model that forced closure (~3.4% of signals collide, ~58/mo).
+                    # Skip instead. Disable via risk.allow_opposite_side_entry=true.
+                    if not self.risk_config.get('allow_opposite_side_entry', False):
+                        logger.warning(f"[{symbol}] OPPOSITE-SIDE GUARD: open {pos_side} position exists — "
+                                       f"{signal.side} entry would market-close it (one-way mode). Skipping.")
+                        if hasattr(self, 'telegram') and self.telegram:
+                            try:
+                                asyncio.create_task(self.telegram.send_message(
+                                    f"⛔ **OPPOSITE-SIDE GUARD** — {symbol} {signal.side} skipped\n"
+                                    f"└ open {pos_side} position would be force-closed (one-way mode)"
+                                ))
+                            except Exception:
+                                pass
                         return
             logger.info(f"[{symbol}] No existing position found (took {time.time()-start_check:.2f}s). Proceeding...")
         except Exception as e:
@@ -1614,6 +1705,24 @@ class Bot4H:
                         asyncio.create_task(self.telegram.send_message(
                             f"⚖️ **NET-DIR CAP** — {symbol} {signal.side} skipped\n"
                             f"└ net directional risk ${nd_net:.0f} > ${nd_limit:.0f} cap ({cap_pct:.0f}% equity)"
+                        ))
+                    except Exception:
+                        pass
+                return
+
+            # [GROSS OPEN-RISK CAP] Bound the "every open SL hits at once" scenario
+            # (gap/flash-crash). Historically never binds in normal operation — pure
+            # tail insurance. See _gross_risk_ok. Disable: risk.gross_open_risk_cap: 0
+            g_ok, g_now, g_limit = self._gross_risk_ok(risk_amount, account_balance)
+            if not g_ok:
+                g_pct = float(self.risk_config.get('gross_open_risk_cap', 0.30) or 0) * 100
+                logger.warning(f"[{symbol}] GROSS-RISK CAP blocked: total open risk would be "
+                               f"${g_now:.2f} > ${g_limit:.2f} ({g_pct:.0f}% equity)")
+                if hasattr(self, 'telegram') and self.telegram:
+                    try:
+                        asyncio.create_task(self.telegram.send_message(
+                            f"🧯 **GROSS-RISK CAP** — {symbol} {signal.side} skipped\n"
+                            f"└ total open risk ${g_now:.0f} > ${g_limit:.0f} cap ({g_pct:.0f}% equity)"
                         ))
                     except Exception:
                         pass

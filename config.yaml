@@ -54,10 +54,21 @@ risk:
   # to withdraw to bring it back to target. Compounding above this adds little growth
   # (taper floors risk) but raises absolute drawdown $. Set 0 to disable the alert.
   withdrawal_target: 50000
-  # [VALIDATED 2026-06] BTC short-gate: skip SHORT entries when BTC 1H close is above its
-  # 200 EMA (market uptrend) — your short book bleeds/gets squeezed in bull/relief rallies.
-  # Longs are unaffected. Set false to disable.
+  # [VALIDATED 2026-07 v2] BTC short-gate: skip SHORT entries only during a SUSTAINED
+  # IMPULSE bull — BTC trailing 30-day return (daily closes, causal) above short_gate_ret30.
+  # Research: shorts are net-POSITIVE in ordinary causal bull states; only impulse bulls
+  # hurt them. The old 1H-EMA200 signal flipped ~26x/month and blocked profitable shorts;
+  # the swap beat it on 4/5 windows incl. the bear control and turned the 2023/24
+  # disaster bull from -39% into -10%. Longs unaffected (long-boost keeps its 1H trigger).
   btc_short_gate: true
+  # Impulse-bull threshold (fraction of 30d BTC return). 0.10 = balanced (disaster
+  # protection + ~+8% lifetime); 0.15 = higher lifetime total, less protection.
+  short_gate_ret30: 0.10
+  # [VALIDATED 2026-07] Gross open-risk cap: block a new entry if TOTAL open risk (sum of
+  # all open positions' risk-at-entry) would exceed this fraction of equity. Bounds the
+  # flash-crash "all stops hit at once" scenario; produced outputs identical to baseline
+  # on every historical window (pure tail insurance, zero cost). Set 0 to disable.
+  gross_open_risk_cap: 0.30
   # [VALIDATED 2026-06] Bull long-boost: multiply LONG per-trade risk by this factor when
   # BTC 1H close is above its 200 EMA (market uptrend) — the profitable side in a bull.
   # Validated to lift bull-market long returns ~20% (86% of bull windows) at ~equal

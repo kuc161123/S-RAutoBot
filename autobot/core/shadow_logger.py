@@ -123,6 +123,7 @@ def walk_outcome(candles, entry, sl, tp, side, rr, horizon=200):
 class ShadowLogger:
     MIN_N = 50            # minimum sample before a combo can be called "significant"
     RESOLVE_HORIZON_H = 1  # don't try to resolve a signal until it's at least this old
+    RECHECK_COOLDOWN_H = 2  # after a "too early to grade" check, skip the signal this long
 
     def __init__(self, db_url: str | None):
         self.db_url = db_url or None
@@ -173,6 +174,11 @@ class ShadowLogger:
             cur.execute("ALTER TABLE shadow_signals ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'live';")
             cur.execute("CREATE INDEX IF NOT EXISTS ix_shadow_family_status ON shadow_signals(family, status);")
             cur.execute("CREATE INDEX IF NOT EXISTS ix_shadow_resolved_ts ON shadow_signals(resolved_ts);")
+            # Anti-starvation: when the resolver examines a pending signal that
+            # can't be graded yet (TP/SL untouched, <200 candles), it stamps
+            # checked_ts and the fetch skips it for RECHECK_COOLDOWN_H, so slow
+            # signals can't permanently occupy the oldest-first LIMIT window.
+            cur.execute("ALTER TABLE shadow_signals ADD COLUMN IF NOT EXISTS checked_ts TIMESTAMPTZ;")
             # Phase 1b-3: out-of-universe candidate watchlist
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS shadow_candidates (
@@ -319,8 +325,10 @@ class ShadowLogger:
                     FROM shadow_signals
                     WHERE status='pending'
                       AND ts < now() - interval '%s hours'
+                      AND (checked_ts IS NULL
+                           OR checked_ts < now() - interval '%s hours')
                     ORDER BY ts ASC LIMIT %s;
-                """ % (self.RESOLVE_HORIZON_H, int(limit_rows)))
+                """ % (self.RESOLVE_HORIZON_H, self.RECHECK_COOLDOWN_H, int(limit_rows)))
                 rows = cur.fetchall()
         except Exception as e:
             logger.debug(f"[SHADOW] resolve fetch failed: {e}")
@@ -337,14 +345,21 @@ class ShadowLogger:
         # keep only candles at/after the signal candle
         candles = [c for c in candles if c[0] >= r['sig_time_ms']]
         if len(candles) < 2:
+            self._safe(self._touch_checked, r['id'])
             return  # too early — leave pending
         status, r_result, mfe, mae, mfe_to_sl, bars = walk_outcome(
             candles[1:],  # start on the candle after the signal candle
             r['entry'], r['sl'], r['tp'], r['side'], r['rr'])
         # if still pending status and the window is exhausted (200 candles), mark expired
         if status == 'expired' and len(candles) < 200:
+            self._safe(self._touch_checked, r['id'])
             return  # not enough data yet, keep pending
         self._safe(self._write_resolution, r['id'], status, r_result, mfe, mae, mfe_to_sl, bars)
+
+    def _touch_checked(self, sid):
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute("UPDATE shadow_signals SET checked_ts=now() WHERE id=%s;", (sid,))
+            conn.commit()
 
     def _write_resolution(self, sid, status, r_result, mfe, mae, mfe_to_sl=None, bars_to_outcome=None):
         with self._conn() as conn, conn.cursor() as cur:

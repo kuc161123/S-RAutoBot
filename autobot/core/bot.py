@@ -112,7 +112,7 @@ class Bot4H:
         # Trading state
         self.pending_signals: Dict[str, List[PendingSignal]] = {}  # {symbol: [signals]}
         self.active_trades: Dict[str, ActiveTrade] = {}  # {symbol_side: trade} e.g. "BTCUSDT_long"
-        self.confirmed_entries: Dict[str, DivergenceSignal] = {}  # {symbol_side: signal} - BOS confirmed, enter on NEXT candle
+        self.confirmed_entries: Dict[str, DivergenceSignal] = {}  # {symbol_side: signal} - BOS confirmed, drained same cycle by _drain_confirmed_entries
         self._btc_trend_cache = {'bullish': None, 'ts': 0.0}  # BTC short-gate: cached BTC>200EMA state (~15min TTL)
         
         # [STARTUP PROTECTION] Track which symbols have been seen since startup
@@ -741,6 +741,117 @@ class Bot4H:
             logger.warning(f"[BTC-GATE] Failed to fetch BTC 30d return, not blocking: {e}")
             return cache.get('impulse')
 
+    def _shadow_gate_allows_entry(self):
+        """SHADOW GATE — advise (or, in auto mode, enforce) halting on trailing shadow R.
+
+        DEFAULT IS ADVISORY: it evaluates the state machine, records it and alerts you to
+        run /stop or /start, but always returns True so nothing is blocked in code. Set
+        risk.shadow_gate.mode: auto to have it enforce the halt itself.
+
+        Advisory is the validated default because the signal is slow and forgiving: it
+        switches only ~once every 17-28 days, and acting late barely costs anything (OOS
+        from $1,500: instant $2,112, 24h late $2,091, 72h late $2,083, a week late $1,853,
+        versus $914 for never acting). A human in the loop captures ~99% of the benefit
+        without putting new failure modes in the trading path.
+
+        The shadow learner grades every evaluated signal (executed or blocked). When its
+        trailing R falls to risk.shadow_gate.stop_r we stop taking NEW entries; when it
+        recovers to start_r we resume. Open positions are never touched — they run to
+        their bracket SL/TP, same as /stop.
+
+        This is the ONE deliberate exception to the shadow layer's observe-only contract.
+        It is safe to make it here because log_signal() runs at the top of execute_trade,
+        BEFORE this gate — so the ledger keeps filling while halted and the gate can see
+        the edge return. Gating any earlier would wedge it shut permanently.
+
+        Validated OOS 2026-05-25..07-25 from $1,500: ungated $914 (-39%, 55.5% DD) vs
+        gated $2,112 (+41%, 15.3% DD); 60/60 threshold combos beat ungated.
+
+        Failure behaviour is deliberately STICKY, not fail-open: on a DB error or thin
+        data we hold the last known state (persisted across restarts) rather than
+        flapping. Default before any evaluation is OPEN, so a bot with no shadow history
+        behaves exactly as it did before this feature.
+        """
+        cfg = (self.risk_config.get('shadow_gate') or {})
+        if not cfg.get('enabled', False):
+            return True
+
+        state = self.lifetime_stats.get('shadow_gate_open')
+        if state is None:
+            state = True
+
+        # Every return path below must go through this, or advisory mode would silently
+        # block trades on the throttle / thin-data / DB-error branches.
+        auto = str(cfg.get('mode', 'advisory')).lower() == 'auto'
+
+        def _verdict(open_state):
+            return bool(open_state) if auto else True
+
+        import time as _t
+        now = _t.time()
+        last = getattr(self, '_shadow_gate_checked_at', 0.0)
+        if now - last < float(cfg.get('recheck_minutes', 20) or 20) * 60:
+            return _verdict(state)
+
+        try:
+            if not (self.shadow_analyst and getattr(self.shadow_analyst, 'enabled', False)):
+                return _verdict(state)
+            wk = self.shadow_analyst.weekly_r()
+            self._shadow_gate_checked_at = now
+            window = int(cfg.get('window_days', 7) or 7)
+            key = 'trailing_21d_r' if window >= 21 else 'trailing_7d_r'
+            n_key = 'n_resolved_21d' if window >= 21 else 'n_resolved_7d'
+            trail = wk.get(key)
+            n_sig = wk.get(n_key, 0) or 0
+            if trail is None:
+                return _verdict(state)
+
+            if n_sig < int(cfg.get('min_signals', 150) or 0):
+                logger.info(f"[SHADOW-GATE] holding state={state} — only {n_sig} resolved "
+                            f"signals in {window}d (need {cfg.get('min_signals')})")
+                return _verdict(state)
+
+            stop_r = float(cfg.get('stop_r', -300))
+            start_r = float(cfg.get('start_r', 400))
+            new_state = state
+            if state and trail <= stop_r:
+                new_state = False
+            elif (not state) and trail >= start_r:
+                new_state = True
+
+            if new_state != state:
+                self.lifetime_stats['shadow_gate_open'] = new_state
+                self.lifetime_stats['shadow_gate_changed_at'] = datetime.now().isoformat()
+                self.save_lifetime_stats()
+                logger.warning(f"[SHADOW-GATE] {'RESUME' if new_state else 'HALT'} signal — "
+                               f"{window}d shadow R {trail:+.1f}R "
+                               f"(stop {stop_r:+.0f} / start {start_r:+.0f}, n={n_sig}, "
+                               f"mode={'auto' if auto else 'advisory'})")
+                if self.telegram:
+                    icon = "🟢" if new_state else "🛑"
+                    why = (f"recovered to {trail:+.1f}R (≥ {start_r:+.0f})" if new_state
+                           else f"fell to {trail:+.1f}R (≤ {stop_r:+.0f})")
+                    if auto:
+                        head = f"{icon} **SHADOW GATE — TRADING {'RESUMED' if new_state else 'HALTED'}**"
+                        tail = ("New entries allowed again." if new_state
+                                else "New entries blocked; open positions run to SL/TP.")
+                    else:
+                        head = (f"{icon} **SHADOW GATE — ACTION SUGGESTED**\n"
+                                f"└ Run **{'/start' if new_state else '/stop'}**")
+                        tail = ("Edge looks alive again — consider resuming."
+                                if new_state else
+                                "Edge is cold — consider halting. Open positions are unaffected.\n"
+                                "No rush: reacting within a few days costs ~1-2% historically.")
+                    asyncio.create_task(self.telegram.send_message(
+                        f"{head}\n├ {window}d shadow R {why}\n"
+                        f"├ resolved signals: {n_sig}\n└ {tail}"))
+            self.lifetime_stats['shadow_gate_open'] = new_state
+            # Advisory mode measures and tells you; it never blocks a trade itself.
+            return _verdict(new_state)
+        except Exception as e:
+            logger.warning(f"[SHADOW-GATE] check failed, holding state={state}: {e}")
+            return _verdict(state)
+
     def _overlays_ramped_on(self, balance):
         """Unified AUTO-RAMP gate for ALL risk overlays (net-dir cap, BTC short-gate,
         bull long-boost). Below risk.overlay_ramp_min_balance the account runs in pure
@@ -818,27 +929,29 @@ class Bot4H:
         limit = cap * equity
         return (gross <= limit), gross, limit
 
+    def roll_daily_counters(self):
+        """Zero the per-day divergence/BOS counters when the date has changed.
+
+        Must be called by every READER as well as every writer. Previously the reset
+        only ran inside the two _track_* writers, so after local midnight the dashboard
+        kept rendering the PREVIOUS day's totals until the first new signal happened to
+        fire — which on a quiet night is hours.
+        """
+        today = datetime.now().date()
+        if self.bos_tracking['last_reset'] != today:
+            self.bos_tracking['divergences_detected_today'] = 0
+            self.bos_tracking['bos_confirmed_today'] = 0
+            self.bos_tracking['last_reset'] = today
+
     def _track_divergence_detected(self):
         """Track a divergence detection"""
-        # Reset daily counters if new day
-        today = datetime.now().date()
-        if self.bos_tracking['last_reset'] != today:
-            self.bos_tracking['divergences_detected_today'] = 0
-            self.bos_tracking['bos_confirmed_today'] = 0
-            self.bos_tracking['last_reset'] = today
-        
+        self.roll_daily_counters()
         self.bos_tracking['divergences_detected_today'] += 1
         self.bos_tracking['divergences_detected_total'] += 1
-    
+
     def _track_bos_confirmed(self):
         """Track a BOS confirmation"""
-        # Reset daily counters if new day
-        today = datetime.now().date()
-        if self.bos_tracking['last_reset'] != today:
-            self.bos_tracking['divergences_detected_today'] = 0
-            self.bos_tracking['bos_confirmed_today'] = 0
-            self.bos_tracking['last_reset'] = today
-        
+        self.roll_daily_counters()
         self.bos_tracking['bos_confirmed_today'] += 1
         self.bos_tracking['bos_confirmed_total'] += 1
     
@@ -1179,19 +1292,12 @@ class Bot4H:
         except Exception:
             pass
 
-        # [BACKTEST ALIGNMENT] Execute any queued entries from previous candle's BOS confirmation.
-        # Entry uses the OPEN of the current (new) candle, matching the backtest exactly.
-        # Check both long and short queues for this symbol
-        for side in ['long', 'short']:
-            trade_key = f"{symbol}_{side}"
-            if trade_key in self.confirmed_entries:
-                queued_signal = self.confirmed_entries.pop(trade_key)
-                if trade_key not in self.active_trades:
-                    logger.info(f"[{symbol}] Executing queued {side} entry at candle open (backtest-aligned)...")
-                    await self.execute_trade(symbol, queued_signal, df, use_candle_open=True)
-                else:
-                    logger.info(f"[{symbol}] Queued {side} entry cancelled - already in {side} trade")
-        
+        # [BOS TIMING FIX 2026-07-25] Draining confirmed_entries moved from HERE to after
+        # check_pending_bos (see the "_drain_confirmed_entries" call below). BOS is now
+        # judged on the last CLOSED candle, so the correct entry candle is the CURRENT
+        # forming one — which means the entry belongs in the SAME cycle, not the next.
+        # Draining here would have re-introduced the one-candle delay the fix removes.
+
         # Cache latest RSI
         if 'rsi' in df.columns and len(df) > 0:
             last_rsi = df['rsi'].iloc[-1]
@@ -1417,14 +1523,41 @@ class Bot4H:
         if valid_signals_count == 0:
             logger.info(f"[{symbol}] Scan complete - No new divergences (skipped {duplicate_count} duplicates)")
             
-        # 2. Check pending signals for BOS
+        # 2. Check pending signals for BOS (judged on the last CLOSED candle, df[-2])
         await self.check_pending_bos(symbol, df)
-        
-        # 3. Update active trades
+
+        # 3. Execute anything that just confirmed, IN THIS SAME CYCLE, at the open of the
+        #    current forming candle (df[-1]) — i.e. the candle immediately after the BOS
+        #    candle. This is what the backtest models as "enter at next candle open".
+        await self._drain_confirmed_entries(symbol, df)
+
+        # 4. Update active trades
         await self.monitor_active_trades(symbol)
-        
+
         return valid_signals_count
-    
+
+    async def _drain_confirmed_entries(self, symbol: str, df: pd.DataFrame):
+        """Execute BOS-confirmed entries for `symbol` at the current candle's open.
+
+        Called once per symbol per cycle, immediately after check_pending_bos, so a
+        confirmation and its entry happen in the same pass. execute_trade(use_candle_open=
+        True) then reads entry=df.iloc[-1]['open'] and ATR=df.iloc[-2] (the BOS candle),
+        both of which are already correct for this ordering — no change needed there.
+
+        Any stragglers left over from an earlier cycle (e.g. a cycle that raised before
+        draining) are picked up here and entered at the current open rather than lost.
+        """
+        for side in ['long', 'short']:
+            trade_key = f"{symbol}_{side}"
+            if trade_key not in self.confirmed_entries:
+                continue
+            queued_signal = self.confirmed_entries.pop(trade_key)
+            if trade_key in self.active_trades:
+                logger.info(f"[{symbol}] Confirmed {side} entry cancelled - already in {side} trade")
+                continue
+            logger.info(f"[{symbol}] Executing confirmed {side} entry at candle open (backtest-aligned)...")
+            await self.execute_trade(symbol, queued_signal, df, use_candle_open=True)
+
     async def check_pending_bos(self, symbol: str, df: pd.DataFrame):
         """
         Check if any pending signals have BOS confirmation
@@ -1436,7 +1569,21 @@ class Bot4H:
         if symbol not in self.pending_signals:
             return
         
-        current_idx = len(df) - 1
+        # [BOS TIMING FIX 2026-07-25] Judge BOS on the LAST CLOSED candle (-2), not the
+        # forming one (-1). Bybit's kline endpoint returns the still-forming candle as the
+        # newest row, so the old `len(df) - 1` tested a provisional close that was still
+        # moving — and, because the confirmed entry was then queued for the following
+        # hourly cycle, entries landed a full candle later than the backtest models.
+        # The rest of this file already knew: execute_trade's comment calls df.iloc[-2]
+        # "the BOS candle", and _is_btc_impulse_bull skips row 0 for the same reason.
+        # Validated over 3yr / 277 symbols / 728 configs (backtest_bos_timing_ab.py):
+        # avg R +0.2645 -> +0.4720, PF 1.297 -> 1.548, better in 13/14 quarters and 69%
+        # of configs (sign test p=5.8e-25); the entry delay accounted for ~all of it.
+        # MUST be paired with same-cycle execution of confirmed_entries in process_symbol
+        # — shifting this index alone would enter two candles after the break.
+        if len(df) < 2:
+            return
+        current_idx = len(df) - 2
         signals_to_remove = []
         
         for pending in self.pending_signals[symbol]:
@@ -1463,9 +1610,10 @@ class Bot4H:
                     signals_to_remove.append(pending)
                     continue
 
-                # [BACKTEST ALIGNMENT] Queue entry for NEXT candle open instead of executing now.
-                # This matches the backtest which enters at next candle open after BOS.
-                logger.info(f"[{symbol}] ✅ BOS CONFIRMED! Queuing entry for next candle open...")
+                # [BACKTEST ALIGNMENT] Hand off to _drain_confirmed_entries, which runs
+                # later in THIS same cycle and enters at the open of the current forming
+                # candle — the candle immediately after this (closed) BOS candle.
+                logger.info(f"[{symbol}] ✅ BOS CONFIRMED! Entering at current candle open...")
 
                 # Send BOS confirmed notification
                 if self.telegram:
@@ -1481,7 +1629,7 @@ class Bot4H:
 🔓 Break of Structure confirmed after {pending.candles_waited} candles
 ├ Type: `{pending.signal.divergence_code}`
 ├ Side: {side_text}
-⏳ Entry queued for next candle open...
+⏳ Entering at current candle open...
 
 ━━━━━━━━━━━━━━━━━━━━
 """
@@ -1529,6 +1677,13 @@ class Bot4H:
         # trading_enabled flag was set by /stop but never checked anywhere.
         if not self.trading_enabled:
             logger.warning(f"[{symbol}] TRADE BLOCKED — trading disabled via /stop ({signal.side})")
+            return
+
+        # [SHADOW GATE] Halt new entries while the shadow learner's trailing R is in the
+        # red. Sits after shadow logging (above) so observation continues and the gate can
+        # reopen. Open positions are untouched. See _shadow_gate_allows_entry.
+        if not self._shadow_gate_allows_entry():
+            logger.info(f"[{symbol}] TRADE BLOCKED — shadow gate halted ({signal.side})")
             return
 
         # [REGIME V2] Halt check — block trade if multiplier is 0

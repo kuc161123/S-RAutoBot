@@ -324,8 +324,20 @@ class TelegramHandler:
         except Exception as e:
             logger.error(f"Error getting realized P&L: {e}")
 
-        realized_r = realized_pnl / base_risk_amount if base_risk_amount > 0 else 0
-        weekly_r = weekly_pnl / base_risk_amount if base_risk_amount > 0 else 0
+        # === REALIZED R — from per-trade records, NOT dollars/scalar ===
+        # Each closed trade contributes pnl_usd / risk_usd_at_entry (bot.py handle_trade_exit),
+        # accumulated into lifetime_stats['daily_r'][date]. Dividing an AGGREGATE dollar figure
+        # by any single risk scalar is wrong: the trades in that sum were opened at different
+        # risk levels (taper rung x regime multiplier, and base risk itself moved 1.2% -> 0.3%
+        # on 2026-07-21). Sum the per-trade R instead.
+        _daily_r_map = self.bot.lifetime_stats.get('daily_r', {}) or {}
+        _today_key = datetime.now().strftime('%Y-%m-%d')
+        realized_r = float(_daily_r_map.get(_today_key, 0.0) or 0.0)
+        weekly_r = 0.0
+        for _i in range(7):
+            _k = (datetime.now() - timedelta(days=_i)).strftime('%Y-%m-%d')
+            weekly_r += float(_daily_r_map.get(_k, 0.0) or 0.0)
+
         today_losses = today_trades - today_wins
         weekly_losses = weekly_trades - weekly_wins
 
@@ -335,6 +347,19 @@ class TelegramHandler:
         positions_down = 0
         long_count = 0
         short_count = 0
+
+        # Per-position R uses that position's OWN risk-at-entry when the internal tracker
+        # knows it. Restart-adopted positions have no recorded entry risk — those fall back
+        # to the current base risk and are counted in _r_unknown so the total can be marked
+        # partial rather than silently wrong.
+        _entry_risk = {}
+        for _tk, _tr in self.bot.active_trades.items():
+            if _tr is None:
+                continue
+            _r_at_entry = getattr(_tr, 'risk_usd_at_entry', 0.0) or 0.0
+            if _r_at_entry > 0:
+                _entry_risk[_tk] = _r_at_entry
+        _r_unknown = 0
 
         # Decorate positions for sorting
         decorated_positions = []
@@ -354,7 +379,11 @@ class TelegramHandler:
             else:
                 positions_down += 1
 
-            pos_r = unrealized / base_risk_amount if base_risk_amount > 0 else 0
+            _denom = _entry_risk.get(f"{symbol}_{'long' if side == 'Buy' else 'short'}")
+            if _denom is None:
+                _denom = base_risk_amount
+                _r_unknown += 1
+            pos_r = unrealized / _denom if _denom > 0 else 0
             decorated_positions.append({
                 'symbol': symbol,
                 'side': side,
@@ -365,11 +394,15 @@ class TelegramHandler:
         # Sort positions by PnL descending
         decorated_positions.sort(reverse=True, key=lambda x: x['pnl'])
 
-        unrealized_r = unrealized_pnl / base_risk_amount if base_risk_amount > 0 else 0
+        # Sum the per-position R computed above (each on its own entry risk) rather than
+        # dividing the aggregate dollar figure by one scalar.
+        unrealized_r = sum(d['r_value'] for d in decorated_positions)
+        # '~' marks a total that includes positions whose entry risk is unknown.
+        open_r_mark = "~" if _r_unknown else ""
 
-        # Net P&L
+        # Net P&L. R is realized-R + open-R, both already on a per-trade basis.
         net_pnl = realized_pnl + unrealized_pnl
-        net_r = net_pnl / base_risk_amount if base_risk_amount > 0 else 0
+        net_r = realized_r + unrealized_r
         net_emoji = "🟢" if net_pnl >= 0 else "🔴"
 
         # === ALL-TIME PERFORMANCE FROM LOCAL LIFETIME_STATS ===
@@ -485,7 +518,12 @@ class TelegramHandler:
 
         next_scan_mins = max(0, 60 - mins_ago)
 
-        # Get today's signal counts
+        # Get today's signal counts. Roll first — the counters otherwise carry
+        # yesterday's totals until the next signal fires (see bot.roll_daily_counters).
+        try:
+            self.bot.roll_daily_counters()
+        except Exception:
+            pass
         divs_today = self.bot.bos_tracking.get('divergences_detected_today', 0)
         bos_today = self.bot.bos_tracking.get('bos_confirmed_today', 0)
 
@@ -563,7 +601,11 @@ class TelegramHandler:
                 details.append(f"├ 20t: {q['wr']:.0%} WR, {q['avg_r']:+.2f}R → {q['mult']:.2f}x")
                 dd = regime_diag['drawdown']['dd_from_peak']
                 if dd > 0:
-                    details.append(f"├ DD from peak: {dd:.1f}R")
+                    # Cumulative-R across the account's whole life. Each trade's R is
+                    # normalised by ITS OWN risk-at-entry, and base risk moved
+                    # 1.2% -> 0.3% on 2026-07-21, so this sums mixed dollar units.
+                    # The dollar drawdown in the ACCOUNT block is the honest one.
+                    details.append(f"├ DD from peak: {dd:.1f}R (cum-R, mixed basis)")
                 dr = regime_diag['daily']['daily_r']
                 if dr != 0:
                     details.append(f"├ Daily R: {dr:+.1f}R")
@@ -760,13 +802,46 @@ class TelegramHandler:
             cap_line = (f"\n├ Protection: 🟢 ON (cap {cap*100:.0f}%, "
                         f"short-gate, long-boost)")
 
+        # Shadow gate — in advisory mode this is the line that tells the user to act, so
+        # it must always render, and must flag when the advice and reality disagree.
+        sg = rcfg.get('shadow_gate') or {}
+        if sg.get('enabled'):
+            advise_on = self.bot.lifetime_stats.get('shadow_gate_open')
+            advise_on = True if advise_on is None else bool(advise_on)
+            auto = str(sg.get('mode', 'advisory')).lower() == 'auto'
+            win_d = int(sg.get('window_days', 7) or 7)
+            trail = None
+            try:
+                if self.bot.shadow_analyst and self.bot.shadow_analyst.enabled:
+                    _wk = self.bot.shadow_analyst.weekly_r()
+                    trail = _wk.get('trailing_21d_r' if win_d >= 21 else 'trailing_7d_r')
+            except Exception:
+                pass
+            r_txt = f"{trail:+.0f}R" if trail is not None else "?"
+            thr = (f"halts ≤{sg.get('stop_r', -300):+.0f}R" if advise_on
+                   else f"resumes ≥{sg.get('start_r', 400):+.0f}R")
+            if auto:
+                icon = "🟢 OPEN" if advise_on else "🛑 HALTED"
+                cap_line += f"\n├ Shadow gate: {icon} ({win_d}d {r_txt} · {thr})"
+            else:
+                icon = "🟢 TRADE" if advise_on else "🛑 HALT"
+                cap_line += f"\n├ Shadow says: {icon} ({win_d}d {r_txt} · {thr})"
+                # advice vs what the bot is actually doing
+                if advise_on and not self.bot.trading_enabled:
+                    cap_line += "\n│ ⚠️ bot is STOPPED but shadow says trade → /start"
+                elif (not advise_on) and self.bot.trading_enabled:
+                    cap_line += "\n│ ⚠️ bot is RUNNING but shadow says halt → /stop"
+
         # === REDESIGN DERIVED DISPLAY (presentation only, existing data) ===
         trading_pnl = lifetime_pnl                       # trading-only realized P&L
         trading_roi = (trading_pnl / starting_balance * 100) if starting_balance > 0 else 0.0
         troi_emoji = "🟢" if trading_roi >= 0 else "🔴"
         size_bar = self._bar(regime_mult)
+        # Badge names must not collide with regime tier names. 'adverse' previously
+        # rendered as "CAUTIOUS", which reads as the tier ABOVE it (cautious = 0.5x)
+        # when the bot is actually at 0.25x.
         badge = {'favorable': '🟢 HUNTING', 'cautious': '🟡 SELECTIVE',
-                 'adverse': '🟠 CAUTIOUS', 'critical': '🔴 DEFENSIVE',
+                 'adverse': '🟠 ADVERSE', 'critical': '🔴 DEFENSIVE',
                  'halted': '🛑 HALTED', 'unknown': '⏳ WARMING UP'}.get(regime_label, '⚪ ACTIVE')
         r_icon = regime_icons.get(regime_label, '')
 
@@ -792,9 +867,9 @@ class TelegramHandler:
 │ (deposits are NOT profit)
 └ {troi_emoji} Trading ROI: {trading_roi:+.1f}%
 
-📈 **TODAY** {net_emoji} ${net_pnl:+,.2f} ({net_r:+.1f}R)
-├ Realized ${realized_pnl:+,.2f} · {today_wins}W/{today_losses}L
-└ Open ${unrealized_pnl:+,.2f} · {active} pos
+📈 **TODAY** {net_emoji} ${net_pnl:+,.2f} ({net_r:+.1f}R{open_r_mark})
+├ Realized ${realized_pnl:+,.2f} ({realized_r:+.1f}R) · {today_wins}W/{today_losses}L
+└ Open ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R{open_r_mark}) · {active} pos
 
 📅 **7-DAY** ${weekly_pnl:+,.2f} · {weekly_wins}W/{weekly_losses}L
 └ {weekly_trades} trades ({weekly_r:+.1f}R)

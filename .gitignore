@@ -25,3 +25,18 @@ selection_report.csv
 
 # Backup configs are kept locally only
 config.yaml.backup_*
+
+# Kline caches and generated study artifacts (regenerable; multi-GB)
+cache_ext/
+cache_3yr_1h/
+cache_data/
+cache_april_test/
+universe_*.csv
+selection_value_grid.csv
+bos_timing_ab_trades.csv
+chop_hypothesis_annotated.csv
+bos_ab_*.log
+matrix_*.log
+shadow_gate_*.log
+univ_*.log
+cache_ext.log

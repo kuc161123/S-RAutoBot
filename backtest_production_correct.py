@@ -117,13 +117,35 @@ def get_regime(recent_trades):
 # TAPER (bot.py:621-642)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_tapered_risk(wallet_balance):
-    """Balance-based taper schedule."""
-    base = BASE_RISK
-    for threshold, risk in TAPER_SCHEDULE:
+def get_tapered_risk(wallet_balance, base_risk=None, schedule=None):
+    """Balance-based taper schedule.
+
+    Optional overrides allow risk experiments without mutating module-level
+    constants. Defaults preserve original behaviour.
+    """
+    base = BASE_RISK if base_risk is None else base_risk
+    sched = TAPER_SCHEDULE if schedule is None else schedule
+    for threshold, risk in sched:
         if wallet_balance >= threshold:
             base = risk
     return base
+
+
+def apply_dd_taper(risk_pct, current_dd_pct, dd_taper):
+    """Apply optional drawdown-based taper that shrinks risk in deep DD.
+
+    dd_taper: None or list of (dd_threshold_pct, multiplier) tuples, in
+    increasing dd order. Multipliers compound through thresholds crossed —
+    so [(30, 0.5), (50, 0.5)] means risk *= 0.5 once DD>=30%, and *0.25 once
+    DD>=50%.
+    """
+    if not dd_taper:
+        return risk_pct
+    out = risk_pct
+    for thresh, mult in dd_taper:
+        if current_dd_pct >= thresh:
+            out *= mult
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -186,20 +208,114 @@ def lookup_chop(chop_map, symbol, entry_time):
     return None
 
 
+def load_btc_trend():
+    """Build an hourly BTC market-state frame for the portfolio risk-off filter.
+
+    Returns a DataFrame indexed by hour with columns:
+      'slope'   — 7-day slope of the daily SMA50 close (fractional), forward-
+                  filled to every hour. <0 means BTC downtrend.
+      'atr_pct' — 1H ATR(14) as a fraction of close (volatility), per hour.
+    Mirrors the BTC-regime approach in verify_overfit.py:668-687.
+    """
+    fpath = CACHE_DIR / 'BTCUSDT.parquet'
+    if not fpath.exists():
+        return None
+    btc = pd.read_parquet(fpath).copy()
+    btc['start'] = pd.to_datetime(btc['start'])
+    btc = btc.set_index('start').sort_index()
+
+    # 1H ATR% (volatility)
+    hl = btc['high'] - btc['low']
+    hc = (btc['high'] - btc['close'].shift()).abs()
+    lc = (btc['low'] - btc['close'].shift()).abs()
+    tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
+    atr = tr.rolling(14).mean()
+    atr_pct = atr / btc['close']
+
+    # Daily SMA50 trend slope (7-day), forward-filled to hourly
+    daily = btc['close'].resample('1D').last().to_frame('close')
+    daily['sma50'] = daily['close'].rolling(50).mean()
+    daily['slope'] = daily['sma50'].diff(7) / daily['sma50']
+    slope_hourly = daily['slope'].reindex(btc.index, method='ffill')
+
+    out = pd.DataFrame({'slope': slope_hourly, 'atr_pct': atr_pct}, index=btc.index)
+    return out
+
+
+def lookup_btc(btc_map, entry_time):
+    """Return (slope, atr_pct) for BTC at entry_time (nearest 1H candle <= time)."""
+    if btc_map is None or len(btc_map) == 0:
+        return None, None
+    ts = pd.Timestamp(entry_time).floor('h')
+    if ts in btc_map.index:
+        row = btc_map.loc[ts]
+    else:
+        mask = btc_map.index <= ts
+        if not mask.any():
+            return None, None
+        row = btc_map.loc[mask].iloc[-1]
+    slope = row['slope'] if pd.notna(row['slope']) else None
+    atr_pct = row['atr_pct'] if pd.notna(row['atr_pct']) else None
+    return slope, atr_pct
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # EVENT-DRIVEN SIMULATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def run_simulation(trades_df, chop_map, scenario='production'):
+def run_simulation(trades_df, chop_map, scenario='production',
+                  base_risk=None, dd_taper=None, starting_balance=None,
+                  max_concurrent=None,
+                  custom_taper=None, smooth_taper=None, concurrent_taper=None,
+                  taper_basis='wallet', size_basis='wallet',
+                  open_risk_cap=None, open_risk_mode='block',
+                  daily_halt_r=None, net_dir_cap=None, net_dir_cap_min_balance=0.0,
+                  btc_risk_off=None, btc_map=None, trade_risk_mult_col=None,
+                  btc_bull_col=None, btc_short_col=None, overlay_min_balance=0.0,
+                  short_gate=False, long_boost=1.0,
+                  liq_turnover_col=None, liq_impact_k=0.0, liq_impact_cap=0.01,
+                  liq_skip_frac=0.0, stop_gap_pct=0.0):
     """
     Run event-driven backtest simulation.
+
+    base_risk: optional override for BASE_RISK (e.g. 0.008 for 0.8%/trade).
+    dd_taper:  optional list of (dd_threshold_pct, multiplier) tuples; applied
+               after the balance-based taper to shrink risk on drawdown.
+    starting_balance: optional override for STARTING_BALANCE.
+
+    taper_basis: which balance selects the taper rung — 'wallet' (closed-only,
+                 the live + historical default) or 'equity' (closed + unrealized
+                 PnL of open positions). Equity is mark-to-market-approximated
+                 by linear time-interpolation of each open position's final PnL
+                 (no tick data in the trade CSV — assumes ~linear PnL accrual).
+    size_basis:  which balance the per-trade dollar risk is multiplied against —
+                 'wallet' or 'equity' (same proxy). The live bot today is the
+                 mismatched pair taper_basis='wallet', size_basis='equity'.
+                 Defaults ('wallet','wallet') reproduce the original engine
+                 exactly so existing callers are unaffected.
+
+    DRAWDOWN-REDUCTION OVERLAYS (all default None -> no behaviour change):
+    open_risk_cap: cap aggregate simultaneous open risk. A new entry is blocked
+                 (open_risk_mode='block') or shrunk to fit ('scale') when
+                 Sum(open risk_usd) + new_risk_usd > open_risk_cap * equity_now.
+                 Directly bounds "if every open SL hits at once, max loss".
+    daily_halt_r: halt NEW entries for the rest of a calendar day once realized
+                 PnL that day <= daily_halt_r (in R, e.g. -5.0).
+    net_dir_cap: cap |long open risk - short open risk| <= net_dir_cap*equity_now
+                 (limits net directional/market-beta exposure; hedged books OK).
+    btc_risk_off: dict gating new entries on BTC trend/vol. Keys:
+                 'slope_block' (skip if BTC SMA50 7d slope <= this, e.g. -0.01),
+                 'vol_block'   (skip if BTC ATR%% >= this), 'mult' (if set, scale
+                 risk by mult instead of skipping). Requires btc_map.
+    btc_map: output of load_btc_trend(); DataFrame indexed by hour with columns
+                 'slope' and 'atr_pct'. Aligned to entry_time (floor-to-hour).
 
     scenario:
       'production' — regime + CHOP + taper + anti-pyramid + correct margin
       'no_regime'  — flat 1.2% risk, CHOP + anti-pyramid + correct margin
       'no_filters' — flat 1.2% risk, no CHOP, anti-pyramid + correct margin only
     """
-    wallet_balance = STARTING_BALANCE
+    wallet_balance = STARTING_BALANCE if starting_balance is None else starting_balance
     total_withdrawn = 0.0
     margin_used = 0.0
     open_positions = {}  # key: "SYMBOL_side" -> position dict
@@ -207,15 +323,34 @@ def run_simulation(trades_df, chop_map, scenario='production'):
     entered_trades = []
     regime_transitions = []
 
+    # Aggregate open-risk tracking (for open_risk_cap / net_dir_cap overlays)
+    open_risk_sum = 0.0      # sum of risk_usd across currently-open positions
+    open_long_risk = 0.0     # sum of risk_usd for open longs
+    open_short_risk = 0.0    # sum of risk_usd for open shorts
+
+    # Daily realized PnL (for daily_halt_r circuit breaker), keyed by calendar day
+    daily_pnl = defaultdict(float)
+
     # Blocking counters
     pyramid_blocked = 0
     chop_blocked_list = []  # shadow-track outcomes
     margin_blocked = 0
+    liquidity_skipped = 0
+    risk_capped = 0          # blocked by open_risk_cap / net_dir_cap
+    daily_halted = 0         # blocked by daily_halt_r
+    btc_blocked = 0          # blocked/scaled by btc_risk_off
     regime_info_log = []
 
-    # Track peak for drawdown
-    peak_balance = STARTING_BALANCE
+    # Track peak for drawdown. Seed from the RESOLVED starting balance, not the module
+    # constant — a caller passing starting_balance= without also mutating the global
+    # would otherwise get a wrong max_dd_pct.
+    peak_balance = wallet_balance
     max_dd_pct = 0.0
+
+    # Mark-to-market drawdown (on equity incl. unrealized) — the lived DD these
+    # overlays actually target. Sampled at every event.
+    peak_equity_mtm = wallet_balance
+    max_dd_mtm_pct = 0.0
 
     # Monthly tracking
     monthly_pnl = defaultdict(float)
@@ -239,6 +374,12 @@ def run_simulation(trades_df, chop_map, scenario='production'):
         for pk in closed_keys:
             pos = open_positions.pop(pk)
             margin_used -= pos['margin']
+            # Release aggregate open-risk
+            open_risk_sum -= pos['risk_usd']
+            if pos['side'] == 'long':
+                open_long_risk -= pos['risk_usd']
+            else:
+                open_short_risk -= pos['risk_usd']
 
             # Funding fees
             hold_hours = (pos['exit_time'] - pos['entry_time']).total_seconds() / 3600
@@ -260,6 +401,9 @@ def run_simulation(trades_df, chop_map, scenario='production'):
             # Track monthly P&L by exit month
             exit_month = pos['exit_time'].strftime('%Y-%m')
             monthly_pnl[exit_month] += pnl
+
+            # Track daily realized PnL (for daily_halt_r), keyed by exit calendar day
+            daily_pnl[pos['exit_time'].strftime('%Y-%m-%d')] += pnl
 
             # Update regime window (closed trades only)
             recent_closed.append({'r': pos['r_result']})
@@ -292,11 +436,24 @@ def run_simulation(trades_df, chop_map, scenario='production'):
             pyramid_blocked += 1
             continue
 
+        # ─── STEP B2: Concurrent-position cap (optional, anti-DD lever) ───
+        if max_concurrent is not None and len(open_positions) >= max_concurrent:
+            margin_blocked += 1  # reuse counter so head-to-head shows in same column
+            continue
+
         # ─── STEP C: Regime ───
-        if scenario == 'production':
-            regime_label, regime_mult = get_regime(recent_closed)
-        else:
-            regime_label, regime_mult = 'favorable', 1.0  # flat risk for no_regime and no_filters
+        # regime_label is ALWAYS computed (the CHOP gate is regime-aware); only whether
+        # it scales position size depends on the scenario. This lets CHOP and regime
+        # sizing be ablated independently:
+        #   production        regime sizing + regime-aware CHOP   (live bot)
+        #   production_nochop regime sizing, no CHOP
+        #   chop_only         flat risk,     regime-aware CHOP
+        #   no_regime         flat risk,     fixed CHOP 55
+        #   no_filters        flat risk,     no CHOP
+        _regime_sizes = scenario in ('production', 'production_nochop')
+        regime_label, regime_mult = get_regime(recent_closed)
+        if not _regime_sizes:
+            regime_mult = 1.0
 
         # Track regime transitions
         if regime_label != prev_regime:
@@ -311,12 +468,12 @@ def run_simulation(trades_df, chop_map, scenario='production'):
             prev_regime = regime_label
 
         # ─── STEP D: CHOP filter ───
-        if scenario == 'production':
+        if scenario in ('production', 'chop_only'):
             chop_thresh = CHOP_THRESHOLDS.get(regime_label)  # favorable=None (never blocked)
         elif scenario == 'no_regime':
             chop_thresh = 55  # fixed cautious-level threshold regardless of regime
         else:
-            chop_thresh = None  # no_filters: no CHOP at all
+            chop_thresh = None  # no_filters / production_nochop: no CHOP at all
 
         if chop_thresh is not None:
             chop_val = lookup_chop(chop_map, symbol, entry_time)
@@ -329,16 +486,173 @@ def run_simulation(trades_df, chop_map, scenario='production'):
                 })
                 continue
 
-        # ─── STEP E: Position sizing (THE CRITICAL FIX) ───
-        if scenario == 'production':
-            base_risk = get_tapered_risk(wallet_balance)
-            risk_pct = base_risk * regime_mult
-        else:
-            risk_pct = BASE_RISK  # flat 1.2% for no_regime and no_filters
+        # ─── STEP D2: BTC portfolio risk-off filter (optional) ───
+        # Stand aside / shrink risk when the whole market (BTC) is dumping or
+        # volatility is spiking — directly targets correlated-crash drawdown.
+        btc_risk_mult = 1.0
+        if btc_risk_off and btc_map is not None:
+            slope, atr_pct = lookup_btc(btc_map, entry_time)
+            trig = False
+            if slope is not None and btc_risk_off.get('slope_block') is not None \
+                    and slope <= btc_risk_off['slope_block']:
+                trig = True
+            if atr_pct is not None and btc_risk_off.get('vol_block') is not None \
+                    and atr_pct >= btc_risk_off['vol_block']:
+                trig = True
+            if trig:
+                if btc_risk_off.get('mult') is not None:
+                    btc_risk_mult = btc_risk_off['mult']  # scale instead of skip
+                else:
+                    btc_blocked += 1
+                    continue
 
-        risk_usd = wallet_balance * risk_pct
+        # ─── STEP E0: Mark-to-market equity (proxy) for taper/size/overlays ───
+        # equity = closed wallet + unrealized PnL of currently-open positions,
+        # where each open position's unrealized PnL is linearly interpolated by
+        # time-elapsed fraction toward its final PnL (no tick data available).
+        need_equity = (taper_basis == 'equity' or size_basis == 'equity'
+                       or open_risk_cap is not None or net_dir_cap is not None)
+        if need_equity:
+            unrealized = 0.0
+            for pos in open_positions.values():
+                span = (pos['exit_time'] - pos['entry_time']).total_seconds()
+                if span <= 0:
+                    frac = 1.0
+                else:
+                    frac = (entry_time - pos['entry_time']).total_seconds() / span
+                    frac = min(1.0, max(0.0, frac))
+                unrealized += pos['pnl'] * frac
+            equity_now = wallet_balance + unrealized
+        else:
+            equity_now = wallet_balance
+
+        # Mark-to-market drawdown tracking (the lived DD the overlays target)
+        eff_equity_mtm = equity_now + total_withdrawn
+        if eff_equity_mtm > peak_equity_mtm:
+            peak_equity_mtm = eff_equity_mtm
+        if peak_equity_mtm > 0:
+            dd_mtm = (peak_equity_mtm - eff_equity_mtm) / peak_equity_mtm * 100
+            if dd_mtm > max_dd_mtm_pct:
+                max_dd_mtm_pct = dd_mtm
+
+        taper_input = equity_now if taper_basis == 'equity' else wallet_balance
+        size_input = equity_now if size_basis == 'equity' else wallet_balance
+
+        # ─── BTC SHORT-GATE (balance-conditional) ───
+        # Mirror the live bot's btc_short_gate, but only ACTIVE once equity reaches
+        # overlay_min_balance (the "ramp"). Below that, shorts are allowed even in a
+        # BTC uptrend (max-growth phase). btc_bull_col holds per-trade BTC>200EMA.
+        # Live uses DIFFERENT BTC signals for the two overlays: the short-gate is v2
+        # (trailing 30d daily return > +10%, ~1.5 flips/mo) while the long-boost kept the
+        # 1H EMA200 trigger. btc_short_col lets the sim mirror that; it falls back to
+        # btc_bull_col so existing callers are unaffected.
+        _short_col = btc_short_col if btc_short_col is not None else btc_bull_col
+        if (short_gate and _short_col is not None and side == 'short'
+                and equity_now >= overlay_min_balance and bool(trade.get(_short_col, False))):
+            chop_blocked_list.append({'symbol': symbol, 'side': side,
+                                      'entry_time': entry_time, 'r_result': r_result,
+                                      'regime': 'shortgate', 'chop_val': 0.0, 'chop_thresh': 0.0})
+            continue
+
+        # ─── STEP E: Position sizing (THE CRITICAL FIX) ───
+        # Taper and the regime MULTIPLIER are separate knobs and must be ablated
+        # separately. 'chop_only' exists to remove ONLY the regime multiplier, so it
+        # keeps the balance taper (otherwise that row silently ablates taper+regime
+        # together and is not comparable with the other one-at-a-time rows).
+        # 'no_regime'/'no_filters' keep their historical flat-risk behaviour so existing
+        # callers are bit-for-bit unaffected.
+        if _regime_sizes or scenario == 'chop_only':
+            # Determine raw (pre-regime) risk via the chosen taper form.
+            if smooth_taper:
+                base = smooth_taper.get('base', 0.012)
+                half_at = smooth_taper.get('half_at', 3000.0)
+                floor = smooth_taper.get('min', 0.0025)
+                # smooth log decay: risk approaches floor as balance grows
+                tapered = max(floor, base / (1.0 + max(0.0, taper_input) / half_at))
+            elif custom_taper:
+                base = base_risk if base_risk is not None else BASE_RISK
+                tapered = base
+                for threshold, risk in custom_taper:
+                    if taper_input >= threshold:
+                        tapered = risk
+            else:
+                tapered = get_tapered_risk(taper_input, base_risk=base_risk)
+            # regime_mult was already forced to 1.0 above for non-regime-sizing scenarios
+            risk_pct = tapered * regime_mult
+        else:
+            risk_pct = BASE_RISK if base_risk is None else base_risk
+
+        # Optional drawdown-based taper
+        if dd_taper:
+            effective_bal = wallet_balance + total_withdrawn
+            if peak_balance > 0:
+                cur_dd_pct = max(0.0, (peak_balance - effective_bal) / peak_balance * 100)
+                risk_pct = apply_dd_taper(risk_pct, cur_dd_pct, dd_taper)
+
+        # Optional concurrent-position-aware taper: shrink per-trade risk when
+        # many positions are already open. This BOTH reduces concentration risk
+        # and ensures we never margin-block (smaller risk -> smaller notional).
+        if concurrent_taper:
+            n_open = len(open_positions)
+            mult = 1.0
+            for thresh, m in concurrent_taper:
+                if n_open >= thresh:
+                    mult = m
+            risk_pct *= mult
+
+        # BTC risk-off scaling (if configured to shrink rather than skip)
+        risk_pct *= btc_risk_mult
+
+        # Optional per-trade risk multiplier from a universe column (e.g. boost long
+        # risk in confirmed BTC-bull). Backward-compatible: default None -> no change.
+        if trade_risk_mult_col is not None:
+            risk_pct *= float(trade.get(trade_risk_mult_col, 1.0) or 1.0)
+
+        # ─── BULL LONG-BOOST (balance-conditional) ───
+        # Mirror the live bot's long_bull_boost, ACTIVE only once equity reaches
+        # overlay_min_balance. Boost long risk in a BTC uptrend (the profitable side).
+        if (long_boost != 1.0 and btc_bull_col is not None and side == 'long'
+                and equity_now >= overlay_min_balance and bool(trade.get(btc_bull_col, False))):
+            risk_pct *= long_boost
+
+        risk_usd = size_input * risk_pct
         if risk_usd < 0.01:
             continue
+
+        # ─── STEP E1: Daily-loss circuit breaker (optional) ───
+        # Halt NEW entries for the rest of a calendar day once realized PnL that
+        # day <= daily_halt_r (expressed in R, using current per-trade risk_usd).
+        if daily_halt_r is not None and risk_usd > 0:
+            day_key = entry_time.strftime('%Y-%m-%d')
+            if daily_pnl[day_key] / risk_usd <= daily_halt_r:
+                daily_halted += 1
+                continue
+
+        # ─── STEP E2: Aggregate open-risk budget cap (optional, NOVEL) ───
+        # Bound simultaneous downside: if every open SL hit at once, the loss is
+        # ~Sum(open risk_usd). Cap that sum to open_risk_cap * equity.
+        if open_risk_cap is not None:
+            budget = open_risk_cap * equity_now
+            room = budget - open_risk_sum
+            if room <= 0:
+                risk_capped += 1
+                continue
+            if risk_usd > room:
+                if open_risk_mode == 'scale':
+                    risk_usd = room  # shrink to fit the remaining budget
+                else:
+                    risk_capped += 1
+                    continue
+
+        # ─── STEP E3: Net-directional exposure cap (optional) ───
+        # Limit |long open risk - short open risk| (net market beta). A balanced
+        # (hedged) book can stay large; a one-sided book is throttled.
+        if net_dir_cap is not None and equity_now >= net_dir_cap_min_balance:
+            proj_long = open_long_risk + (risk_usd if side == 'long' else 0.0)
+            proj_short = open_short_risk + (risk_usd if side == 'short' else 0.0)
+            if abs(proj_long - proj_short) > net_dir_cap * equity_now:
+                risk_capped += 1
+                continue
 
         sl_distance = abs(entry_price - sl_price)
         if sl_distance <= 0:
@@ -362,6 +676,33 @@ def run_simulation(trades_df, chop_map, scenario='production'):
         # transparent and consistent across CSVs.
         gross_pnl = r_result * risk_usd
         trade_cost = position_value * ROUND_TRIP_COST
+
+        # ─── REALISM LAYER (all default-off) ───
+        # Size/liquidity market impact via the square-root law (Almgren et al.):
+        #   impact_frac = k * sqrt(notional / daily_volume)
+        # Grows with position size relative to the symbol's *daily* turnover; applied
+        # both entry and exit. This is what makes large balances on thin alts cost
+        # more — the dominant source of optimism at size.
+        if liq_turnover_col is not None and (liq_impact_k > 0.0 or liq_skip_frac > 0.0):
+            turn_h = float(trade.get(liq_turnover_col, 0.0) or 0.0)  # hourly turnover
+            # Liquidity skip: a real fill can't take a large % of an hour's volume.
+            if liq_skip_frac > 0.0:
+                if turn_h <= 0 or position_value > liq_skip_frac * turn_h:
+                    liquidity_skipped += 1
+                    continue
+            if liq_impact_k > 0.0:
+                adv = turn_h * 24.0  # daily volume
+                if adv > 0:
+                    impact = min(liq_impact_cap, liq_impact_k * (position_value / adv) ** 0.5)
+                else:
+                    impact = liq_impact_cap
+                trade_cost += position_value * impact * 2.0  # entry + exit
+
+        # Stop gap-risk: losing trades fill WORSE than the -1R trigger in fast moves
+        # (price gaps through the stop). Add extra adverse slippage on SL exits only.
+        if stop_gap_pct > 0.0 and r_result < 0:
+            trade_cost += position_value * stop_gap_pct
+
         pnl = gross_pnl - trade_cost
 
         open_positions[trade_key] = {
@@ -378,6 +719,12 @@ def run_simulation(trades_df, chop_map, scenario='production'):
             'regime_mult': regime_mult,
         }
         margin_used += required_margin
+        # Track aggregate open-risk for the budget / net-directional caps
+        open_risk_sum += risk_usd
+        if side == 'long':
+            open_long_risk += risk_usd
+        else:
+            open_short_risk += risk_usd
 
     # ─── Close remaining open positions at end of data ───
     for pk, pos in list(open_positions.items()):
@@ -431,10 +778,15 @@ def run_simulation(trades_df, chop_map, scenario='production'):
         'total_withdrawn': total_withdrawn,
         'final_effective': wallet_balance + total_withdrawn,
         'max_dd_pct': max_dd_pct,
+        'max_dd_mtm_pct': max_dd_mtm_pct,
         'entered_trades': entered_trades,
         'pyramid_blocked': pyramid_blocked,
         'chop_blocked': chop_blocked_list,
         'margin_blocked': margin_blocked,
+        'liquidity_skipped': liquidity_skipped,
+        'risk_capped': risk_capped,
+        'daily_halted': daily_halted,
+        'btc_blocked': btc_blocked,
         'regime_transitions': regime_transitions,
         'monthly_pnl': dict(monthly_pnl),
     }

@@ -214,6 +214,7 @@ class ShadowAnalyst:
         now = datetime.now(timezone.utc)
         series = {}
         t7 = t21 = 0.0
+        n7 = n21 = 0
         for r in rows:
             ots = self._outcome_ts(r)
             if ots is None:
@@ -228,16 +229,21 @@ class ShadowAnalyst:
             series[wk] = series.get(wk, 0.0) + nr
             if age_d <= 7:
                 t7 += nr
+                n7 += 1
             if age_d <= 21:
                 t21 += nr
+                n21 += 1
         if t7 <= WEEKLY_CRIT_R:
             state, suggested = 'CRIT', 0.5
         elif t7 <= WEEKLY_WARN_R:
             state, suggested = 'WARN', 0.7
         else:
             state, suggested = 'OK', 1.0
+        # n_resolved_* let a consumer refuse to act on thin data (see the shadow gate in
+        # bot.py). Additive keys — existing /learn callers are unaffected.
         return {'series': dict(sorted(series.items())[-weeks:]),
                 'trailing_7d_r': round(t7, 1), 'trailing_21d_r': round(t21, 1),
+                'n_resolved_7d': n7, 'n_resolved_21d': n21,
                 'state': state, 'suggested_mult': suggested,
                 'warn_at': WEEKLY_WARN_R, 'crit_at': WEEKLY_CRIT_R}
 

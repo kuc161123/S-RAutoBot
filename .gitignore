@@ -40,3 +40,16 @@ matrix_*.log
 shadow_gate_*.log
 univ_*.log
 cache_ext.log
+rigorous_selection_*.parquet
+rigorous_selection_*.csv
+halt_universe_*.parquet
+atr3_universe.parquet
+compare_1yr_6mo.csv
+rigorous_full.log
+bucket_full.log
+vs_base.log
+halt_mw.log
+atr3.log
+sigmech.log
+mfe_uncensored.log
+geom_holdout.log

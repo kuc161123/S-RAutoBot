@@ -205,6 +205,17 @@ class Bot4H:
         self.storage = StorageHandler()
         # Load lifetime stats from PostgreSQL (or fallback to local file)
         self.lifetime_stats = self.storage.load_lifetime_stats()
+        # [TELEMETRY] Measurement only — same contract as the shadow layer: every call is
+        # wrapped and can never affect a trading decision. Records execution truth (real
+        # fills/fees/funding vs intent), market state, config provenance, block reasons
+        # and an equity time series. See autobot/core/telemetry.py for why each exists.
+        self.telemetry = None
+        try:
+            from autobot.core.telemetry import Telemetry
+            self.telemetry = Telemetry(os.getenv('DATABASE_URL'))
+        except Exception as e:
+            logger.warning(f"[TELEM] init failed (disabled): {e}")
+
         # [SHADOW] Observational learner (Postgres). OBSERVATION ONLY — never affects trading.
         self.shadow_logger = None
         try:
@@ -740,6 +751,63 @@ class Bot4H:
         except Exception as e:
             logger.warning(f"[BTC-GATE] Failed to fetch BTC 30d return, not blocking: {e}")
             return cache.get('impulse')
+
+    def _collect_market_state(self, samples):
+        """Build a cross-sectional market snapshot from this scan's dataframes.
+
+        `samples` is [(symbol, df)] gathered during the scan — no extra API calls. The
+        point is to record what the WHOLE market was doing, because the live regime
+        classifier reads only the bot's own last 20 trades and is ~70% noise. Over a year
+        this table is the only realistic basis for a regime model that actually predicts.
+        """
+        import numpy as _np
+        if not samples:
+            return None
+        above = []; chops = []; adxs = []; atrps = []; rsis = []; nh = []; nl = []
+        for _sym, df in samples:
+            try:
+                if df is None or len(df) < 210:
+                    continue
+                c = float(df['close'].iloc[-1])
+                above.append(1.0 if c > float(df['daily_ema'].iloc[-1]) else 0.0)
+                if 'chop' in df.columns:
+                    v = float(df['chop'].iloc[-1])
+                    if _np.isfinite(v):
+                        chops.append(v)
+                if 'rsi' in df.columns:
+                    v = float(df['rsi'].iloc[-1])
+                    if _np.isfinite(v):
+                        rsis.append(v)
+                if 'atr' in df.columns and c > 0:
+                    v = float(df['atr'].iloc[-1]) / c
+                    if _np.isfinite(v):
+                        atrps.append(v)
+                last20 = df.iloc[-20:]
+                nh.append(1.0 if c >= float(last20['high'].max()) else 0.0)
+                nl.append(1.0 if c <= float(last20['low'].min()) else 0.0)
+            except Exception:
+                continue
+        if not above:
+            return None
+        snap = {
+            'n_symbols': len(above),
+            'pct_above_ema200': float(_np.mean(above)),
+            'pct_new_high_20': float(_np.mean(nh)) if nh else None,
+            'pct_new_low_20': float(_np.mean(nl)) if nl else None,
+            'median_chop': float(_np.median(chops)) if chops else None,
+            'median_adx': None,          # not computed in the live df; left for later
+            'median_atr_pct': float(_np.median(atrps)) if atrps else None,
+            'median_rsi': float(_np.median(rsis)) if rsis else None,
+            'median_corr_btc': None,
+            'median_funding': None,
+        }
+        try:
+            cache = getattr(self, '_btc_impulse_cache', None) or {}
+            snap['btc_ret_30d'] = cache.get('ret30')
+            snap['btc_above_ema200'] = (getattr(self, '_btc_trend_cache', None) or {}).get('bullish')
+        except Exception:
+            pass
+        return snap
 
     def _shadow_gate_allows_entry(self):
         """SHADOW GATE — advise (or, in auto mode, enforce) halting on trailing shadow R.
@@ -1285,6 +1353,18 @@ class Bot4H:
         # Prepare indicators
         df = prepare_dataframe(df)
 
+        # [TELEM] Keep a bounded sample of this scan's dataframes for the market-state
+        # snapshot built at the end of the cycle. Reuses data already fetched — no extra
+        # API calls, and the list is capped so memory can't grow.
+        try:
+            if self.telemetry:
+                if not hasattr(self, '_scan_samples'):
+                    self._scan_samples = []
+                if len(self._scan_samples) < 300:
+                    self._scan_samples.append((symbol, df))
+        except Exception:
+            pass
+
         # [SHADOW-SCAN] Second-family shadow detection on the same df (observation only)
         try:
             if self.shadow_scanner:
@@ -1704,6 +1784,14 @@ class Bot4H:
             current_chop = df['chop'].iloc[-1]
             if pd.notna(current_chop) and current_chop >= chop_thresh:
                 logger.info(f"[{symbol}] CHOP FILTER blocked: CHOP={current_chop:.1f} >= {chop_thresh} (regime={regime_label})")
+                try:
+                    if self.telemetry:
+                        self.telemetry.log_block(symbol, signal.side,
+                            signal.divergence_code, 'chop', {'chop': float(current_chop), 'thresh': chop_thresh},
+                            regime=regime_label)
+                except Exception:
+                    pass
+
                 # Track blocked trades per regime
                 chop_blocked = self.lifetime_stats.setdefault('chop_blocked', {})
                 chop_blocked[regime_label] = chop_blocked.get(regime_label, 0) + 1
@@ -1734,6 +1822,14 @@ class Bot4H:
             if self._overlays_ramped_on(gate_bal) and await self._is_btc_impulse_bull() is True:
                 thr = float(self.risk_config.get('short_gate_ret30', 0.10) or 0.10) * 100
                 logger.info(f"[{symbol}] BTC SHORT-GATE blocked: BTC 30d return > +{thr:.0f}% (impulse bull) — short skipped")
+                try:
+                    if self.telemetry:
+                        self.telemetry.log_block(symbol, signal.side,
+                            signal.divergence_code, 'btc_short_gate', {'thr_pct': thr},
+                            regime=regime_label)
+                except Exception:
+                    pass
+
                 if hasattr(self, 'telegram') and self.telegram:
                     try:
                         asyncio.create_task(self.telegram.send_message(
@@ -1855,6 +1951,13 @@ class Bot4H:
                 cap_pct = self.risk_config.get('net_directional_cap', 0) * 100
                 logger.info(f"[{symbol}] NET-DIR CAP blocked: {signal.side} would set net directional "
                             f"risk ${nd_net:.2f} > limit ${nd_limit:.2f} ({cap_pct:.0f}% equity)")
+                try:
+                    if self.telemetry:
+                        self.telemetry.log_block(symbol, signal.side,
+                            signal.divergence_code, 'net_dir_cap', {'net': float(nd_net), 'limit': float(nd_limit)},
+                            regime=regime_label, equity=account_balance)
+                except Exception:
+                    pass
                 if hasattr(self, 'telegram') and self.telegram:
                     try:
                         asyncio.create_task(self.telegram.send_message(
@@ -1873,6 +1976,13 @@ class Bot4H:
                 g_pct = float(self.risk_config.get('gross_open_risk_cap', 0.30) or 0) * 100
                 logger.warning(f"[{symbol}] GROSS-RISK CAP blocked: total open risk would be "
                                f"${g_now:.2f} > ${g_limit:.2f} ({g_pct:.0f}% equity)")
+                try:
+                    if self.telemetry:
+                        self.telemetry.log_block(symbol, signal.side,
+                            signal.divergence_code, 'gross_risk_cap', {'gross': float(g_now), 'limit': float(g_limit)},
+                            regime=regime_label, equity=account_balance)
+                except Exception:
+                    pass
                 if hasattr(self, 'telegram') and self.telegram:
                     try:
                         asyncio.create_task(self.telegram.send_message(
@@ -1981,7 +2091,30 @@ class Bot4H:
             actual_entry = float(result.get('avgPrice') or entry_price)
             logger.info(f"[{symbol}] ✅ BRACKET ORDER FILLED: {order_id}")
             logger.info(f"[{symbol}]   Entry: ${actual_entry:.4f} | TP: ${tp_price:.4f} | SL: ${sl_price:.4f}")
-            
+
+            # [TELEM] Intent vs reality. entry_price is the candle OPEN the SL/TP were
+            # sized from; actual_entry is where the market order actually filled, minutes
+            # later. That gap is unmeasured today and cost drag is ~66% of gross edge.
+            try:
+                if self.telemetry:
+                    _sig_ms = None
+                    try:
+                        _sig_ms = int(df.index[-1].timestamp() * 1000)
+                    except Exception:
+                        pass
+                    self.telemetry.log_entry(
+                        trade_key=trade_key, order_id=order_id, symbol=symbol,
+                        side=signal.side, div_type=signal.divergence_code,
+                        intended_entry=entry_price, actual_entry=actual_entry,
+                        intended_sl=sl_price, intended_tp=tp_price,
+                        qty=position_size_qty, risk_usd=risk_amount,
+                        atr=float(atr), atr_mult=sl_mult, rr=rr, leverage=leverage,
+                        signal_bar_ms=_sig_ms, regime=regime_label,
+                        regime_mult=regime_mult, equity=account_balance)
+            except Exception:
+                pass
+
+
         except Exception as e:
             logger.error(f"[{symbol}] Error placing bracket order: {e}")
             if self.telegram:
@@ -2146,6 +2279,25 @@ class Bot4H:
 
                 # Determine result
                 result = 'WIN' if r_value > 0 else 'LOSS'
+
+                # [TELEM] Close the exec_log row with the exchange's own numbers, so the
+                # real cost of a trade (fee + funding, not an assumed 0.0018) is on record.
+                try:
+                    if self.telemetry:
+                        _hold = (datetime.now() - trade.entry_time).total_seconds() / 3600
+                        _fee = matched.get('closedFee')
+                        self.telemetry.log_exit(
+                            trade_key=trade_key,
+                            actual_exit=exit_price,
+                            realized_pnl=pnl_usd,
+                            fee_usd=float(_fee) if _fee not in (None, '') else None,
+                            # Bybit reports funding on the transaction log, not the
+                            # closed-pnl record, so it stays NULL here and is joined
+                            # later from get_wallet_movement_summary().
+                            funding_usd=None,
+                            r_result=r_value, outcome=result, hold_hours=_hold)
+                except Exception:
+                    pass
 
             else:
                 # No closed PnL found — trade may still be open (phantom stale detection)
@@ -2470,6 +2622,19 @@ class Bot4H:
         # Prune old seen signals so recent divergences can be re-detected on startup
         self.storage.prune_old_signals(max_age_hours=48)
 
+        # [TELEM] Record what config is live, keyed by git SHA + a hash of the risk block.
+        # Only writes when something actually changed, so this becomes a clean record of
+        # "what was deployed when" — which is what makes future in-sample/out-of-sample
+        # partitioning possible without commit archaeology.
+        try:
+            if self.telemetry:
+                self.telemetry.log_config(
+                    dict(self.risk_config),
+                    n_symbols=len(self.symbol_config.get_enabled_symbols()),
+                    n_configs=self.symbol_config.get_total_configs())
+        except Exception:
+            pass
+
         # Start main loop
         last_check = 0
         last_auto_dashboard = datetime.now()
@@ -2501,6 +2666,17 @@ class Bot4H:
                     self.scan_state['last_scan_time'] = datetime.now()
                     self.scan_state['symbols_scanned'] = symbols_processed
                     self.scan_state['fresh_divergences'] = total_signals_found
+
+                    # [TELEM] Cross-sectional market snapshot from this scan's data.
+                    try:
+                        if self.telemetry:
+                            _snap = self._collect_market_state(
+                                getattr(self, '_scan_samples', []))
+                            if _snap:
+                                self.telemetry.log_market_state(_snap)
+                            self._scan_samples = []
+                    except Exception:
+                        self._scan_samples = []
 
                     logger.info(f"✅ Hourly Scan Complete. Processed: {symbols_processed}, New Signals: {total_signals_found}")
 
@@ -2572,6 +2748,42 @@ Next scan in ~60 mins ⏳
                             except Exception as e:
                                 logger.error(f"Auto-dashboard error: {e}")
                 
+                # [TELEM] Equity/risk/regime time series (internally throttled to ~15min).
+                # lifetime_stats is a single overwritten blob, so today the LIVE equity
+                # curve cannot be reconstructed at all — this makes real drawdown
+                # analysis possible on actual results rather than simulation.
+                try:
+                    if self.telemetry:
+                        _eq = await self.broker.get_balance() or 0
+                        _wal = await self.broker.get_wallet_balance() or _eq
+                        _pos = await self.broker.get_positions() or []
+                        _open = [p for p in _pos if float(p.get('size', 0)) > 0]
+                        _lr = sum((getattr(t, 'risk_usd_at_entry', 0) or 0)
+                                  for t in self.active_trades.values()
+                                  if t is not None and getattr(t, 'side', '') == 'long')
+                        _sr = sum((getattr(t, 'risk_usd_at_entry', 0) or 0)
+                                  for t in self.active_trades.values()
+                                  if t is not None and getattr(t, 'side', '') == 'short')
+                        _lbl, _mult, _ = self.get_regime_status()
+                        _today = datetime.now().strftime('%Y-%m-%d')
+                        self.telemetry.log_equity({
+                            'equity': _eq, 'wallet': _wal,
+                            'open_positions': len(_open),
+                            'open_risk_usd': _lr + _sr,
+                            'net_dir_risk_usd': abs(_lr - _sr),
+                            'long_positions': sum(1 for p in _open if p.get('side') == 'Buy'),
+                            'short_positions': sum(1 for p in _open if p.get('side') == 'Sell'),
+                            'regime': _lbl, 'regime_mult': _mult,
+                            'risk_pct': self.get_adaptive_risk(balance=_wal),
+                            'shadow_gate_open': self.lifetime_stats.get('shadow_gate_open'),
+                            'trading_enabled': self.trading_enabled,
+                            'daily_r': self.lifetime_stats.get('daily_r', {}).get(_today, 0.0),
+                            'total_r': self.lifetime_stats.get('total_r', 0.0),
+                            'unrealized_pnl': sum(float(p.get('unrealisedPnl', 0)) for p in _open),
+                        })
+                except Exception:
+                    pass
+
                 # Periodic position sync (every 5 minutes)
                 if (datetime.now() - last_sync).total_seconds() >= 300:
                     try:

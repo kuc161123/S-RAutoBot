@@ -53,3 +53,10 @@ atr3.log
 sigmech.log
 mfe_uncensored.log
 geom_holdout.log
+tier1_screen.csv
+tier2_full.csv
+tier3_results.csv
+tier1*.log
+tier2.log
+tier3.log
+validate*.log

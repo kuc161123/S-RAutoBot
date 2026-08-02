@@ -29,7 +29,7 @@ BASE = "https://api.bybit.com"
 INTERVAL = "5"
 STEP_MS = 5 * 60_000
 CHUNK = 1000
-RETRIES = 5
+RETRIES = 4
 COLS = ["start", "open", "high", "low", "close", "volume", "turnover"]
 SINCE = pd.Timestamp("2025-01-01")
 
@@ -41,7 +41,7 @@ async def fetch_chunk(sess, sem, symbol, start_ms, end_ms):
         try:
             async with sem:
                 async with sess.get(f"{BASE}/v5/market/kline", params=params,
-                                    timeout=aiohttp.ClientTimeout(total=40)) as r:
+                                    timeout=aiohttp.ClientTimeout(total=20)) as r:
                     if r.status == 429:
                         await asyncio.sleep(1.5 * (attempt + 1))
                         continue
@@ -57,20 +57,26 @@ async def fetch_chunk(sess, sem, symbol, start_ms, end_ms):
 
 
 async def fetch_symbol(sess, sem, symbol, since_ms, now_ms):
-    rows, cur = [], since_ms
+    """Fetch a symbol's whole range with every page in flight at once.
+
+    19 months of 5m bars is ~166 pages. Walking them with a cursor makes a symbol take
+    ~166 x round-trip (about 5.5 minutes) regardless of how many SYMBOLS run in
+    parallel — which was the real bottleneck, not the exchange. The windows are pure
+    arithmetic on the interval, so they can all be computed up front and gathered
+    concurrently; `sem` is what actually bounds the request rate.
+
+    Overlaps and gaps are harmless: rows are de-duplicated and sorted at the end, and a
+    page that returns nothing (symbol not yet listed) just contributes nothing.
+    """
+    windows = []
+    cur = since_ms
     while cur < now_ms:
         end = min(cur + CHUNK * STEP_MS, now_ms)
-        data = await fetch_chunk(sess, sem, symbol, cur, end)
-        if not data:
-            cur = end + STEP_MS                      # gap: skip forward, keep going
-            if end >= now_ms:
-                break
-            continue
-        rows.extend(data)
-        newest = max(int(r[0]) for r in data)
-        if newest <= cur:
-            break
-        cur = newest + STEP_MS
+        windows.append((cur, end))
+        cur = end + STEP_MS
+    pages = await asyncio.gather(
+        *[fetch_chunk(sess, sem, symbol, a, b) for a, b in windows])
+    rows = [r for page in pages for r in page]
     if not rows:
         return None
     df = pd.DataFrame(rows, columns=COLS)
@@ -90,14 +96,19 @@ def already_done(path, now_ms):
     if d.empty:
         return False
     last = pd.to_datetime(d["start"]).max()
-    return (pd.Timestamp(now_ms, unit="ms") - last) < pd.Timedelta(hours=6)
+    # 48h, not 6h: a resumed run must not re-download symbols an earlier pass already
+    # completed simply because the restart happened a few hours later.
+    return (pd.Timestamp(now_ms, unit="ms") - last) < pd.Timedelta(hours=48)
 
 
 async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--shard", type=int, default=0)
     ap.add_argument("--of", type=int, default=1)
-    ap.add_argument("--conc", type=int, default=8)
+    ap.add_argument("--conc", type=int, default=2,
+                    help="symbols processed at once")
+    ap.add_argument("--reqs", type=int, default=16,
+                    help="max in-flight HTTP requests overall")
     a = ap.parse_args()
 
     cfg = yaml.safe_load(open(ROOT / "config.yaml"))
@@ -108,9 +119,11 @@ async def main():
     now_ms = int(time.time() * 1000)
     since_ms = int(SINCE.timestamp() * 1000)
 
-    # paging within a symbol is cursor-sequential, so the parallelism has to come from
-    # running several SYMBOLS at once. `conc` = symbols in flight for this shard.
-    sem = asyncio.Semaphore(a.conc * 2)          # request-level guard
+    # Global cap on in-flight REQUESTS. Pages within a symbol are now fetched
+    # concurrently, so this — not the symbol worker count — is the rate control.
+    # 48 simultaneous connections got this IP throttled into timeout loops
+    # earlier; ~16 sustains roughly 8 req/s, well inside the public limit.
+    sem = asyncio.Semaphore(a.reqs)
     todo = [s for s in mine if not already_done(DST / f"{s}.parquet", now_ms)]
     skipped = len(mine) - len(todo)
     stats = {"ok": 0, "fail": 0, "n": 0}
@@ -128,7 +141,7 @@ async def main():
             df.to_parquet(out, index=False)
             stats["ok"] += 1
         stats["n"] += 1
-        if stats["n"] % 3 == 0:
+        if stats["n"] % 2 == 0:
             el = max(time.time() - t0, 1)
             eta = (len(todo) - stats["n"]) / max(stats["n"] / el, 1e-9) / 60
             print(f"[shard {a.shard}/{a.of}] {stats['n']}/{len(todo)} "
@@ -146,7 +159,7 @@ async def main():
                 return
             await one(sess, sym)
 
-    conn = aiohttp.TCPConnector(limit=a.conc * 3)
+    conn = aiohttp.TCPConnector(limit=a.reqs + 4)
     async with aiohttp.ClientSession(connector=conn) as sess:
         await asyncio.gather(*[worker(sess) for _ in range(a.conc)])
 

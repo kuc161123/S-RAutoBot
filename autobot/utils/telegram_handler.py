@@ -86,6 +86,8 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("regime", self.cmd_regime))
         self.app.add_handler(CommandHandler("blocks", self.cmd_blocks))
         self.app.add_handler(CommandHandler("learn", self.cmd_learn))
+        self.app.add_handler(CommandHandler("trail", self.cmd_trail))
+        self.app.add_handler(CommandHandler("trailstats", self.cmd_trailstats))
 
         # Start polling with longer interval to avoid rate limits
         await self.app.initialize()
@@ -188,7 +190,9 @@ class TelegramHandler:
 ├ /risk 0.2 - Set 0.2% risk per trade
 ├ /risk $5 - Set fixed $5 per trade
 ├ /setregime - Override regime (cautious/adverse)
-└ /setbalance - Set P&L baseline after deposits
+├ /setbalance - Set P&L baseline after deposits
+├ /trail - Trailing stop state (`/trail on` · `/trail off`)
+└ /trailstats - Is trailing worth it? counterfactual verdict
 
 🔄 **RESET OPTIONS**
 ├ /resetstats - Reset session stats only
@@ -801,6 +805,31 @@ class TelegramHandler:
         if cap or rcfg.get('btc_short_gate') or (rcfg.get('long_bull_boost', 1.0) or 1.0) != 1.0:
             cap_line = (f"\n├ Protection: 🟢 ON (cap {cap*100:.0f}%, "
                         f"short-gate, long-boost)")
+
+        # [TRAILING STOP] Live state, coverage and activity. Unlike the "Protection:"
+        # line above (a static echo of config.yaml), this reads the runtime flag, so it
+        # stays correct after a /trail toggle.
+        try:
+            tcfg = rcfg.get('trailing_stop') or {}
+            if tcfg:
+                t_on = bool(getattr(self.bot, 'trailing_enabled', False))
+                elig, tot = self.bot.trail_eligible_counts()
+                tst = getattr(self.bot, 'trail_stats', {}) or {}
+                n_armed = sum(1 for t in self.bot.active_trades.values()
+                              if getattr(t, 'trail_armed', False))
+                if t_on:
+                    cap_line += (
+                        f"\n├ Trailing: 🟢 ON (+{float(tcfg.get('trigger_r', 3)):.0f}R arm, "
+                        f"{float(tcfg.get('atr_mult', 1)):.1f}×ATR) · "
+                        f"{n_armed} armed / {elig} of {tot} eligible"
+                    )
+                    if tst.get('failures'):
+                        cap_line += (f"\n│ ⚠️ {tst['failures']} failed stop amendment(s) "
+                                     f"since restart → /trail")
+                else:
+                    cap_line += "\n├ Trailing: 🔴 OFF (fixed TP/SL only)"
+        except Exception:
+            pass
 
         # Shadow gate — in advisory mode this is the line that tells the user to act, so
         # it must always render, and must flag when the advice and reality disagree.
@@ -1577,6 +1606,151 @@ To resume: `/start`
         await update.message.reply_text(msg, parse_mode='Markdown')
         logger.info(f"✅ Trading resumed by user {update.effective_user.name}")
     
+    async def cmd_trail(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Switch the trailing stop on/off, or show its live state.
+
+        The toggle is runtime-only: a restart returns to config.yaml's audited value.
+        Turning it OFF never touches stops that have already been ratcheted — those
+        levels stay exactly where they are, because widening a live stop would increase
+        risk on an open position.
+        """
+        bot = self.bot
+        arg = (context.args[0].lower() if context.args else '')
+        cfg = getattr(bot, 'trailing_config', {}) or {}
+        trigger_r = float(cfg.get('trigger_r', 3.0))
+        atr_mult = float(cfg.get('atr_mult', 1.0))
+
+        if arg in ('on', 'off'):
+            want = arg == 'on'
+            was = bool(getattr(bot, 'trailing_enabled', False))
+            bot.trailing_enabled = want
+            if want:
+                body = (f"✅ **TRAILING STOP ON**\n\n"
+                        f"New and existing eligible positions will arm at "
+                        f"**+{trigger_r:.0f}R** and then trail **{atr_mult:.1f}×ATR** "
+                        f"behind each closed 1H candle.\n"
+                        f"No breakeven move — that variant tested 42% worse.")
+            else:
+                body = (f"🛑 **TRAILING STOP OFF**\n\n"
+                        f"No further stop ratchets will be made.\n"
+                        f"⚠️ Stops already moved stay where they are — the bot will "
+                        f"not widen a live stop, because that would add risk to an "
+                        f"open position. Those trades keep their tightened stop and "
+                        f"their original take-profit.")
+            if was == want:
+                body += f"\n\n_(it was already {'on' if want else 'off'})_"
+            body += "\n\nReverts to `config.yaml` on restart."
+            await update.message.reply_text(body, parse_mode='Markdown')
+            logger.warning(f"[TRAIL] switched {'ON' if want else 'OFF'} by "
+                           f"{update.effective_user.name}")
+            return
+
+        # ---- status ----
+        on = bool(getattr(bot, 'trailing_enabled', False))
+        try:
+            elig, total = bot.trail_eligible_counts()
+        except Exception:
+            elig = total = 0
+        st = getattr(bot, 'trail_stats', {}) or {}
+        armed_now = [t for t in bot.active_trades.values()
+                     if getattr(t, 'trail_armed', False)]
+
+        lines = [
+            f"🪤 **TRAILING STOP** — {'🟢 ON' if on else '🔴 OFF'}",
+            "━━━━━━━━━━━━━━━━━━━━",
+            "",
+            f"**RULE** (variant `s3_a1`)",
+            f"├ Arm at: **+{trigger_r:.0f}R** peak",
+            f"├ Trail: **{atr_mult:.1f}×ATR** behind each closed 1H candle",
+            f"├ Breakeven move: **none** (tested 42% worse)",
+            f"└ Ratchet only — the stop never widens",
+            "",
+            f"**COVERAGE**",
+            f"├ Eligible positions: {elig}/{total}",
+            f"└ Currently armed: {len(armed_now)}",
+            "",
+            f"**SINCE RESTART**",
+            f"├ Positions armed: {st.get('armed', 0)}",
+            f"├ Stop moves: {st.get('moves', 0)}",
+            f"├ Clamped to market: {st.get('clamped', 0)} "
+            f"_(level was through price)_",
+            f"└ Failed amendments: {st.get('failures', 0)}",
+        ]
+        if armed_now:
+            lines += ["", "**ARMED NOW**"]
+            for t in sorted(armed_now, key=lambda x: -x.trail_locked_r)[:10]:
+                lines.append(f"├ `{t.symbol}` {t.side[:1].upper()} · peak "
+                             f"{t.trail_peak_r:+.1f}R · locked "
+                             f"**{t.trail_locked_r:+.2f}R** · {t.trail_moves} moves")
+        lines += ["", "━━━━━━━━━━━━━━━━━━━━",
+                  "`/trail on` · `/trail off` · `/trailstats` for the verdict"]
+        await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
+
+    async def cmd_trailstats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Counterfactual verdict: is trailing actually earning its keep on THIS account?
+
+        Every trade is replayed from klines under both exit rules against the same bars,
+        so the difference is attributable to the exit and nothing else.
+        """
+        ts = getattr(self.bot, 'trail_shadow', None)
+        if not ts or not ts.enabled:
+            await update.message.reply_text(
+                "🪤 Trail shadow learner is **disabled**.\n"
+                "Needs `DATABASE_URL` + `risk.trailing_stop.shadow: true`.",
+                parse_mode='Markdown')
+            return
+        days = 90
+        if context.args:
+            try:
+                days = max(1, min(365, int(context.args[0])))
+            except ValueError:
+                pass
+        s = ts.stats(days)
+        if not s or not s.get('n'):
+            await update.message.reply_text(
+                f"🪤 **TRAIL SHADOW**\n\nNo resolved trades yet "
+                f"({s.get('pending', 0)} pending).\n"
+                f"Each trade needs ≥6h and both exit arms to complete before it counts.",
+                parse_mode='Markdown')
+            return
+
+        v = s.get('verdict', {})
+        slip = (f"{s['mean_slip']:+.3f}R/trade over {s['n_slip']} closes"
+                if s.get('mean_slip') is not None else "not enough closed trades yet")
+        msg = f"""🪤 **TRAIL SHADOW** — last {days}d
+━━━━━━━━━━━━━━━━━━━━
+
+Every trade replayed under BOTH exit rules
+on the same candles. {s['n']} resolved · {s['pending']} pending
+
+**PER TRADE (R)**
+```
+                fixed TP    trailing
+mean R          {s['mean_fixed']:+8.3f}    {s['mean_trail']:+8.3f}
+win rate        {s['wr_fixed']:7.1%}     {s['wr_trail']:7.1%}
+total R         {s['sum_fixed']:+8.1f}    {s['sum_trail']:+8.1f}
+max drawdown    {s['dd_fixed']:8.1f}R   {s['dd_trail']:8.1f}R
+```
+
+**HEAD TO HEAD**
+├ Trailing better: {s['better']} · worse: {s['worse']} · tie: {s['same']}
+├ Mean difference: **{s['mean_delta']:+.3f}R/trade** (t={s['t_stat']:+.2f})
+└ Avg ratchets/trade: {s['avg_moves']:.1f}
+
+**EXECUTION SLIPPAGE**
+└ Realized minus modelled: **{slip}**
+   _(negative = the exchange paid you less than the model says)_
+
+**VERDICT**
+{v.get('icon', '')} {v.get('text', 'n/a')}
+
+━━━━━━━━━━━━━━━━━━━━
+_1H bars: ambiguous candles score as the stop, which penalises the
+trailed arm more. A positive difference here is conservative._
+`/trail on|off` to act on this
+"""
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
     async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """View or update risk per trade (supports % and USD)"""
         try:

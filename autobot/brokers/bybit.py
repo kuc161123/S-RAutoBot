@@ -1275,7 +1275,77 @@ class Bybit:
             logger.error(f"Failed to set SL-only for {symbol}: {e}")
             raise
     
-    async def set_trailing_sl(self, symbol: str, initial_sl: float, trail_distance: float, 
+    async def amend_stop_loss(self, symbol: str, stop_loss: float, side: str) -> Dict[str, Any] | None:
+        """Move the stop on an OPEN position. Purpose-built for the trailing-stop engine.
+
+        Deliberately separate from set_sl_only(), which cannot be used here for two
+        reasons: it rejects any stop_loss > 100000 as "absurdly large" (a guard that is a
+        false positive on BTCUSDT), and it raises on failure. A trailing update must never
+        raise into the trading loop — a failed amendment simply means the previous, wider
+        stop is still protecting the position, which is safe.
+
+        Validation is relative rather than absolute:
+          - the stop must be on the correct side of the current price, because Bybit
+            rejects a long stop above mark (and a short stop below it), and sending one
+            would burn an API call every hour on the same position;
+          - a stop further than 50% from price is treated as a calculation error.
+
+        Returns the response dict on success, or None on any failure. Never raises.
+        """
+        try:
+            if stop_loss is None or stop_loss <= 0:
+                return None
+
+            ticker = await self.get_ticker(symbol)
+            price = float((ticker or {}).get('lastPrice') or 0)
+            if price <= 0:
+                logger.warning(f"[TRAIL] {symbol}: no ticker price, skipping SL amend")
+                return None
+
+            if side == 'long' and stop_loss >= price:
+                logger.info(f"[TRAIL] {symbol}: long stop {stop_loss} >= price {price} — "
+                            f"exchange would reject; skipping")
+                return None
+            if side == 'short' and stop_loss <= price:
+                logger.info(f"[TRAIL] {symbol}: short stop {stop_loss} <= price {price} — "
+                            f"exchange would reject; skipping")
+                return None
+            if abs(stop_loss - price) / price > 0.5:
+                logger.error(f"[TRAIL] {symbol}: stop {stop_loss} is >50% from price "
+                             f"{price} — refusing (likely a calculation error)")
+                return None
+
+            tick_size, _ = await self._get_precisions(symbol)
+            sl_str = self._round_price(stop_loss, tick_size)
+
+            data = {
+                "category": "linear",
+                "symbol": symbol,
+                "stopLoss": sl_str,
+                "slTriggerBy": "LastPrice",
+                "tpslMode": "Full",
+                "slOrderType": "Market",
+                "positionIdx": 0,
+            }
+            # takeProfit is intentionally omitted: /v5/position/trading-stop only touches
+            # the fields it receives, so the original bracket TP survives untouched.
+            resp = await self._request("POST", "/v5/position/trading-stop", data)
+            if resp and resp.get("retCode") == 0:
+                logger.info(f"[TRAIL] {symbol} SL amended -> {sl_str}")
+                return resp
+            # 34040 = "not modified": the exchange already holds this level. Benign.
+            if resp and resp.get("retCode") == 34040:
+                logger.debug(f"[TRAIL] {symbol} SL already at {sl_str}")
+                return resp
+            logger.warning(f"[TRAIL] {symbol} SL amend failed: "
+                           f"retCode={(resp or {}).get('retCode')} "
+                           f"msg={(resp or {}).get('retMsg')}")
+            return None
+        except Exception as e:
+            logger.error(f"[TRAIL] {symbol} amend_stop_loss error: {e}")
+            return None
+
+    async def set_trailing_sl(self, symbol: str, initial_sl: float, trail_distance: float,
                         activation_price: float = None, side: str = None) -> Dict[str, Any]:
         """Set stop loss with Bybit's NATIVE trailing stop mechanism.
         

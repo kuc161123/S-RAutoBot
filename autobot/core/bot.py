@@ -22,7 +22,8 @@ Main Features:
 - Break of Structure (BOS) confirmation (12 candles max)
 - Multi-config: each symbol can have independent long + short configs
 - Per-config divergence type, R:R ratio, and ATR multiplier
-- Fixed TP/SL (no trailing, no partial)
+- Fixed TP, no partials. Stop is fixed until +3R, then trails 1x ATR behind each
+  closed candle (ratchet-only, no breakeven move) — see risk.trailing_stop
 - Dynamic risk per trade (% of account balance)
 """
 
@@ -93,6 +94,30 @@ class ActiveTrade:
     pre_reset: bool = False  # True = opened before a /resetlifetime, skip from new stats
     entry_regime_label: str = ""  # Regime at trade ENTRY (for accurate regime stats)
     entry_regime_mult: float = 1.0  # Regime multiplier at trade ENTRY
+    # --- [TRAILING STOP] ---------------------------------------------------------
+    # original_stop_loss is the stop as PLACED at entry. stop_loss above is mutated by
+    # the trail, so every R calculation the trail makes must use this instead, or the
+    # measured risk distance would shrink each time the stop ratchets and MFE would be
+    # progressively overstated. 0.0 means "unknown" (a restart-adopted position with no
+    # persisted record) and disables trailing for that trade — see _restore_trail_state.
+    original_stop_loss: float = 0.0
+    # The exact ATR*mult stop distance as computed at entry. Carried explicitly rather
+    # than reconstructed as |entry - original_stop_loss|, because that round-trip loses
+    # the last ulp: on a low-priced symbol it flipped an excursion of exactly 3.0R to
+    # 2.999999999999996 and skipped a ratchet the backtest took
+    # (verify_trailing_parity.py). 0.0 falls back to the reconstruction.
+    risk_dist: float = 0.0
+    # Timestamp of the ENTRY CANDLE, taken straight from df.index. entry_time uses
+    # datetime.now() (local clock) while df.index is UTC epoch-derived, so on a non-UTC
+    # host flooring entry_time to the hour would select the wrong bar and the trail would
+    # replay from the wrong place. This is the unambiguous anchor.
+    entry_bar_ts: object = None
+    trail_armed: bool = False      # MFE has reached trigger_r at least once
+    trail_moves: int = 0           # successful exchange amendments
+    trail_peak_r: float = 0.0      # best MFE seen, in R
+    trail_locked_r: float = 0.0    # R that the current stop guarantees (negative = still at risk)
+    trail_notified_r: int = -99    # highest integer R already announced (spam guard)
+    trail_fail_notified: bool = False  # one alert per trade if amendments start failing
 
 
 class Bot4H:
@@ -239,6 +264,18 @@ class Bot4H:
             self.shadow_analyst = ShadowAnalyst(self.shadow_logger)
         except Exception as e:
             logger.warning(f"[SHADOW-ANALYST] init failed (disabled): {e}")
+        # [TRAIL SHADOW] Counterfactual learner for the trailing stop: replays every
+        # trade under BOTH exit rules and measures live slippage, so the decision to
+        # keep trailing on can be made from this account's own data. OBSERVATION ONLY.
+        self.trail_shadow = None
+        try:
+            from autobot.core.trail_shadow import TrailShadow
+            self.trail_shadow = TrailShadow(
+                os.getenv('DATABASE_URL'),
+                enabled=bool((self.risk_config.get('trailing_stop') or {}).get('shadow', True)),
+            )
+        except Exception as e:
+            logger.warning(f"[TRAILSHADOW] init failed (disabled): {e}")
         # Restore recent trades for regime detection
         saved_trades = self.lifetime_stats.get('recent_trades', [])
         for t in saved_trades[-100:]:
@@ -1049,7 +1086,23 @@ class Bot4H:
         signal_params = self.strategy_config.get('signal_params', {})
         self.lookback_bars = signal_params.get('lookback_bars', 50)
 
+        # [TRAILING STOP] config.yaml holds the BOOT default; self.trailing_enabled is the
+        # live switch that /trail flips at runtime. Keeping them separate means a restart
+        # always returns to the audited config value rather than to whatever was last
+        # toggled — the same convention the rest of the risk block follows.
+        self.trailing_config = (self.risk_config.get('trailing_stop') or {})
+        self.trailing_enabled = bool(self.trailing_config.get('enabled', False))
+        self.trail_stats = {'armed': 0, 'moves': 0, 'failures': 0}
+
         logger.info(f"Loaded config: Timeframe={self.timeframe}, Risk={self.risk_config.get('risk_per_trade', 0.01)*100}%, MaxWait={self.max_wait_candles}, Lookback={self.lookback_bars}")
+        if self.trailing_enabled:
+            logger.info(
+                f"[TRAIL] Trailing stop ON — arm at "
+                f"{self.trailing_config.get('trigger_r', 3.0)}R, trail "
+                f"{self.trailing_config.get('atr_mult', 1.0)}x ATR, no breakeven move"
+            )
+        else:
+            logger.info("[TRAIL] Trailing stop OFF — fixed TP/SL bracket only")
     
     def setup_broker(self):
         """Initialize Bybit broker connection"""
@@ -1212,6 +1265,12 @@ class Bot4H:
                     # Restore pre_reset flag for trades opened before last reset
                     if trade_key in pre_reset_keys:
                         new_trade.pre_reset = True
+
+                    # [TRAILING STOP] Recover the original stop distance and trail
+                    # progress. Returns False when there is no record, which leaves
+                    # original_stop_loss at 0.0 and permanently excludes this position
+                    # from trailing — the safe default for a trade we can't reconstruct.
+                    self._restore_trail_state(trade_key, new_trade)
 
                     self.active_trades[trade_key] = new_trade
                     adopted_count += 1
@@ -1611,7 +1670,12 @@ class Bot4H:
         #    candle. This is what the backtest models as "enter at next candle open".
         await self._drain_confirmed_entries(symbol, df)
 
-        # 4. Update active trades
+        # 4. [TRAILING STOP] Ratchet stops on open positions using the candles just
+        #    fetched — no extra kline calls. Runs BEFORE the exit check so a stop that
+        #    moves this hour is already in force when we look for a close.
+        await self._update_trailing_stops(symbol, df)
+
+        # 5. Update active trades
         await self.monitor_active_trades(symbol)
 
         return valid_signals_count
@@ -2135,9 +2199,25 @@ class Bot4H:
             risk_usd_at_entry=risk_amount,  # Store for accurate R calculation at closure
             entry_regime_label=regime_label,  # Regime at ENTRY (not exit)
             entry_regime_mult=regime_mult,
+            # [TRAILING STOP] Freeze the stop as placed. trade.stop_loss will be ratcheted
+            # by the trail; every R measurement must keep using this untouched distance.
+            original_stop_loss=sl_price,
+            risk_dist=sl_distance,
+            entry_bar_ts=df.index[-1],
         )
 
         self.active_trades[trade_key] = trade
+        # [TRAILING STOP] Persist immediately so a restart in the next minute can still
+        # trail this position instead of silently dropping it to fixed-TP behaviour.
+        self._persist_trail_state(trade_key, trade)
+        # [TRAIL SHADOW] Register the trade so BOTH exits (fixed-TP and trailed) can be
+        # replayed from klines later. Observation only — wrapped, never gates.
+        try:
+            if self.trail_shadow:
+                self.trail_shadow.log_open(trade_key, trade, self.trailing_enabled,
+                                           *self._trail_params()[:2])
+        except Exception:
+            pass
         # [SHADOW] mark this evaluated signal as executed (observational; wrapped)
         try:
             self.shadow_logger.mark_executed(_shadow_sid)
@@ -2175,6 +2255,289 @@ class Bot4H:
         logger.info(f"[{symbol}] Trade opened: Entry=${actual_entry:.4f}, SL=${sl_price:.4f}, TP=${tp_price:.4f} ({rr}:1 R:R)")
 
     
+    # ==========================================================================
+    # TRAILING STOP — variant "s3_a1", validated 2026-08-02
+    # ==========================================================================
+    # Arm at +3R MFE, then trail 1x ATR behind each CLOSED candle's extreme,
+    # ratchet-only, NO breakeven move. See config.yaml risk.trailing_stop for the
+    # validation numbers and for why a breakeven move must never be added.
+    #
+    # This subsystem may reduce risk on an open position. It must never increase it:
+    # every path either tightens the stop or leaves it exactly where it was.
+
+    def _trail_params(self) -> tuple:
+        c = self.trailing_config or {}
+        return (float(c.get('trigger_r', 3.0)),
+                float(c.get('atr_mult', 1.0)),
+                float(c.get('min_step_pct', 0.02)) / 100.0)
+
+    def _persist_trail_state(self, trade_key: str, trade: ActiveTrade):
+        """Persist what the trail needs to survive a restart.
+
+        sync_with_exchange rebuilds ActiveTrade objects from exchange positions, which
+        report the CURRENT stop — and after a ratchet that is not the original one.
+        Without this record an adopted position would derive its risk distance from an
+        already-tightened stop, overstate MFE, and trail far too aggressively. Mirrors
+        the existing 'open_trade_regimes' persistence.
+        """
+        try:
+            ots = self.lifetime_stats.setdefault('open_trade_trailing', {})
+            ots[trade_key] = {
+                'entry': float(trade.entry_price or 0.0),
+                'orig_sl': float(trade.original_stop_loss or 0.0),
+                'risk_dist': float(trade.risk_dist or 0.0),
+                'entry_bar_ts': (str(trade.entry_bar_ts)
+                                 if trade.entry_bar_ts is not None else None),
+                'side': trade.side,
+                'entry_ts': trade.entry_time.isoformat(),
+                'armed': bool(trade.trail_armed),
+                'moves': int(trade.trail_moves),
+                'peak_r': float(trade.trail_peak_r),
+                'locked_r': float(trade.trail_locked_r),
+                'notified_r': int(trade.trail_notified_r),
+                'cur_sl': float(trade.stop_loss or 0.0),
+            }
+            self.save_lifetime_stats()
+        except Exception as e:
+            logger.debug(f"[TRAIL] persist failed for {trade_key}: {e}")
+
+    def _restore_trail_state(self, trade_key: str, trade: ActiveTrade) -> bool:
+        """Reattach persisted trailing state to a restart-adopted position.
+
+        No record -> original_stop_loss stays 0.0 and the position is never trailed.
+        That is deliberate. Positions opened before this feature shipped, or whose
+        record was lost, keep the exact fixed-TP behaviour they were opened under
+        rather than being trailed from a guessed risk distance.
+        """
+        try:
+            rec = (self.lifetime_stats.get('open_trade_trailing') or {}).get(trade_key)
+            if not rec:
+                return False
+            trade.original_stop_loss = float(rec.get('orig_sl') or 0.0)
+            trade.risk_dist = float(rec.get('risk_dist') or 0.0)
+            _ebt = rec.get('entry_bar_ts')
+            trade.entry_bar_ts = pd.Timestamp(_ebt) if _ebt else None
+            trade.trail_armed = bool(rec.get('armed'))
+            trade.trail_moves = int(rec.get('moves') or 0)
+            trade.trail_peak_r = float(rec.get('peak_r') or 0.0)
+            trade.trail_locked_r = float(rec.get('locked_r') or 0.0)
+            trade.trail_notified_r = int(rec.get('notified_r', -99))
+            if rec.get('entry'):
+                trade.entry_price = float(rec['entry'])
+            ets = rec.get('entry_ts')
+            if ets:
+                trade.entry_time = datetime.fromisoformat(ets)
+            return True
+        except Exception as e:
+            logger.debug(f"[TRAIL] restore failed for {trade_key}: {e}")
+            return False
+
+    def trail_eligible_counts(self) -> tuple:
+        """(eligible, total) open positions the trail can act on — for the dashboard."""
+        total = len(self.active_trades)
+        elig = sum(1 for t in self.active_trades.values()
+                   if (t.original_stop_loss or 0) > 0 and (t.entry_price or 0) > 0)
+        return elig, total
+
+    async def _update_trailing_stops(self, symbol: str, df: pd.DataFrame):
+        """Ratchet the stop on this symbol's open positions.
+
+        Timing is identical to the backtest. Every bar read here is a CLOSED candle
+        (df[-2] and earlier — df[-1] is the still-forming one Bybit returns as newest),
+        and because this runs once per hourly close, a level derived from bar k first
+        takes effect on bar k+1. No intrabar lookahead.
+
+        The loop replays EVERY closed bar since entry rather than only the newest one,
+        so a missed cycle, a >55min staleness skip, or a restart self-heals to the level
+        the stop should already be at instead of silently lagging behind.
+
+        Wrapped per-trade: a trailing failure must never interrupt the scan.
+        """
+        if not getattr(self, 'trailing_enabled', False):
+            return
+        if df is None or len(df) < 3 or 'atr' not in df.columns:
+            return
+        trigger_r, atr_mult, min_step = self._trail_params()
+        for side in ('long', 'short'):
+            trade_key = f"{symbol}_{side}"
+            trade = self.active_trades.get(trade_key)
+            if trade is None:
+                continue
+            try:
+                await self._trail_one(trade_key, trade, df, trigger_r, atr_mult, min_step)
+            except Exception as e:
+                logger.error(f"[TRAIL] {trade_key} update failed: {e}")
+
+    async def _trail_one(self, trade_key: str, trade: ActiveTrade, df: pd.DataFrame,
+                         trigger_r: float, atr_mult: float, min_step: float):
+        entry = float(trade.entry_price or 0.0)
+        orig_sl = float(trade.original_stop_loss or 0.0)
+        if entry <= 0 or orig_sl <= 0:
+            return                       # adopted position with no record — never trail
+        # Prefer the exact distance recorded at entry; reconstruct only as a fallback.
+        risk = float(trade.risk_dist or 0.0) or abs(entry - orig_sl)
+        if risk <= 0:
+            return
+
+        # Closed candles only, from the entry candle onward. Anchor on entry_bar_ts —
+        # taken from df.index at entry, so it is in the same (UTC) clock as this frame.
+        # entry_time is only a fallback for records written before that field existed.
+        closed = df.iloc[:-1]
+        anchor = getattr(trade, 'entry_bar_ts', None)
+        if anchor is None:
+            anchor = pd.Timestamp(trade.entry_time).floor('h')
+        anchor = pd.Timestamp(anchor)
+        if anchor < closed.index[0]:
+            # The entry candle has aged out of the 1000-bar fetch window. Replaying from
+            # the first available bar would measure excursion from the wrong origin, so
+            # leave this position on the stop it already has.
+            return
+        bars = closed[closed.index >= anchor]
+        if bars.empty:
+            return
+
+        is_long = trade.side == 'long'
+        highs = bars['high'].to_numpy(dtype=float)
+        lows = bars['low'].to_numpy(dtype=float)
+        atrs = bars['atr'].to_numpy(dtype=float)
+
+        was_armed = bool(trade.trail_armed)
+        armed = was_armed
+        peak_r = float(trade.trail_peak_r)
+        stop = float(trade.stop_loss)
+
+        for i in range(len(bars)):
+            # bar_r is THIS bar's excursion, not a running peak. That distinction is
+            # load-bearing: the validated backtest (build_trail_universe_wide.resolve_all)
+            # re-tests `mfe >= trail_start` fresh on every bar, so once price pulls back
+            # below the trigger the stop simply HOLDS instead of continuing to ratchet.
+            # A running-peak version tightens on more bars and is a different rule — it
+            # disagreed with the backtest on real data (verify_trailing_parity.py).
+            # peak_r is still tracked, but only for reporting.
+            bar_r = ((highs[i] - entry) / risk) if is_long else ((entry - lows[i]) / risk)
+            peak_r = max(peak_r, bar_r)
+            if bar_r < trigger_r:
+                continue                 # not armed yet — NO breakeven move here, ever
+            armed = True
+            a = atrs[i]
+            if not (a == a) or a <= 0:   # NaN or non-positive ATR
+                continue
+            cand = (highs[i] - a * atr_mult) if is_long else (lows[i] + a * atr_mult)
+            stop = max(stop, cand) if is_long else min(stop, cand)
+
+        trade.trail_peak_r = peak_r
+        trade.trail_armed = armed
+        if not armed:
+            return
+
+        cur = float(trade.stop_loss)
+
+        # A trail derived from a bar's extreme can land beyond the latest close on a
+        # sharp reversal bar. The backtest fills that at the stop level; a real exchange
+        # rejects a long stop above mark. Pin it just inside the last close so the
+        # amendment is accepted and triggers at ~market instead.
+        #
+        # The outer max()/min() against `cur` is essential and not decorative: without
+        # it, a clamp limit sitting BELOW the current stop would pull the stop back down
+        # and WIDEN risk on an open position — the one thing this subsystem must never
+        # do. With it, that case simply becomes "no move".
+        last_close = float(bars['close'].iloc[-1])
+        limit = last_close * (0.999 if is_long else 1.001)
+        if is_long and stop > limit:
+            stop = max(min(stop, limit), cur)
+            self.trail_stats['clamped'] = self.trail_stats.get('clamped', 0) + 1
+        elif (not is_long) and stop < limit:
+            stop = min(max(stop, limit), cur)
+            self.trail_stats['clamped'] = self.trail_stats.get('clamped', 0) + 1
+
+        improved = (stop > cur) if is_long else (stop < cur)
+        big_enough = abs(stop - cur) >= last_close * min_step
+
+        if not (improved and big_enough):
+            if armed != was_armed:
+                self._persist_trail_state(trade_key, trade)
+            return
+
+        # Exchange first. Local state is only updated on confirmed success, because until
+        # the amendment lands it is the OLD, wider stop that is actually protecting the
+        # position — believing otherwise would corrupt every downstream R calculation.
+        resp = await self.broker.amend_stop_loss(trade.symbol, stop, trade.side)
+        if not resp:
+            self.trail_stats['failures'] = self.trail_stats.get('failures', 0) + 1
+            logger.warning(f"[TRAIL] {trade_key}: amend rejected, keeping stop at {cur}")
+            # Alert once per trade. A position closed on the exchange but not yet noticed
+            # locally would otherwise re-alert every hour until sync catches up.
+            if (self.trailing_config.get('notify', True) and self.telegram
+                    and not trade.trail_fail_notified):
+                trade.trail_fail_notified = True
+                try:
+                    await self.telegram.send_message(
+                        f"⚠️ **TRAIL UPDATE FAILED**\n\n"
+                        f"`{trade.symbol}` {trade.side.upper()}\n"
+                        f"Wanted stop → `{stop:.6g}`, exchange refused.\n"
+                        f"Existing stop `{cur:.6g}` is still in force — position is "
+                        f"protected, just not tightened."
+                    )
+                except Exception:
+                    pass
+            return
+
+        prev = cur
+        trade.stop_loss = stop
+        trade.trail_moves += 1
+        trade.trail_locked_r = ((stop - entry) / risk) if is_long else ((entry - stop) / risk)
+        # "Armed" = the first ratchet that actually landed on the exchange. Deriving it
+        # from `was_armed` would suppress the notification forever if the very first
+        # amendment happened to fail, since trail_armed is set before the API call.
+        first_arm = trade.trail_moves == 1
+        self.trail_stats['moves'] = self.trail_stats.get('moves', 0) + 1
+        if first_arm:
+            self.trail_stats['armed'] = self.trail_stats.get('armed', 0) + 1
+        self._persist_trail_state(trade_key, trade)
+
+        # [TRAIL SHADOW] record the ratchet for the counterfactual learner (never gates)
+        try:
+            if self.trail_shadow:
+                self.trail_shadow.log_move(trade_key, trade, prev, stop)
+        except Exception:
+            pass
+
+        await self._notify_trail(trade, prev, stop, first_arm)
+
+    async def _notify_trail(self, trade: ActiveTrade, prev: float, new: float,
+                            first_arm: bool):
+        """Telegram on arm, and thereafter only when locked-in R crosses a new integer.
+
+        Without the integer gate a busy trending day on 45 open positions would produce
+        hundreds of near-identical messages, and the important ones (arm, failure, trail
+        exit) would be buried.
+        """
+        if not (self.trailing_config.get('notify', True) and self.telegram):
+            return
+        locked = trade.trail_locked_r
+        milestone = int(locked // 1)
+        if not first_arm and milestone <= trade.trail_notified_r:
+            return
+        trade.trail_notified_r = max(trade.trail_notified_r, milestone)
+        direction = '🟢 LONG' if trade.side == 'long' else '🔴 SHORT'
+        head = "🪤 **TRAILING ARMED**" if first_arm else "🪤 **TRAIL MOVED**"
+        trigger_r, atr_mult, _ = self._trail_params()
+        extra = (f"\n└ Rule: arm at +{trigger_r:.0f}R, trail {atr_mult:.1f}×ATR "
+                 f"per 1H close" if first_arm else
+                 f"\n└ Moves so far: {trade.trail_moves}")
+        try:
+            await self.telegram.send_message(
+                f"{head}\n━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"📊 **{trade.symbol}** | {direction}\n"
+                f"├ Peak: **{trade.trail_peak_r:+.2f}R**\n"
+                f"├ Stop: `{prev:.6g}` → `{new:.6g}`\n"
+                f"├ Locked in: **{locked:+.2f}R** "
+                f"{'🔒' if locked > 0 else '🛡️'}"
+                f"{extra}\n━━━━━━━━━━━━━━━━━━━━"
+            )
+        except Exception as e:
+            logger.debug(f"[TRAIL] notify failed: {e}")
+
     async def monitor_active_trades(self, symbol: str):
         """
         Monitor active trades for exits (checks both long and short for this symbol)
@@ -2229,6 +2592,16 @@ class Bot4H:
         except Exception:
             pass
 
+        # [TRAILING STOP] Same hygiene for the trail record, otherwise a future position
+        # on the same symbol+side would adopt a dead trade's original stop distance.
+        try:
+            self.lifetime_stats.get('open_trade_trailing', {}).pop(trade_key, None)
+        except Exception:
+            pass
+
+        # (the trail shadow's close record is written further down, once the realized
+        #  R and exit price are known — that is what makes slippage measurable)
+
         logger.info(f"[{symbol}] Trade closed - processing exit...")
 
         # Get actual exit details from exchange (with retry for API latency)
@@ -2266,8 +2639,14 @@ class Bot4H:
                 if trade.risk_usd_at_entry > 0:
                     r_value = pnl_usd / trade.risk_usd_at_entry
                 else:
-                    # Fallback: price-based R for trades without stored risk
-                    sl_distance = abs(trade.entry_price - trade.stop_loss)
+                    # Fallback: price-based R for trades without stored risk.
+                    # [TRAILING STOP] Must use original_stop_loss — trade.stop_loss has
+                    # been ratcheted by the trail, and dividing by a tightened distance
+                    # would inflate every R on a trailed trade. Falls back to the current
+                    # stop only for positions with no recorded original (adopted, never
+                    # trailed, so the two are identical anyway).
+                    sl_distance = abs(trade.entry_price -
+                                      (trade.original_stop_loss or trade.stop_loss))
                     if sl_distance > 0:
                         if trade.side == 'long':
                             price_diff = exit_price - trade.entry_price
@@ -2394,6 +2773,17 @@ class Bot4H:
         time_held = datetime.now() - trade.entry_time
         hours_held = time_held.total_seconds() / 3600
 
+        # [TRAIL SHADOW] Record the REALIZED outcome. Written here rather than at the top
+        # of this method because the realized R and exit price are what make slippage
+        # measurable: the resolver later computes what this trade "should" have returned
+        # under the live exit rule, and the difference is the real execution cost.
+        try:
+            if self.trail_shadow:
+                self.trail_shadow.log_close(trade_key, trade, actual_r=r_value,
+                                            actual_exit=exit_price)
+        except Exception:
+            pass
+
         # Send exit notification
         try:
             await self.send_exit_notification(
@@ -2478,7 +2868,29 @@ class Bot4H:
             
             # Remaining positions (trade already removed from active_trades)
             remaining = len(self.active_trades)
-            
+
+            # [TRAILING STOP] Make it visible whenever the trail was involved, so the
+            # user can always tell a trailed exit from a plain TP or the original stop —
+            # and can see what the trail actually protected.
+            trail_block = ""
+            if getattr(trade, 'trail_moves', 0) > 0:
+                gave_back = trade.trail_peak_r - r_value
+                trail_block = (
+                    f"\n\n**🪤 TRAILING STOP**\n"
+                    f"├ Exited on the trailed stop ({trade.trail_moves} moves)\n"
+                    f"├ Peak reached: **{trade.trail_peak_r:+.2f}R**\n"
+                    f"├ Locked in: **{trade.trail_locked_r:+.2f}R**\n"
+                    f"├ Original stop: `{trade.original_stop_loss:,.6g}` → "
+                    f"final `{trade.stop_loss:,.6g}`\n"
+                    f"└ Gave back from peak: {gave_back:.2f}R"
+                )
+            elif getattr(trade, 'trail_armed', False):
+                trail_block = (
+                    f"\n\n**🪤 TRAILING STOP**\n"
+                    f"└ Armed at +{trade.trail_peak_r:.2f}R but never moved "
+                    f"(closed before a ratchet)"
+                )
+
             msg = f"""
 {emoji} **TRADE CLOSED - {result}**
 ━━━━━━━━━━━━━━━━━━━━
@@ -2489,7 +2901,7 @@ class Bot4H:
 **RESULT**
 ├ 💵 Entry: ${trade.entry_price:,.4f}
 ├ 💵 Exit: ${exit_price:,.4f}
-└ {'🟢' if r_value > 0 else '🔴'} P&L: **{r_value:+.2f}R** (${pnl_usd:+.2f})
+└ {'🟢' if r_value > 0 else '🔴'} P&L: **{r_value:+.2f}R** (${pnl_usd:+.2f}){trail_block}
 
 **LIFETIME STATS**
 ├ Total: {lifetime_r:+.1f}R ({lifetime_trades} trades)
@@ -2534,6 +2946,8 @@ class Bot4H:
                     # Restore pre_reset flag for trades opened before last reset
                     if trade_key in pre_reset_keys:
                         synced_trade.pre_reset = True
+                    # [TRAILING STOP] see the matching call in sync_with_exchange
+                    self._restore_trail_state(trade_key, synced_trade)
                     self.active_trades[trade_key] = synced_trade
                     count += 1
                     logger.info(f"[SYNC] Found existing position: {sym} ({side}) entry=${entry_price:.4f} SL=${sl_price:.4f} TP=${tp_price:.4f}")
@@ -2593,6 +3007,15 @@ class Bot4H:
                 regime_label, regime_mult, _ = self.get_regime_status()
                 regime_display = f" [{regime_label.upper()} {regime_mult:.0%}]" if regime_label != 'unknown' else ""
 
+                # [TRAILING STOP] Announce the exit rule in force at boot, so the state
+                # is never ambiguous after a restart or a redeploy.
+                if self.trailing_enabled:
+                    _tr, _am, _ = self._trail_params()
+                    trail_line = (f"🪤 **Exits**: fixed TP + TRAILING "
+                                  f"(arm +{_tr:.0f}R, {_am:.1f}×ATR, no breakeven)")
+                else:
+                    trail_line = "🪤 **Exits**: fixed TP/SL only (trailing OFF)"
+
                 msg = f"""
 🤖 **BOT STARTED**
 ━━━━━━━━━━━━━━━━━━━━
@@ -2600,6 +3023,7 @@ class Bot4H:
 📊 **Strategy**: 1H Multi-Div (Both Sides)
 📈 **Symbols**: {len(enabled_symbols)} ({self.symbol_config.get_total_configs()} configs)
 💰 **Risk**: {risk_pct*100:.2f}% per trade{regime_display}
+{trail_line}
 🔬 **Mode**: Multi-config (long + short per symbol)
 
 **LIFETIME STATS**
@@ -2615,7 +3039,31 @@ class Bot4H:
 
         # [NEW] Sync existing positions to prevent pyramiding
         await self.sync_positions_at_startup()
-        
+
+        # [TRAILING STOP] Adopted positions can only be trailed if a persisted record
+        # survived. Say so explicitly rather than leaving the user to wonder why some
+        # open positions never arm — on the very first deploy this is 0 of N by design.
+        if self.trailing_enabled and self.telegram and self.active_trades:
+            try:
+                elig, total = self.trail_eligible_counts()
+                if elig < total:
+                    await self.telegram.send_message(
+                        f"🪤 **TRAILING — ADOPTED POSITIONS**\n\n"
+                        f"`{elig}/{total}` open positions are trail-eligible.\n"
+                        f"The other {total - elig} were opened before trailing existed "
+                        f"(or lost their record on restart), so they keep their original "
+                        f"fixed TP/SL exactly as placed. This is intentional — the bot "
+                        f"will not trail from a guessed risk distance.\n\n"
+                        f"All NEW trades from now on are trail-eligible."
+                    )
+                else:
+                    await self.telegram.send_message(
+                        f"🪤 **TRAILING ACTIVE** — all `{total}` open positions eligible."
+                    )
+            except Exception as e:
+                logger.debug(f"[TRAIL] startup notice failed: {e}")
+
+
         # Initialize lifetime stats (first run only)
         await self.initialize_lifetime_stats()
 
@@ -2798,6 +3246,14 @@ Next scan in ~60 mins ⏳
                 # OBSERVATION ONLY — throttled + fully wrapped; never affects trading.
                 try:
                     await self.shadow_logger.resolve_pending(self.broker)
+                except Exception:
+                    pass
+
+                # [TRAIL SHADOW] Grade a small batch of trades under BOTH exit rules.
+                # OBSERVATION ONLY — throttled + fully wrapped; never affects trading.
+                try:
+                    if self.trail_shadow:
+                        await self.trail_shadow.resolve_pending(self.broker)
                 except Exception:
                     pass
 

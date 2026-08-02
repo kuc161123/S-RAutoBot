@@ -108,6 +108,32 @@ risk:
     start_r: 400            # advise resuming when trailing R recovers to/above this
     min_signals: 150        # refuse to act on thin data — hold current state below this
     recheck_minutes: 20     # how often to re-evaluate (DB query throttle)
+  # [TRAILING STOP — variant "s3_a1"] Validated 2026-08-02 by
+  # report_trail_live_realistic.py: 22 exit rules replayed against IDENTICAL signals over
+  # the live config (277 symbols, 38,753 signals, 2023-06 → 2026-07), live protections,
+  # $1,500 start, bot's own cost model.
+  #   last 15 months : $119,030 vs base $101,452,  maxDD 28.3% vs 50.4%
+  #   full 3 years   : maxDD 29.3% vs 39.7%; ahead of base at 1.0x, 1.5x AND 2.0x costs
+  #   concentration  : top 1% of trades = 24% of profit, vs 112% for the fixed-TP base
+  # Returns are period-dependent (base wins the 10-month and full-history windows). The
+  # DRAWDOWN and CONCENTRATION improvements are what held in every window tested, so this
+  # is deployed as risk control, not as a profit upgrade.
+  #
+  # DO NOT ADD A BREAKEVEN MOVE. Every be* variant lost to its non-be twin in every
+  # period: s2_a1 $107,230 → be1_s2_a1 $61,778 (−42%). Tight trails also lose (s1_a1
+  # $80,799). The edge needs a LATE, WIDE trail.
+  #
+  # Toggle live from Telegram with /trail on|off (no redeploy). This value is the
+  # boot default; /trail overrides it until the next restart.
+  trailing_stop:
+    enabled: true
+    trigger_r: 3.0          # arm only once MFE >= this many R. Lower = worse (tested).
+    atr_mult: 1.0           # trail this many ATR behind each CLOSED candle's extreme
+    min_step_pct: 0.0       # 0 = exact backtest parity (verify_trailing_parity.py runs
+                            # at 0). Raise only to suppress sub-tick amendments; any
+                            # value >0 lets the live stop lag the validated rule.
+    notify: true            # Telegram on arm / R-milestone / failure
+    shadow: true            # run the counterfactual learner (see /trailstats)
   taper_schedule:
   - - 1500
     - 0.003

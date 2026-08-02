@@ -9,9 +9,10 @@ messages. Line refs are `file.py:line` at commit `5cd884f`.
 ## 1. What this is
 
 A live Bybit USDT-perpetual futures bot. One strategy: **1H RSI divergence + Break of
-Structure confirmation**, fixed ATR-based stop, fixed R:R take-profit, no trailing, no
-partials. It runs 277 symbols / 728 configs concurrently and has no cap on open
-positions (45+ open at once is normal).
+Structure confirmation**, fixed ATR-based stop, fixed R:R take-profit, no partials.
+Since 2026-08-02 the stop **trails** once a trade reaches +3R (§6.1). It runs 277
+symbols / 728 configs concurrently and has no cap on open positions (45+ open at once
+is normal).
 
 Deployed remotely (Postgres via `DATABASE_URL`, Telegram control surface). No local
 state files — everything lives in Postgres or is fetched from Bybit.
@@ -227,13 +228,86 @@ exchange positions. `entry_time` becomes `now()` and `risk_usd_at_entry` is unkn
 adopted trades — those are skipped by the net-directional cap and fall back to
 price-based R.
 
+### 6.1 Trailing stop (added 2026-08-02) — variant `s3_a1`
+
+**The rule.** Nothing happens until a bar's excursion reaches **+3R**. From then on the
+stop ratchets to `high − 1×ATR` (long) / `low + 1×ATR` (short), computed on **closed**
+candles only, never widening. **There is no breakeven move and one must never be added.**
+
+`_update_trailing_stops` → `_trail_one` (`bot.py`), called once per symbol per hourly
+close from `process_symbol`, using the dataframe already fetched — no extra API calls.
+Amendments go through `bybit.amend_stop_loss` (a new method; `set_sl_only` could not be
+used because it rejects any price > 100000, a false positive on BTCUSDT, and it raises).
+
+**Why it is deployed.** `report_trail_live_realistic.py` replayed 22 exit rules against
+identical signals over the live config (277 symbols, 38,753 signals, 2023-06 → 2026-07):
+
+| | last 15mo | maxDD 15mo | full 3yr DD | top 1% of trades = % of profit |
+|---|---|---|---|---|
+| base (fixed TP) | $101,452 | 50.4% | 39.7% | **112%** |
+| `s3_a1` | **$119,030** | **28.3%** | **29.3%** | **24%** |
+
+`s3_a1` is ahead at 1.0×, 1.5× **and** 2.0× costs. Returns are period-dependent (base
+wins the 10-month and full-history windows); the **drawdown** and **profit-concentration**
+improvements are what held in every window. It went live as risk control, not as a
+profit upgrade — and it does not make the bot profitable OOS.
+
+**Things that were tested and are worse — do not "improve" these:**
+- Any breakeven move: `s2_a1` $107,230 → `be1_s2_a1` $61,778 (−42%). Every `be*` variant
+  lost to its non-`be` twin in every period.
+- Tight trails: `s1_a1` $80,799.
+
+**Four subtleties that took a bug each to find** (`verify_trailing_parity.py` drives the
+live engine, the shadow resolver and the backtest over the same candles and asserts
+agreement trade-by-trade — currently 100% over 3,200+ trades):
+
+1. **Arming uses each bar's own excursion, not a running peak.** The validated backtest
+   re-tests `mfe >= 3R` fresh every bar, so when price falls back the stop *holds*
+   instead of continuing to ratchet. A running-peak version is a different rule.
+2. **`risk_dist` is carried explicitly.** Reconstructing the stop distance as
+   `|entry − original_stop_loss|` loses the last ulp; on a low-priced symbol that turned
+   an excursion of exactly 3.0R into 2.999999999999996 and skipped a ratchet.
+3. **`entry_bar_ts` anchors the replay, not `entry_time`.** `df.index` is UTC
+   (epoch-derived) while `entry_time` is `datetime.now()` (local) — flooring the latter
+   picks the wrong bar on a non-UTC host.
+4. **The clamp must not un-ratchet.** A trail level can land through the last close on a
+   reversal bar; the exchange rejects that, so it is pinned just inside — but bounded by
+   `max(..., current_stop)`, or a clamp limit below the current stop would *widen* risk.
+
+**State and restarts.** `original_stop_loss`, `risk_dist`, `entry_bar_ts` and trail
+progress are persisted in `lifetime_stats['open_trade_trailing']` (same pattern as
+`open_trade_regimes`). A restart-adopted position **with no record is never trailed** —
+`original_stop_loss` stays 0.0 and it keeps the exact bracket it was opened under. On the
+first deploy that is every open position, and the bot says so in a Telegram notice.
+
+Also fixed here: `handle_trade_exit`'s price-based R fallback divided by `trade.stop_loss`,
+which the trail mutates — it now uses `original_stop_loss`.
+
+**Controls.** `/trail` (status), `/trail on|off` (runtime toggle, reverts to config.yaml
+on restart; turning it off never widens stops already moved), `/trailstats` (verdict).
+Config: `risk.trailing_stop`.
+
+### 6.2 Trail shadow — is trailing actually worth it?
+
+`autobot/core/trail_shadow.py`, table `trail_shadow`. Observation only, same contract as
+the rest of the shadow layer. Every trade is replayed from klines under **both** exit
+rules against the same bars, so `r_trail − r_fixed` is attributable to the exit and
+nothing else. It also measures **slippage** — realized R vs the modelled R of whichever
+arm was actually live, which is the number that decides whether the 1× or 3× cost column
+is real. `/trailstats` prints the comparison and a recommendation; the bar is asymmetric
+(stay on unless significantly worse on R *and* not better on drawdown) because that is
+the trade the feature was deployed to make. Needs 60 resolved trades before it calls it.
+
+Same SL-wins-ties bias as `ShadowLogger`, which penalises the *trailed* arm more (its stop
+sits closer to price) — so a positive delta there reads conservative.
+
 ---
 
 ## 7. Telegram dashboard — read the R numbers carefully
 
 `build_dashboard_message()` (`telegram_handler.py:220`). Commands: `/dashboard /pnl
-/edge /regime /blocks /positions /radar /learn /stats /performance /risk /stop /start
-/setregime /setbalance /resetstats /resetlifetime /debug /help`.
+/edge /regime /blocks /positions /radar /learn /trail /trailstats /stats
+/performance /risk /stop /start /setregime /setbalance /resetstats /resetlifetime /debug /help`.
 
 **R is now computed per-trade (fixed 2026-07-25).** It previously divided aggregate
 dollars by a single scalar `base_risk_amount = equity × tapered base risk`, which ignored

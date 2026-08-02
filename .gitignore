@@ -60,3 +60,11 @@ tier1*.log
 tier2.log
 tier3.log
 validate*.log
+
+# 5-minute kline cache + trailing study artifacts (regenerable; multi-GB)
+cache_5m/
+logs_5m/
+trail_wide_universe.parquet
+trail_gauntlet_universe.parquet
+trailing_extensive.parquet
+alt_uni_*.parquet

@@ -47,6 +47,14 @@ try:
 except Exception:
     _PG_OK = False
 
+# Bump whenever a change alters the R a resolved row would receive. Rows graded by an
+# older resolver are reset to 'pending' on boot and re-graded, because stats() pools all
+# resolved rows and silently mixing two bases is worse than having no data.
+#   v1: walk_fixed hardcoded -1.0 on a stop while walk_trail divided by sl_dist, so the
+#       two arms used different denominators (see walk_fixed's docstring).
+#   v2: both arms share the sl_dist denominator.
+RESOLVER_VERSION = 2
+
 WARMUP_BARS = 30          # bars fetched before entry so ATR(14) is warm at the entry bar
 HORIZON_BARS = 400        # give the fixed-TP arm room; RR 8-10 trades run long
 MIN_AGE_H = 6             # don't try to grade a trade younger than this
@@ -228,6 +236,21 @@ class TrailShadow:
             cur.execute("CREATE INDEX IF NOT EXISTS ix_trailshadow_status "
                         "ON trail_shadow(status);")
             cur.execute("CREATE INDEX IF NOT EXISTS ix_trailshadow_ts ON trail_shadow(ts);")
+            cur.execute("ALTER TABLE trail_shadow ADD COLUMN IF NOT EXISTS "
+                        "resolver_version INT DEFAULT 1;")
+            # Re-grade anything scored by a superseded resolver. Idempotent: once a row
+            # is rewritten at the current version this matches nothing.
+            cur.execute("""
+                UPDATE trail_shadow
+                SET status='pending', checked_ts=NULL, resolved_ts=NULL,
+                    r_fixed=NULL, r_trail=NULL, bars_fixed=NULL, bars_trail=NULL,
+                    model_peak_r=NULL, model_moves=NULL
+                WHERE status='resolved' AND COALESCE(resolver_version, 1) < %s;
+            """, (RESOLVER_VERSION,))
+            n = cur.rowcount
+            if n:
+                logger.info(f"[TRAILSHADOW] re-grading {n} rows scored by an older "
+                            f"resolver (now v{RESOLVER_VERSION})")
             conn.commit()
 
     @staticmethod
@@ -365,9 +388,10 @@ class TrailShadow:
             cur.execute("""
                 UPDATE trail_shadow
                 SET status=%s, r_fixed=%s, r_trail=%s, bars_fixed=%s, bars_trail=%s,
-                    model_peak_r=%s, model_moves=%s, resolved_ts=now()
+                    model_peak_r=%s, model_moves=%s, resolved_ts=now(),
+                    resolver_version=%s
                 WHERE id=%s;
-            """, (status, rf, rt, bf, bt, peak, moves, sid))
+            """, (status, rf, rt, bf, bt, peak, moves, RESOLVER_VERSION, sid))
             conn.commit()
 
     @staticmethod

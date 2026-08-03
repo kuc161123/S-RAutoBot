@@ -1,11 +1,39 @@
 import os
 import json
+import tempfile
 import logging
 import psycopg2
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+def _atomic_write_json(path, payload, **dump_kw):
+    """Write JSON via temp file + os.replace so a crash cannot truncate the target.
+
+    The previous `open(path,'w')` truncated the file before writing: a crash, OOM or
+    container restart mid-write left a zero-length or half-written file, and on the next
+    boot the bot silently started from blank lifetime stats. That now also loses the
+    trailing-stop records in `open_trade_trailing`, which permanently excludes every open
+    position from trailing. os.replace is atomic on POSIX, so readers see either the old
+    file or the new one — never a partial one.
+    """
+    path = str(path)
+    d = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".tmp_", suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(payload, f, **dump_kw)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
 
 # Default lifetime stats structure
 DEFAULT_LIFETIME_STATS = {
@@ -194,7 +222,7 @@ class StorageHandler:
         try:
             os.makedirs(os.path.dirname(self.local_file_path), exist_ok=True)
             with open(self.local_file_path, 'w') as f:
-                json.dump({'signals': list(self.cache)}, f)
+                json.dump({'signals': list(self.cache)}, f)  # noqa (rebuilt on boot)
         except Exception as e:
             logger.error(f"Failed to save local file: {e}")
 
@@ -275,8 +303,7 @@ class StorageHandler:
     def _save_lifetime_stats_to_file(self, stats: Dict[str, Any]) -> bool:
         """Save lifetime stats to local JSON file"""
         try:
-            with open(self.lifetime_stats_file, 'w') as f:
-                json.dump(stats, f, indent=4)
+            _atomic_write_json(self.lifetime_stats_file, stats, indent=4)
             logger.debug(f"💾 Lifetime stats saved to file")
             return True
         except Exception as e:

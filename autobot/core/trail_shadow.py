@@ -75,9 +75,19 @@ def _atr_series(candles, period: int = 14):
     return out
 
 
-def walk_fixed(candles, entry, sl, tp, side, rr):
-    """Original bracket. Returns (r, bars) or (None, n) if unresolved in the window."""
-    risk = (entry - sl) if side == 'long' else (sl - entry)
+def walk_fixed(candles, entry, sl, tp, side, rr, risk=None):
+    """Original bracket. Returns (r, bars) or (None, n) if unresolved in the window.
+
+    `risk` MUST be passed the same value walk_trail receives. This used to hardcode
+    -1.0 on a stop hit while walk_trail divided by sl_dist, so the two arms measured R
+    on different denominators. Because `entry` is the ACTUAL market fill while `sl` is
+    derived from the PLANNED entry (see CLAUDE.md 11), |entry - sl| != sl_dist on every
+    trade, and the arms disagreed purely from entry-fill drift. That produced the
+    impossible reading "trailing better 8 / worse 9" on a sample where the fixed arm
+    lost -1.0R on all 18 trades — trailing is ratchet-only and can never be worse.
+    """
+    if risk is None:
+        risk = (entry - sl) if side == 'long' else (sl - entry)
     if risk <= 0:
         return None, 0
     for i, (_, o, h, l, c) in enumerate(candles):
@@ -86,7 +96,8 @@ def walk_fixed(candles, entry, sl, tp, side, rr):
         else:
             hit_sl, hit_tp = h >= sl, l <= tp
         if hit_sl:                      # SL-wins-ties (conservative)
-            return -1.0, i + 1
+            return ((sl - entry) / risk if side == 'long'
+                    else (entry - sl) / risk), i + 1
         if hit_tp:
             return float(rr), i + 1
     return None, len(candles)
@@ -326,10 +337,12 @@ class TrailShadow:
             self._safe(self._touch_checked, r['id'])
             return
 
-        rf, bf = walk_fixed(bars, r['entry'], r['orig_sl'], r['tp'], r['side'], r['rr'])
+        _risk = float(r['sl_dist']) if r.get('sl_dist') else None
+        rf, bf = walk_fixed(bars, r['entry'], r['orig_sl'], r['tp'], r['side'], r['rr'],
+                            risk=_risk)
         rt, bt, peak, moves = walk_trail(bars, atrs, r['entry'], r['orig_sl'], r['tp'],
                                          r['side'], r['rr'], r['trigger_r'], r['atr_mult'],
-                                         risk=float(r['sl_dist']) if r.get('sl_dist') else None)
+                                         risk=_risk)
         if rf is None or rt is None:
             # One arm is still open. Grading now would systematically favour the arm
             # that exits sooner, so wait — unless the horizon is genuinely exhausted.

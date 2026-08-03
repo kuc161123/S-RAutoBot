@@ -38,6 +38,22 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+
+def _num(v):
+    """Coerce numpy scalars to built-in Python numbers.
+
+    psycopg2 cannot adapt numpy.float64 ("can't adapt type 'numpy.float64'") and the
+    whole INSERT raises. Values here come straight off pandas rows (df.iloc[-1]['open']
+    and everything derived from it), so this bit every exec_log write and left the table
+    empty. Coercing at the DB boundary fixes it for every call site at once.
+    """
+    if v is None:
+        return None
+    try:
+        return v.item()            # numpy scalar -> python scalar
+    except AttributeError:
+        return v
+
 try:
     import psycopg2
     import psycopg2.extras
@@ -187,10 +203,11 @@ class Telemetry:
                     qty, notional, risk_usd, atr, atr_mult, rr, leverage,
                     signal_bar_ms, fill_lag_sec, regime, regime_mult, equity)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
-            """, (trade_key, order_id, symbol, side, div_type,
+            """, tuple(_num(x) for x in (
+                  trade_key, order_id, symbol, side, div_type,
                   intended_entry, actual_entry, slip, intended_sl, intended_tp,
                   qty, (qty or 0) * (actual_entry or 0), risk_usd, atr, atr_mult, rr,
-                  leverage, signal_bar_ms, lag, regime, regime_mult, equity))
+                  leverage, signal_bar_ms, lag, regime, regime_mult, equity)))
             conn.commit()
 
     def log_exit(self, **kw):
@@ -206,8 +223,9 @@ class Telemetry:
                     hold_hours = %s
                 WHERE id = (SELECT id FROM exec_log WHERE trade_key = %s
                             AND exit_ts IS NULL ORDER BY ts DESC LIMIT 1);
-            """, (actual_exit, realized_pnl, fee_usd, funding_usd, r_result, outcome,
-                  hold_hours, trade_key))
+            """, tuple(_num(x) for x in (actual_exit, realized_pnl, fee_usd,
+                                         funding_usd, r_result, outcome,
+                                         hold_hours, trade_key)))
             conn.commit()
 
     # ---- 2. market state ----------------------------------------------------
@@ -223,7 +241,7 @@ class Telemetry:
                 "median_chop", "median_adx", "median_atr_pct", "median_rsi",
                 "btc_close", "btc_ret_30d", "btc_chop", "btc_adx", "btc_above_ema200",
                 "median_corr_btc", "median_funding"]
-        vals = [snap.get(c) for c in cols]
+        vals = [_num(snap.get(c)) for c in cols]
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(f"""
                 INSERT INTO market_state (ts, {','.join(cols)})
@@ -272,8 +290,9 @@ class Telemetry:
             cur.execute("""
                 INSERT INTO signal_blocks (symbol, side, div_type, reason, detail,
                     regime, equity) VALUES (%s,%s,%s,%s,%s,%s,%s);
-            """, (symbol, side, div_type, reason, json.dumps(detail, default=str),
-                  regime, equity))
+            """, tuple(_num(x) for x in (symbol, side, div_type, reason,
+                                         json.dumps(detail, default=str),
+                                         regime, equity)))
             conn.commit()
 
     # ---- 5. equity snapshots ------------------------------------------------
@@ -289,7 +308,7 @@ class Telemetry:
                 "net_dir_risk_usd", "long_positions", "short_positions",
                 "regime", "regime_mult", "risk_pct", "shadow_gate_open",
                 "trading_enabled", "daily_r", "total_r", "unrealized_pnl"]
-        vals = [snap.get(c) for c in cols]
+        vals = [_num(snap.get(c)) for c in cols]
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(f"""
                 INSERT INTO equity_snapshots (ts, {','.join(cols)})

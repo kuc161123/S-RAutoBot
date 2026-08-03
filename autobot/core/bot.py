@@ -460,9 +460,18 @@ class Bot4H:
                 rs['wins'] += 1
             if r_value > 0:
                 rs['gross_profit_r'] += r_value
+                rs['gross_profit_usd'] = rs.get('gross_profit_usd', 0.0) + pnl
             else:
                 rs['gross_loss_r'] += r_value
+                rs['gross_loss_usd'] = rs.get('gross_loss_usd', 0.0) + pnl
             rs['net_pnl_usd'] = rs.get('net_pnl_usd', 0.0) + pnl
+            # [EDGE CHECK UNITS] Dollar gross is tracked alongside R gross because the
+            # dashboard prints PF next to a dollar net, and an R-based PF can disagree in
+            # SIGN with a dollar net: R is pnl/risk_at_entry, and risk_at_entry has ranged
+            # from $0.55 (critical, 0.10x) to $5.61 (favorable, 1.00x) — plus the
+            # 1.2% -> 0.3% change on 2026-07-21. Many small-risk wins and few large-risk
+            # losses give PF > 1 in R while losing money. Seen live as
+            # "Favorable: PF 1.3 | $-250.27".
             self.lifetime_stats['regime_stats'] = regime_stats
 
         # Track gross profit/loss for accurate profit factor

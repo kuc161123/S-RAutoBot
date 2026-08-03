@@ -718,9 +718,20 @@ class TelegramHandler:
                 continue
             w = rs.get('wins', 0)
             wr = w / t * 100 if t > 0 else 0
-            gp = rs.get('gross_profit_r', 0.0)
-            gl = abs(rs.get('gross_loss_r', 0.0))
-            pf = f"{gp/gl:.1f}" if gl > 0 else ("inf" if gp > 0 else "N/A")
+            # Prefer DOLLAR profit factor so PF and the $ net beside it are the same
+            # unit and can never disagree in sign. Falls back to the R-based figure for
+            # history recorded before dollar gross was tracked, suffixed 'R' so the unit
+            # is explicit rather than implied.
+            gpu = rs.get('gross_profit_usd')
+            glu = abs(rs.get('gross_loss_usd', 0.0) or 0.0)
+            if gpu is not None and glu > 0:
+                pf = f"{gpu/glu:.1f}"
+            elif gpu is not None and gpu > 0 and glu == 0:
+                pf = "inf"
+            else:
+                gp = rs.get('gross_profit_r', 0.0)
+                gl = abs(rs.get('gross_loss_r', 0.0))
+                pf = f"{gp/gl:.1f}R" if gl > 0 else ("inf" if gp > 0 else "N/A")
             pass_pct = t / signals * 100 if signals > 0 else 0
             open_count = open_per_regime[rk]
             open_tag = f" | {open_count} open" if open_count > 0 else ""

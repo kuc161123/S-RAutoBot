@@ -1146,8 +1146,12 @@ class Bybit:
             logger.error(f"❌ Failed to fetch precisions for {symbol}: {e}")
         
         # Fallback - use conservative defaults and log loudly
-        logger.error(f"❌ USING FALLBACK PRECISION for {symbol}: tickSize=0.0001, qtyStep=0.001")
-        self.precisions_cache[symbol] = ("0.0001", "0.001")  # Cache fallback too
+        # Deliberately NOT cached. Caching a guessed tick size pinned the wrong value
+        # for the rest of the session, so every later price rounding for this symbol —
+        # including trailing-stop amendments — used it even after the API recovered.
+        # Leaving it uncached means the next call retries the real lookup.
+        logger.error(f"❌ USING FALLBACK PRECISION for {symbol}: tickSize=0.0001, "
+                     f"qtyStep=0.001 (not cached — will retry next call)")
         return ("0.0001", "0.001")
 
     async def preload_all_precisions(self) -> int:

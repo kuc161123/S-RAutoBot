@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import math
 import multiprocessing as mp
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -42,11 +43,14 @@ import backtest_3yr_walkforward as bt
 
 CACHE_1H = ROOT / "cache_3yr_1h"
 CACHE_5M = ROOT / "cache_5m"
-OUT = ROOT / "trail_5m_universe.parquet"
+# CHOP is filtered at BUILD time (a signal above the threshold never becomes a row), so
+# ablating it requires a separate universe — run_simulation's own CHOP scenarios cannot
+# undo a filter that already removed the signals. Env-overridable for exactly that.
+OUT = ROOT / os.environ.get("TRAIL5M_OUT", "trail_5m_universe.parquet")
 GEN_FROM = pd.Timestamp("2025-01-05")      # 5m cache starts 2025-01-01; leave ATR warmup
 MAX_WAIT = bt.MAX_WAIT_CANDLES
 FEE, SLIP = 0.0006, 0.0003
-CHOP_T = 52.0
+CHOP_T = float(os.environ.get("TRAIL5M_CHOP", "52.0"))
 
 # (label, breakeven_trigger_R, trail_start_R, trail_atr_mult)
 VARIANTS = [

@@ -1,0 +1,15 @@
+[dedup-impact] sampling 56 of 277 live symbols with their real (rr, atr) picks
+
+=== TOTALS across 56 symbols (real per-symbol RR/ATR configs) ===
+  backtest signal-set size:        33399
+  live trend-aligned signal-set:   29519
+  only-in-backtest (leaked):       3896  (11.7% of backtest universe)
+  only-in-live (missed by bt):     16
+
+  R using each symbol's REAL live picks, fee-adjusted, executed-only:
+    only-in-backtest (leaked) signals: n= 1809 avg_R=+0.0670
+    shared (bt & live agree) signals:  n=13175 avg_R=+0.1980
+
+  backtest-universe blended avg R (as currently built): +0.1822
+  what live would ACTUALLY see (shared only):           +0.1980
+  bias introduced by the extra 12.1% of leaked signals: -0.0158 R/trade

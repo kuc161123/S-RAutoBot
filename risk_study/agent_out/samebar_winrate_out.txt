@@ -1,0 +1,5 @@
+total resolved: 33915
+same-bar resolved: 3411 10.06%
+overall win rate (all resolved): 0.1828
+win rate WITHIN same-bar resolutions: 0.0352
+win rate WITHIN non-same-bar resolutions: 0.1993

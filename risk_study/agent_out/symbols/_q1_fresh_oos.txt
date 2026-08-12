@@ -1,0 +1,3 @@
+Genuinely-fresh OOS window (never touched by the walk-forward's own train+test split): entries >= 2026-05-25
+prod_selected_728 (live cfg): n_trades=1736, n_weeks=6, mean_net_r=-0.2564668432615937, ci95=[-0.6497975003608848,0.19631213485890717]
+rejected_376 (grid-avg): n_trades=2793, mean_cell_avg=-0.3694704703075547

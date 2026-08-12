@@ -1,0 +1,12 @@
+non_live_readable_symbols: 232
+delisted: 189
+still_listed_but_not_in_live_book: 43
+total_exposure_symbol_years: 310.71
+hazard_MLE_per_symbol_year: 0.6083
+implied_annual_survival: 0.5443
+implied_3yr_survival: 0.1612
+naive_3yr_delisted_fraction: 0.8147
+median_exposure_years: 0.81
+discrete_annual_hazard_median_exposure: 0.8752
+expected_delistings_per_year_277book_exponential: 168.5
+expected_delistings_per_year_277book_discrete: 242.4

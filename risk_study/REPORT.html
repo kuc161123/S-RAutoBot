@@ -1,0 +1,670 @@
+<title>Risk-Per-Trade Study — AutoTrading Bot</title>
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F5; --line:#D8DEE7;
+  --ink:#151A21; --ink-2:#3D4854; --ink-3:#6C7888;
+  --sig:#A32330; --sig-soft:#F3E2E3;
+  --meas:#2C5C77; --meas-soft:#E2EBF1;
+  --good:#3A6B4E; --good-soft:#E3EDE6;
+  --warn:#8A5A16; --warn-soft:#F5EADA;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1216; --surface:#161A20; --surface-2:#1D222A; --line:#2C333D;
+    --ink:#E6E9EE; --ink-2:#B3BCC8; --ink-3:#7F8A98;
+    --sig:#E8757F; --sig-soft:#2E1A1D;
+    --meas:#7FB3D0; --meas-soft:#152530;
+    --good:#7FBF97; --good-soft:#14231A;
+    --warn:#D8A860; --warn-soft:#2A2015;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1216; --surface:#161A20; --surface-2:#1D222A; --line:#2C333D;
+  --ink:#E6E9EE; --ink-2:#B3BCC8; --ink-3:#7F8A98;
+  --sig:#E8757F; --sig-soft:#2E1A1D;
+  --meas:#7FB3D0; --meas-soft:#152530;
+  --good:#7FBF97; --good-soft:#14231A;
+  --warn:#D8A860; --warn-soft:#2A2015;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink); font-family:var(--serif);
+  font-size:17px; line-height:1.62; margin:0; padding:0 20px 96px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:920px; margin:0 auto}
+.prose{max-width:66ch}
+h1,h2,h3{text-wrap:balance; line-height:1.2; margin:0}
+h1{font-size:2.35rem; font-weight:600; letter-spacing:-.015em}
+h2{font-size:1.42rem; font-weight:600; margin:0 0 .1em}
+h3{font-size:1.06rem; font-weight:600; margin:0 0 .2em}
+p{margin:0}
+a{color:var(--meas)}
+.eyebrow{
+  font-family:var(--mono); font-size:.68rem; text-transform:uppercase;
+  letter-spacing:.14em; color:var(--ink-3); font-weight:500;
+}
+header{padding:60px 0 34px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:14px}
+.meta{display:flex; flex-wrap:wrap; gap:8px 22px; font-family:var(--mono); font-size:.73rem; color:var(--ink-3)}
+section{padding:44px 0; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:20px}
+section:last-of-type{border-bottom:0}
+.shead{display:flex; flex-direction:column; gap:5px}
+.stack{display:flex; flex-direction:column; gap:14px}
+
+.verdict{
+  background:var(--sig-soft); border:1px solid var(--sig); border-left-width:5px;
+  padding:26px 28px; display:flex; flex-direction:column; gap:12px; margin-top:30px;
+}
+.verdict .call{font-size:1.6rem; font-weight:600; color:var(--sig); letter-spacing:-.01em; line-height:1.25}
+.verdict p{color:var(--ink-2)}
+
+.note{border-left:3px solid var(--line); padding:2px 0 2px 18px; color:var(--ink-2)}
+.note.meas{border-color:var(--meas)}
+.note.warn{border-color:var(--warn)}
+.note.sig{border-color:var(--sig)}
+
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px}
+.card{background:var(--surface); border:1px solid var(--line); padding:16px 18px; display:flex; flex-direction:column; gap:5px}
+.card .k{font-family:var(--mono); font-size:.66rem; text-transform:uppercase; letter-spacing:.1em; color:var(--ink-3)}
+.card .v{font-family:var(--mono); font-size:1.5rem; font-weight:500; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+.card .d{font-size:.85rem; color:var(--ink-2); line-height:1.45}
+.card.sig .v{color:var(--sig)} .card.meas .v{color:var(--meas)}
+.card.good .v{color:var(--good)} .card.warn .v{color:var(--warn)}
+
+.tw{overflow-x:auto; border:1px solid var(--line); background:var(--surface)}
+table{border-collapse:collapse; width:100%; font-family:var(--mono); font-size:.79rem; font-variant-numeric:tabular-nums}
+th,td{padding:8px 12px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line)}
+th{
+  background:var(--surface-2); color:var(--ink-3); font-weight:500; font-size:.66rem;
+  text-transform:uppercase; letter-spacing:.08em; position:sticky; top:0;
+}
+td:first-child,th:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:0}
+tr.here{background:var(--meas-soft)}
+tr.here td{font-weight:600}
+.neg{color:var(--sig)} .pos{color:var(--good)} .dim{color:var(--ink-3)}
+caption{
+  caption-side:bottom; text-align:left; padding:10px 12px; font-family:var(--serif);
+  font-size:.85rem; color:var(--ink-3); line-height:1.5; white-space:normal;
+}
+
+.tag{
+  display:inline-block; font-family:var(--mono); font-size:.63rem; text-transform:uppercase;
+  letter-spacing:.09em; padding:2px 7px; border:1px solid currentColor; margin-right:6px;
+}
+.tag.fixed{color:var(--good)} .tag.open{color:var(--warn)} .tag.dead{color:var(--sig)}
+
+ul,ol{margin:0; padding-left:1.25em; display:flex; flex-direction:column; gap:8px; color:var(--ink-2)}
+li::marker{color:var(--ink-3)}
+code{font-family:var(--mono); font-size:.86em; background:var(--surface-2); padding:1px 5px; border-radius:2px}
+pre{
+  font-family:var(--mono); font-size:.76rem; background:var(--surface); border:1px solid var(--line);
+  padding:16px 18px; overflow-x:auto; margin:0; line-height:1.6; color:var(--ink-2);
+}
+.agents{display:flex; flex-direction:column; gap:0; border:1px solid var(--line); background:var(--surface)}
+.agent{display:grid; grid-template-columns:130px 1fr; gap:16px; padding:14px 18px; border-bottom:1px solid var(--line)}
+.agent:last-child{border-bottom:0}
+.agent .n{font-family:var(--mono); font-size:.72rem; font-weight:600; letter-spacing:.02em}
+.agent .b{font-size:.9rem; color:var(--ink-2); line-height:1.5}
+@media(max-width:620px){
+  body{font-size:16px}
+  h1{font-size:1.85rem}
+  .agent{grid-template-columns:1fr; gap:4px}
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Quantitative risk study · commissioned 2026-08-11</div>
+  <h1>Can risk-per-trade be raised without unacceptable drawdown?</h1>
+  <p class="prose" style="color:var(--ink-2); font-size:1.06rem">
+    A full re-derivation of the sizing question for the live Bybit divergence bot — engine audited,
+    two bugs fixed, execution cost measured from real fills rather than assumed, and every result
+    reported separately on in-sample and genuinely untouched data.
+  </p>
+  <div class="meta">
+    <span>32,913 trades · 2023-06-01 → 2026-07-25</span>
+    <span>277 symbols / 728 configs</span>
+    <span>9 agents</span>
+    <span>base commit 263a4ff</span>
+    <span>rev 2 · live exit rule, $1,500</span>
+  </div>
+</header>
+
+<div class="verdict" style="background:var(--meas-soft); border-color:var(--meas)">
+  <div class="eyebrow" style="color:var(--meas)">Revision 2 — the first pass modelled the wrong exit</div>
+  <div class="call" style="color:var(--meas); font-size:1.25rem">
+    Challenged on whether the sweep matched the bot exactly. It did not. Corrected — and the
+    conclusion got stronger, not weaker.
+  </div>
+  <p>
+    Revision 1 resolved every trade against a <strong>fixed take-profit</strong>. The bot has
+    <strong>trailed</strong> since 2026-08-02 (<code>risk.trailing_stop.enabled: true</code>), and it ran
+    on a <strong>$1,500</strong> account, not the $10,000 the brief specified. Both are now modelled.
+    The taper rungs are denominated in dollars, so starting balance is not a scale-free choice: at
+    $10,000 the taper had already cut base risk from 0.30% to 0.22% before the sweep varied anything.
+  </p>
+  <p>
+    Under the honest CHOP gate the trailing stop <strong>costs 0.187 R/trade</strong> — it cuts net
+    expectancy from +0.246 R to <strong>+0.058 R</strong>. A four-fold smaller edge supports a
+    four-fold smaller bet, so the in-sample optimum collapses from ~0.75% to <strong>0.20–0.30%</strong>.
+    The bot is already at it. Every number below is the corrected run.
+  </p>
+</div>
+
+<div class="verdict">
+  <div class="eyebrow" style="color:var(--sig)">Executive conclusion</div>
+  <div class="call">Do not raise risk. The evidence supports lowering it — or halting.</div>
+  <p>
+    On the only genuinely untouched period, the strategy loses money at <em>every</em> risk level from
+    0.1% to 3.0%, and raising risk makes the loss and the drawdown strictly worse. On the in-sample
+    periods where it does look profitable, a concurrency-adjusted growth-optimal calculation puts the
+    right fraction at <strong>0.09–0.30%</strong> — bracketing, and mostly below, the 0.3% already in
+    production. There is no window, no cost assumption and no metric in this study under which
+    a higher number is defensible.
+  </p>
+  <p>
+    <strong>This is a research output. Nothing was deployed and <code>config.yaml</code> was not modified.</strong>
+  </p>
+</div>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Scope correction</div>
+    <h2>The brief described a different bot</h2>
+  </div>
+  <p class="prose">
+    The reference configuration supplied with this assignment does not match the system in this
+    repository. I verified all fourteen assertions against source; thirteen are wrong. I ran the study
+    against the real bot, which is what the instruction to "fit our bot within" calls for — but the gap
+    is large enough that it changes what the question even means.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Assumed in the brief</th><th>Actual, verified in source</th></tr></thead>
+      <tbody>
+        <tr><td>~1% risk per trade</td><td class="neg">0.3% — <code>config.yaml:43</code></td></tr>
+        <tr><td>BTCUSDT only</td><td class="neg">277 symbols, 728 configs</td></tr>
+        <tr><td>15m entry / 4H trend</td><td class="neg">1H throughout</td></tr>
+        <tr><td>S/R zones + engulfing retest</td><td class="neg">RSI divergence + break of structure</td></tr>
+        <tr><td>Reward:risk 1:2</td><td class="neg">3:1 to 10:1, mass at 8–10</td></tr>
+        <tr><td>One open position at a time</td><td class="neg">No cap anywhere; 45+ normal, 178 observed</td></tr>
+        <tr><td>Swing 3–5 · zone 0.5 ATR · SL buffer 0.2 ATR</td><td class="neg">Fractal pivots L3/R3; stop = ATR × 1.0/1.5/2.0</td></tr>
+        <tr><td>Commission 0.04%</td><td class="dim">No commission model in the live bot at all</td></tr>
+        <tr><td>4H close vs 200 EMA trend filter</td><td class="pos">Closest match — 1H close vs 200 EMA, applied twice</td></tr>
+      </tbody>
+      <caption>
+        The single most consequential difference is position concurrency. A one-position-at-a-time
+        system compounds sequentially, and its optimal risk fraction is the textbook Kelly number. This
+        bot settles dozens of correlated bets against the same equity simultaneously, which divides the
+        defensible fraction by roughly an order of magnitude. Every conclusion below turns on that.
+      </caption>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Correction 1 · you were right</div>
+    <h2>Execution cost, measured from real fills</h2>
+  </div>
+  <p class="prose">
+    The repo has never measured its own costs. It carries two different hardcoded constants — 18 bps in
+    the main engine, 12 bps baked into a second "validated" dataset — and a third figure of 34.1 bps
+    from an indirect calibration. You said the cost should be normal and obtainable from trade data.
+    With the database you provided, it now is.
+  </p>
+  <p class="prose">
+    The bot's <code>exec_log</code> table holds 176 closed live trades. Stop-outs are the clean estimator:
+    a stop-out should realise exactly −1.0 R before friction, so the shortfall below −1.0 is the entire
+    round trip. Across 133 real stop-outs, trades realised <strong>−1.2275 R</strong> against a mean stop
+    distance of 1.40% of price.
+  </p>
+  <div class="grid">
+    <div class="card meas">
+      <div class="k">Measured round trip</div><div class="v">24.2 bps</div>
+      <div class="d">median 23.1 · 95% CI [19.8, 28.7] · n = 133 live stop-outs</div>
+    </div>
+    <div class="card">
+      <div class="k">Repo assumption</div><div class="v">18.0 bps</div>
+      <div class="d">Too low by a third — but far closer than the alternative</div>
+    </div>
+    <div class="card">
+      <div class="k">Prior claim</div><div class="v">34.1 bps</div>
+      <div class="d">Overstated by ~40%. Your instinct was correct</div>
+    </div>
+    <div class="card">
+      <div class="k">Fee-only floor</div><div class="v">11 bps</div>
+      <div class="d">Both legs are taker market orders — unbeatable without a redesign</div>
+    </div>
+  </div>
+  <div class="note meas">
+    <p>
+      <strong>The whole study runs at the measured 24.2 bps</strong>, with 18 and 34.1 as sensitivity
+      bounds. Two caveats I cannot remove: the 133 fills span only 8 days (2026-08-03 → 08-11), and
+      "excess loss beyond −1 R" bundles genuine stop gapping in with fees and spread. Both push the
+      estimate high, so 24.2 is a mild upper bound on pure friction — and a fair estimate of what the
+      account actually pays.
+    </p>
+  </div>
+  <div class="note sig">
+    <p>
+      <strong>Lowering the cost does not change the answer.</strong> The breakeven round trip — the cost
+      at which mean net R crosses zero — is +70.7 bps on DEV and +68.2 bps on VAL, but
+      <strong>−35.3 bps on the holdout</strong>. A negative breakeven means the holdout loses money at
+      <em>zero</em> cost. The out-of-sample problem is gross alpha, not friction.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Correction 2</div>
+    <h2>Bugs found, and what changed</h2>
+  </div>
+  <p class="prose">
+    Four defects were found by independent audit agents. Two were fixed and every affected result was
+    re-run on the corrected engine; two are recorded but not fixed, because fixing them properly needs
+    data that does not exist.
+  </p>
+  <div class="stack">
+    <div class="note">
+      <h3><span class="tag fixed">Fixed</span>Close batches applied in insertion order, not exit order</h3>
+      <p>
+        <code>backtest_production_correct.py:377</code> iterated <code>open_positions</code> in the order
+        positions were <em>opened</em>. Whenever several closed in the same batch — 2,106 batches on this
+        universe, 67% of them mis-ordered, largest batch 52 — PnL, peak/drawdown updates and the 20-trade
+        regime window were applied out of chronological order. Final balance is unaffected (addition
+        commutes) but every path-dependent quantity was wrong. An isolated three-trade reproduction
+        reported 50.33% maxDD against a true 34.22%. Fixed by sorting the batch on <code>exit_time</code>,
+        in both the main loop and the end-of-data flush. Mean absolute drawdown shift across all 52 cells:
+        2.0 points; maximum 23.6.
+      </p>
+    </div>
+    <div class="note">
+      <h3><span class="tag fixed">Fixed upstream</span>CHOP gate read the entry bar's own candle</h3>
+      <p>
+        Found two days before this study and already corrected in the working tree, but the on-disk trade
+        universe still carried the leak. I rebuilt it from klines with the honest <code>ch[bos]</code>
+        gate — 32,929 trades — and every number here comes from that rebuild, not the stale file.
+      </p>
+    </div>
+    <div class="note warn">
+      <h3><span class="tag open">Open</span>Mark-to-market equity interpolates toward each trade's known final PnL</h3>
+      <p>
+        <code>backtest_production_correct.py:535</code> marks open positions by linearly interpolating
+        toward <code>pos['pnl']</code> — the trade's already-resolved outcome. Under the live config
+        (<code>size_basis='equity'</code>) that leaks future information into the sizing of
+        <em>other</em> concurrent trades, and it structurally floors intra-trade drawdown. Both the audit
+        agent and the independent replication agent found this separately. Direction matters: it biases
+        drawdown <strong>down</strong> at high risk, so the case for raising risk looks better than it is.
+        Correcting it requires intrabar marks the trade table does not contain.
+      </p>
+    </div>
+    <div class="note warn">
+      <h3><span class="tag open">Open</span>Right-censoring near the data boundary</h3>
+      <p>
+        Unresolved trades are silently dropped. Because targets sit 3–10× farther than stops, slow winners
+        vanish near any boundary while fast losers remain — worth <strong>+0.29 R/trade</strong> in a
+        controlled test at an artificial 2024 cutoff. This makes the holdout look worse than it is, and I
+        correct for it explicitly below rather than leaving it in my favour.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Results · measured cost, corrected engine</div>
+    <h2>The risk grid</h2>
+  </div>
+  <p class="prose">
+    Entries, exits, stops, filters and reward:risk held constant. Only base risk varies, with the taper
+    schedule scaled proportionally so each arm is the same policy at a different size. $10,000 start.
+    Data is split chronologically and the holdout was locked before any of this ran.
+  </p>
+  <div class="tw">
+    <table>
+      <thead>
+        <tr>
+          <th>Risk</th>
+          <th>DEV ROI</th><th>DEV DD</th><th>DEV ROI/DD</th>
+          <th>VAL ROI</th><th>VAL ROI/DD</th>
+          <th>HOLD ROI</th><th>HOLD DD</th>
+          <th>FULL ROI/DD</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>0.10%</td><td class="pos">+37%</td><td>30.2</td><td>1.22</td><td class="pos">+128%</td><td>4.97</td><td class="neg">−25.2%</td><td>28.4</td><td>4.84</td></tr>
+        <tr><td>0.20%</td><td class="pos">+71%</td><td>51.8</td><td>1.37</td><td class="pos">+300%</td><td>7.40</td><td class="neg">−44.4%</td><td>48.9</td><td class="pos">7.82</td></tr>
+        <tr><td>0.25%</td><td class="pos">+77%</td><td>60.2</td><td>1.29</td><td class="pos">+339%</td><td class="pos">7.46</td><td class="neg">−52.1%</td><td>56.9</td><td>5.62</td></tr>
+        <tr class="here"><td>0.30% ← live</td><td class="pos">+103%</td><td>66.6</td><td class="pos">1.54</td><td class="pos">+373%</td><td>7.32</td><td class="neg">−58.8%</td><td>63.7</td><td>7.28</td></tr>
+        <tr><td>0.50%</td><td class="pos">+80%</td><td>82.5</td><td>0.97</td><td class="pos">+189%</td><td>2.64</td><td class="neg">−75.2%</td><td>79.5</td><td>2.08</td></tr>
+        <tr><td>0.75%</td><td class="neg">−56%</td><td>93.6</td><td>−0.60</td><td class="pos">+250%</td><td>3.23</td><td class="neg">−80.6%</td><td>87.0</td><td>−0.78</td></tr>
+        <tr><td>1.00%</td><td class="neg">−92%</td><td>98.2</td><td>−0.93</td><td class="pos">+158%</td><td>1.87</td><td class="neg">−87.5%</td><td>91.2</td><td>−1.00</td></tr>
+        <tr><td>1.25%</td><td class="neg">−100%</td><td>99.7</td><td>−1.00</td><td class="pos">+146%</td><td>1.55</td><td class="neg">−92.3%</td><td>94.9</td><td>−1.00</td></tr>
+        <tr><td>1.50%</td><td class="neg">−100%</td><td>99.8</td><td>−1.00</td><td class="pos">+43%</td><td>0.45</td><td class="neg">−94.5%</td><td>96.1</td><td>−1.00</td></tr>
+        <tr><td>1.75%</td><td class="neg">−100%</td><td>99.9</td><td>−1.00</td><td class="pos">+86%</td><td>0.88</td><td class="neg">−95.6%</td><td>96.4</td><td>−1.00</td></tr>
+        <tr><td>2.00%</td><td class="neg">−100%</td><td>99.9</td><td>−1.00</td><td class="pos">+25%</td><td>0.25</td><td class="neg">−97.5%</td><td>98.1</td><td>−1.00</td></tr>
+        <tr><td>2.50%</td><td class="neg">−100%</td><td>99.9</td><td>−1.00</td><td class="neg">−43%</td><td>−0.45</td><td class="neg">−97.6%</td><td>98.3</td><td>−1.00</td></tr>
+        <tr><td>3.00%</td><td class="neg">−100%</td><td>99.9</td><td>−1.00</td><td class="neg">−8%</td><td>−0.08</td><td class="neg">−98.9%</td><td>99.3</td><td>−1.00</td></tr>
+      </tbody>
+      <caption>
+        <strong>Live exit rule (s3_a1 trailing stop), $1,500 start, 24.2 bps.</strong>
+        DEV = 2023-06 → 2025-07 (walk-forward train). VAL = 2025-07 → 2026-05-25 (walk-forward test —
+        the config was <em>accepted</em> on it, so it is not out-of-sample in any decision-relevant
+        sense). HOLD = 2026-05-25 → 2026-07-25, genuinely untouched. Drawdown is peak-to-trough on the
+        realised equity curve. Every ROI/DD maximum across DEV, VAL and FULL now sits at
+        <strong>0.20–0.30%</strong>, and DEV goes outright negative from 0.75% up — the account is
+        destroyed in-sample well before the brief's grid reaches its midpoint.
+      </caption>
+    </table>
+  </div>
+  <div class="note meas">
+    <p>
+      <strong>Which correction did the work?</strong> Re-running with the fixed-TP exit but the same
+      $1,500 balance still puts the in-sample optimum near 0.75% (ROI/DD 62.6). So the starting balance
+      changes the dollar outcomes but not the optimum — it is the <strong>trailing stop</strong> that
+      moves it, by shrinking the edge the bet is sized against. The exit rule, not the account size, is
+      what the first pass got wrong.
+    </p>
+  </div>
+  <div class="grid">
+    <div class="card sig">
+      <div class="k">Holdout, censoring-corrected</div><div class="v">0 of 13</div>
+      <div class="d">Risk levels with positive ROI. Not one, at any size</div>
+    </div>
+    <div class="card sig">
+      <div class="k">Pareto frontier, holdout</div><div class="v">0.10%</div>
+      <div class="d">The only non-dominated point is the smallest tested. Every increase is dominated on both axes</div>
+    </div>
+    <div class="card warn">
+      <div class="k">Drawdown at live 0.3%, in-sample</div><div class="v">59%</div>
+      <div class="d">Already past most stated tolerances before any increase is considered</div>
+    </div>
+    <div class="card warn">
+      <div class="k">Lowest f keeping DD under 30%</div><div class="v">0.10–0.20%</div>
+      <div class="d">No setting at or above the current one clears a 30% limit in any window</div>
+    </div>
+  </div>
+  <div class="note sig">
+    <p>
+      <strong>The in-sample columns are the trap, and they fail on their own terms.</strong> DEV ROI/DD
+      does improve from 0.3% to about 1.0% — that is the honest pro-increase case and I built it
+      deliberately. But it buys a 92% drawdown to get there, it collapses to −100% by 2.5%, and it is
+      unstable: fixing the batch-ordering bug alone moved DEV at 1.0% from +936% to +285% ROI. A maximum
+      balanced on a knife edge against trade ordering is not a maximum.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">The mechanism</div>
+    <h2>Why 0.3% is already too much</h2>
+  </div>
+  <p class="prose">
+    The simulator says what happened. This says what had to happen, from the net-R distribution alone,
+    with no engine involved — so the two can be checked against each other.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Period</th><th>Mean net R</th><th>Kelly, sequential</th><th>Kelly, concurrency-adjusted</th><th>Quarter-Kelly</th></tr></thead>
+      <tbody>
+        <tr><td>DEV — fixed TP</td><td class="pos">+0.288</td><td>3.38%</td><td>0.20 – 0.28%</td><td>0.05 – 0.07%</td></tr>
+        <tr class="here"><td>DEV — live trail</td><td class="pos">+0.073</td><td>1.85%</td><td class="warn">0.14 – 0.18%</td><td>0.03 – 0.05%</td></tr>
+        <tr><td>VAL — fixed TP</td><td class="pos">+0.322</td><td>3.77%</td><td>0.30 – 0.37%</td><td>0.07 – 0.09%</td></tr>
+        <tr class="here"><td>VAL — live trail</td><td class="pos">+0.111</td><td>2.70%</td><td class="warn">0.19 – 0.22%</td><td>0.05 – 0.05%</td></tr>
+        <tr><td>FULL — live trail</td><td class="pos">+0.058</td><td>1.46%</td><td class="warn">0.10 – 0.12%</td><td>0.03%</td></tr>
+        <tr><td>HOLDOUT — live trail</td><td class="neg">−0.315</td><td>0%</td><td>0%</td><td>0%</td></tr>
+      </tbody>
+      <caption>
+        The sequential column is the number that would justify raising risk — and it is the wrong number
+        for this bot. Because dozens of correlated positions settle against the same equity before any of
+        them compounds, the relevant bet is the cluster, not the trade. Ranges span bucket choices from
+        12 to 48 hours.
+      </caption>
+    </table>
+  </div>
+  <div class="note good">
+    <p>
+      <strong>The one open disagreement in revision 1 is now resolved.</strong> The red team flagged that
+      cluster-Kelly (0.09–0.30%) and the simulator's own ROI/DD optimum (0.75–1.5%) disagreed by 4–8×, and
+      I recorded it as unresolved dissent. With the live exit rule modelled, cluster-Kelly gives
+      <strong>0.10–0.22%</strong> and the simulator peaks at <strong>0.20–0.30%</strong>. Two independent
+      methods, one analytic and one path-simulated, now agree within a factor of about 1.5. The earlier
+      gap was not a disagreement about sizing — it was both methods correctly describing an exit rule the
+      bot no longer uses.
+    </p>
+  </div>
+  <p class="prose">
+    Monte Carlo agrees on the mechanism: preserving weekly clustering in a block bootstrap inflates the
+    probability of a 50% loss from 8.7% to 47.5% versus i.i.d. resampling — a 5.4× understatement in any
+    analysis that treats these trades as independent.
+  </p>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Stability</div>
+    <h2>There is no optimum to find</h2>
+  </div>
+  <p class="prose">
+    Eleven rolling six-month windows, each scored independently from a fresh $10,000, across the full
+    nine-value grid — 99 runs.
+  </p>
+  <div class="grid">
+    <div class="card sig">
+      <div class="k">Mean rank correlation</div><div class="v">0.228</div>
+      <div class="d">Spearman, f-vs-ROI/DD ordering, across 55 window pairs. 29% of pairs correlate <em>negatively</em></div>
+    </div>
+    <div class="card warn">
+      <div class="k">Winning f per window</div><div class="v">0.1 – 2.0%</div>
+      <div class="d">Every value on the grid wins outright somewhere. The winner is a property of the window, not the strategy</div>
+    </div>
+    <div class="card warn">
+      <div class="k">Windows profitable at best f</div><div class="v">8 / 11</div>
+      <div class="d">Falls to 7/11 at higher risk</div>
+    </div>
+  </div>
+  <p class="prose">
+    A rank correlation of 0.23 means the setting that wins in one window is close to the worst choice in
+    another roughly three times in ten. Any tuning procedure applied to this data is fitting noise. That
+    finding is independent of the holdout, and it alone is sufficient to refuse an increase.
+  </p>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">The constraint the backtests cannot see</div>
+    <h2>Margin and liquidation</h2>
+  </div>
+  <p class="prose">
+    The bot sets leverage to the exchange maximum on every symbol, holds no cap on concurrent positions,
+    and — verified by the absence of any <code>switch-isolated</code> call or <code>tradeMode</code> field
+    in <code>autobot/brokers/bybit.py</code> — runs a <strong>cross-margin</strong> unified account. All
+    open positions draw on one equity pool. The engine models initial margin at entry but has no concept
+    of maintenance margin or liquidation price: a grep for <code>liquidat|maintenance|mmr</code> across all
+    1,060 lines returns nothing. It cannot represent an account blowup.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Risk per trade</th><th>Equity lost on the worst historical stop-out cluster</th><th>Outcome</th></tr></thead>
+      <tbody>
+        <tr class="here"><td>0.30% (live)</td><td>31.8%</td><td>Survivable</td></tr>
+        <tr><td>0.70%</td><td>≈50%</td><td class="warn">Half the account, one day</td></tr>
+        <tr><td>1.00%</td><td>66.6%</td><td class="warn">Recovery requires +199%</td></tr>
+        <tr><td>1.90%</td><td>≈100%</td><td class="neg">Ruin</td></tr>
+        <tr><td>3.00%</td><td>146.7%</td><td class="neg">Ruin, with margin call before the stops fill</td></tr>
+      </tbody>
+      <caption>
+        Replay of 2025-03-02, the worst simultaneous stop-out day in three years, with the live 30%
+        gross-risk cap gating entries. Assumes a 1% flat maintenance-margin rate and the engine's static
+        leverage table — both stated because neither is verifiable from this repo. These are modelled stop
+        fills only: real ruin arrives <em>sooner</em>, because cross margin force-closes on unrealised loss
+        before a stop triggers, and the bot polls once every 60 seconds.
+      </caption>
+    </table>
+  </div>
+  <div class="note warn">
+    <p>
+      A second finding, unrelated to raising risk and true <em>today</em>: aggregate initial margin already
+      reaches ~92% of equity at the 99th-percentile hour and 134% at the maximum. Orders are silently
+      failing at the exchange, and the live bot does not gate on or report this.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Adversarial review</div>
+    <h2>What the red team broke, and what held</h2>
+  </div>
+  <div class="stack">
+    <div class="note sig">
+      <h3>Landed — the draft was overstated in three places</h3>
+      <ul>
+        <li>The concurrency-adjusted Kelly figure is a <strong>range (0.09–0.30%)</strong>, not the point estimate of 0.17% I first computed; a resample-anchor bug in my own script was found and fixed.</li>
+        <li>The simulator's best-ROI/DD f (0.75–1.5%) disagrees with cluster-Kelly by 4–8×. I side with Kelly — the simulator's optimum sits at 92% drawdown and moves under a bug fix — but the disagreement is real and unresolved.</li>
+        <li>Right-censoring makes the holdout look worse than it is. Corrected, holdout gross alpha is <strong>−0.09 R</strong>, not −0.27; at a 30-day truncation it is +0.00. The honest claim is <em>"the edge is at best zero and does not clear its own costs"</em>, not <em>"the edge is dead."</em></li>
+      </ul>
+    </div>
+    <div class="note good">
+      <h3>Failed — the central claim survived every attack</h3>
+      <ul>
+        <li><strong>Is the holdout just noise?</strong> Weekly block-bootstrap 95% CI on holdout net R is <code>[−0.86, −0.12]</code>, excluding zero. The DEV-minus-holdout gap CI is <code>[+0.27, +1.19]</code>, P(gap ≤ 0) &lt; 0.1%.</li>
+        <li><strong>Is it just a bad patch?</strong> It ranks worst of 156 overlapping two-month windows in three years on net R, third-worst on gross. The one historical comparable was followed by another negative window, not a recovery.</li>
+        <li><strong>Is the cost estimate wrong?</strong> Re-measured independently: 24.2 bps, CI [19.8, 28.7]. Moot regardless — the holdout's breakeven cost is negative.</li>
+        <li><strong>Does the independent engine agree?</strong> A from-scratch simulator, sharing no code, reproduced monotonically rising drawdown with f (Spearman 0.98–1.00) and negative holdout ROI at every f. It disagreed on exact in-sample ROI at 0.5–2%, traced to the open mark-to-market bug.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Recommendation</div>
+    <h2>What to actually do</h2>
+  </div>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Setting</th><th>Value</th><th>Rationale</th></tr></thead>
+      <tbody>
+        <tr><td>Recommended</td><td class="pos">0.15 – 0.20%</td><td>Straddles cluster-Kelly under the live exit rule; the only region where DEV, VAL and FULL ROI/DD all sit at or near their maximum</td></tr>
+        <tr><td>Conservative</td><td class="pos">0% — halt</td><td>Correct if you accept the holdout at face value. Consistent with the 2026-08-11 verdict already in the repo</td></tr>
+        <tr><td>Maximum defensible</td><td class="warn">0.30% — unchanged</td><td>The current setting. It is at the in-sample ROI/DD peak, not below it — there is no headroom above</td></tr>
+        <tr><td>Requested increase</td><td class="neg">Rejected</td><td>0.75% destroys the account <em>in-sample</em> under the live exit rule (−56% ROI, 94% DD). Fails out-of-sample, stability, ruin and Pareto tests</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prose">
+    The main recommendation uses a <strong>25% maximum drawdown limit</strong>. Under 10% or 15%, no tested
+    setting qualifies and the answer is to halt. Under 30%, 0.20% qualifies in-sample and still loses
+    out-of-sample.
+  </p>
+  <h3>Exact change, if you take the recommendation — not applied</h3>
+  <pre># config.yaml — risk block. NOT DEPLOYED.
+- risk_per_trade: 0.003
++ risk_per_trade: 0.0012   # [2026-08-11] risk study. Concurrency-adjusted growth-optimal
++                          # fraction is 0.09-0.30% even on IN-SAMPLE data; ~45 correlated
++                          # positions settle against the same equity, so sequential Kelly
++                          # (2.5%) is the wrong statistic. Holdout loses at every f tested.
+  taper_schedule:
+-   - [1500, 0.003]  ... - [40000, 0.0014]
++   # scale every rung by 0.40 to preserve the policy shape at the new base</pre>
+  <p class="prose" style="color:var(--ink-3); font-size:.92rem">
+    Also worth acting on independently of sizing: the margin-exhaustion finding, the two open engine
+    defects, and the ~$645 unexplained account decline flagged in the existing verdict document — that
+    one is larger than any trading result here and is not a trading result.
+  </p>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Confidence</div>
+    <h2>Why this could still be wrong</h2>
+  </div>
+  <p class="prose">
+    <strong>High confidence</strong> that risk should not be raised — it is over-determined, surviving
+    every attack from four independent directions. <strong>Moderate confidence</strong> in the specific
+    0.10–0.15% figure, which rests on a Kelly range and an in-sample edge I do not believe is real.
+  </p>
+  <ul>
+    <li><strong>The strongest objection is epistemic, not statistical.</strong> This study replays today's rule set uniformly across three years that were never traded under it — several walk-forward refits, the CHOP fix, the BOS-timing fix, the trailing stop. A direct parity check of the reconstruction against the days <code>exec_log</code> actually covers is the highest-value follow-up and was outside scope.</li>
+    <li>The holdout is 2 months and 2,509 trades. It is statistically significant on a block bootstrap, but it is still one regime.</li>
+    <li>The mark-to-market leak remains open, and it biases drawdown down at high risk. Correcting it would strengthen this conclusion, not weaken it.</li>
+    <li>The backtest's signal detector is not the live bot's: 11.7% of backtest signals are ones live would never generate, due to a dedup-ordering difference. Direction is conservative here, but it means no script in this repo replays the live signal stream exactly.</li>
+    <li>Slippage was not directly measurable — <code>slippage_frac</code> and <code>fee_usd</code> are unpopulated in <code>exec_log</code>, so cost was inferred from stop-out shortfall rather than read from fills.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Method</div>
+    <h2>Agents, and who checked whom</h2>
+  </div>
+  <p class="prose">
+    Nine agents were spawned. Every load-bearing finding was reviewed by at least one other agent, and
+    disagreements were resolved by code inspection and rerun rather than by vote.
+  </p>
+  <div class="agents">
+    <div class="agent"><div class="n">SPEC</div><div class="b">Traced the sizing chain to source; produced the config difference table. Found no concurrent-position limit exists anywhere in the live path.</div></div>
+    <div class="agent"><div class="n">ENGINE</div><div class="b">Audited the simulator. Found the close-batch ordering bug and the mark-to-market leak. Cleared compounding, margin release and cost sequencing.</div></div>
+    <div class="agent"><div class="n">LEAK</div><div class="b">Found and quantified right-censoring (+0.29 R at a controlled cutoff) and the backtest-vs-live signal-detector divergence. Cleared indicators, BOS anchoring and tie resolution.</div></div>
+    <div class="agent"><div class="n">LIQ</div><div class="b">Established cross-margin by absence of evidence; computed the correlated-loss ruin thresholds and the already-live margin exhaustion.</div></div>
+    <div class="agent"><div class="n">COST</div><div class="b">Independently estimated 28 bps central, 18–45 range — bracketing my 24.2 bps measurement. Found the repo's second undocumented 12 bps constant.</div></div>
+    <div class="agent"><div class="n">MC</div><div class="b">Block-bootstrap drawdown distributions and risk of ruin. Flagged loudly that its simulator omits the live caps, so its ruin figures are an upper bound — not taken at face value here.</div></div>
+    <div class="agent"><div class="n">WF</div><div class="b">99 walk-forward runs. Produced the 0.228 rank correlation that independently defeats the tuning premise.</div></div>
+    <div class="agent"><div class="n">REPL</div><div class="b">From-scratch simulator sharing no code. Confirmed drawdown monotonicity and the holdout result; its disagreement on in-sample ROI corroborated the mark-to-market bug.</div></div>
+    <div class="agent"><div class="n">RED</div><div class="b">Adversarial. Broke three sub-claims, forced the Kelly point estimate into a range, and failed to break the central conclusion.</div></div>
+  </div>
+  <h3>Dissent, and how it resolved</h3>
+  <ul>
+    <li><strong>Cluster-Kelly vs simulator optimum</strong> — <span class="tag fixed">Resolved in rev 2</span> A 4–8× gap in revision 1, closed to ~1.5× once the live trailing exit was modelled. Neither method was wrong; both were correctly describing a fixed-TP rule the bot stopped using on 2026-08-02.</li>
+    <li><strong>Cost</strong> — my 24.2 bps measurement against the cost agent's 28 bps central estimate. Overlapping intervals; immaterial to the conclusion.</li>
+    <li><strong>The trailing stop itself</strong> — <span class="tag open">Open, and larger than this study</span> Under the honest CHOP gate the trail costs 0.187 R/trade and cuts win-adjusted expectancy by ~76%. It was deployed as drawdown control, not as a profit upgrade, and the repo's own notes already withdrew its return claim. But a rule that quarters the edge deserves its own review — it is now the largest single lever on this bot, and it was not in this study's scope.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Reproducibility</div>
+    <h2>Files, commands, seeds</h2>
+  </div>
+  <pre># checkpoint (nothing in the live bot was modified)
+risk_study/CHECKPOINT_commit.txt        263a4ff
+risk_study/CHECKPOINT_config.yaml       md5 59b8cc92022920e74d47aeef2f91bcfc
+
+# rebuild the honest-CHOP universe from klines  (~4 min, 277 symbols)
+python3 risk_study/build_risk_universe.py
+
+# the sweep at measured cost, on the corrected engine
+python3 risk_study/sweep.py --cost 0.00242 --tag measured24
+python3 risk_study/sweep.py --universe risk_study/universe_chopBOS_trunc21.parquet \
+                            --cost 0.00242 --tag trunc21
+
+# analytic anchor and cost measurement
+python3 risk_study/kelly.py
+python3 risk_study/analyze_live_cost.py &lt;path-to-db-url-file&gt;
+
+# results
+risk_study/results/MASTER_TABLE.csv      the grid above
+risk_study/results/sweep_*.csv           per cost level, 52 rows each
+risk_study/results/kelly.csv             growth-optimal fractions
+risk_study/results/breakeven_cost.csv    breakeven bps per period
+risk_study/agent_out/*.md                nine agent reports
+risk_study/agent_out/walkforward.csv     99 rolling-window runs
+risk_study/agent_out/mc_results.csv      36 Monte Carlo cells
+
+# seeds: 42 throughout (Monte Carlo, bootstrap, block bootstrap). 5,000 iterations.
+# code changed: backtest_production_correct.py only — two sort-order fixes, commented in place.</pre>
+  <p class="prose" style="color:var(--ink-3); font-size:.92rem">
+    The database connection string was used read-only and is not stored in the repository or in any
+    output file.
+  </p>
+</section>
+
+</div>

@@ -810,12 +810,28 @@ class TelegramHandler:
             to_withdraw = wallet_balance - wd_target
             withdraw_line = (f"\n💸 **WITHDRAW ${to_withdraw:,.2f}** "
                              f"→ back to ${wd_target:,.0f} target")
-        # Overlay status: net-dir cap + BTC short-gate + bull long-boost.
+        # Overlay status. This used to print "short-gate, long-boost" unconditionally
+        # whenever ANY overlay was on, which made it a lie as soon as one was disabled —
+        # and btc_short_gate was turned OFF on 2026-08-12. Build the list from what is
+        # actually configured, and show the gross cap too (tightened 0.30 -> 0.10 the same
+        # day, so it now binds in normal operation instead of being pure tail insurance).
         cap = rcfg.get('net_directional_cap', 0) or 0
+        gross = rcfg.get('gross_open_risk_cap', 0) or 0
+        boost = rcfg.get('long_bull_boost', 1.0) or 1.0
+        parts = []
+        if cap:
+            parts.append(f"net {cap*100:.0f}%")
+        if gross:
+            parts.append(f"gross {gross*100:.0f}%")
+        if rcfg.get('btc_short_gate'):
+            parts.append("short-gate")
+        if boost != 1.0:
+            parts.append(f"long-boost {boost:g}x")
         cap_line = ""
-        if cap or rcfg.get('btc_short_gate') or (rcfg.get('long_bull_boost', 1.0) or 1.0) != 1.0:
-            cap_line = (f"\n├ Protection: 🟢 ON (cap {cap*100:.0f}%, "
-                        f"short-gate, long-boost)")
+        if parts:
+            cap_line = f"\n├ Protection: 🟢 {', '.join(parts)}"
+        else:
+            cap_line = "\n├ Protection: ⚪ none active"
 
         # [TRAILING STOP] Live state, coverage and activity. Unlike the "Protection:"
         # line above (a static echo of config.yaml), this reads the runtime flag, so it
@@ -1789,13 +1805,17 @@ trailed arm more. A positive difference here is conservative._
                 except Exception:
                     adaptive_pct = current_risk_pct * 100
                 adaptive_usd = balance * adaptive_pct / 100 if balance > 0 else 0
+                _gross = (getattr(self.bot, 'risk_config', {}) or {}).get(
+                    'gross_open_risk_cap', 0) or 0
                 _prot = []
                 if cap:
-                    _prot.append(f"cap {cap*100:.0f}%")
+                    _prot.append(f"net {cap*100:.0f}%")
+                if _gross:
+                    _prot.append(f"gross {_gross*100:.0f}%")
                 if sg:
                     _prot.append("short-gate")
                 if lb != 1.0:
-                    _prot.append("long-boost")
+                    _prot.append(f"long-boost {lb:g}x")
                 prot_line = " · ".join(_prot) if _prot else "none"
                 msg = f"""💰 **CURRENT RISK SETTINGS**
 ━━━━━━━━━━━━━━━━━━━━

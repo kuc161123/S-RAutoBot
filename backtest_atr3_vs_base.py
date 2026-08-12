@@ -92,7 +92,9 @@ def replay(args):
                 continue
             if side == "short" and not c[bos] < ema[bos]:
                 continue
-            if np.isfinite(ch[e]) and ch[e] >= CHOP_T:
+            # CHOP read on the BOS bar, not the entry bar (ch[e] uses bar e's own OHLC,
+            # known only an hour after the fill). See STRATEGY_VERDICT_2026-08-11.md 2.1.
+            if np.isfinite(ch[bos]) and ch[bos] >= CHOP_T:
                 continue
             if not (np.isfinite(atr[bos]) and atr[bos] > 0):
                 continue

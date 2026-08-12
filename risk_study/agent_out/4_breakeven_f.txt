@@ -1,0 +1,6 @@
+worst_hour: 2025-08-22 14:00:00  n=102.0  sum_r_net=-114.136
+worst_day:  2025-08-22 00:00:00  n=153.0  sum_r_net=-171.102
+f @ 50% equity loss (hour cluster): 0.0044
+f @ 100% equity loss / ruin (hour cluster): 0.0088
+f @ 50% equity loss (day cluster): 0.0029
+f @ 100% equity loss / ruin (day cluster): 0.0058

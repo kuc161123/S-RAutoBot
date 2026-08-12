@@ -270,7 +270,11 @@ def work(args):
                 continue
             if side == "short" and not c[bos] < ema[bos]:
                 continue
-            if np.isfinite(ch[e]) and ch[e] >= CHOP_T:
+            # CHOP is read on the BOS bar, NOT the entry bar. ch[e] is computed from
+            # bar e's own high/low/close, which do not exist until an hour AFTER the
+            # fill at o[e] -- a lookahead worth ~+0.29 R/trade that flipped this
+            # gate's sign out-of-sample. See STRATEGY_VERDICT_2026-08-11.md 2.1.
+            if np.isfinite(ch[bos]) and ch[bos] >= CHOP_T:
                 continue
             if not (np.isfinite(atr[bos]) and atr[bos] > 0):
                 continue

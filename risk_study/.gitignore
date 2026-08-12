@@ -1,0 +1,10 @@
+# Regenerable artefacts — rebuild with the scripts in this directory.
+# grid_inuni.parquet alone is ~90MB and comes back from build_param_grid.py.
+*.parquet
+*.pkl
+config.yaml.pre-*
+agent_out/**/*.parquet
+agent_out/**/*.pkl
+agent_out/cmp/trades_*.csv
+agent_out/*_equity_hourly.csv
+agent_out/equity_curve_*.csv

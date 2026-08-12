@@ -191,12 +191,19 @@ def load_chop_data(symbols):
 
 
 def lookup_chop(chop_map, symbol, entry_time):
-    """Get CHOP value at entry_time for a symbol (nearest 1H candle <= entry_time)."""
+    """Get the CHOP value KNOWABLE at entry_time (the last CLOSED 1H candle).
+
+    entry_time is the open of the entry bar, so flooring to the hour lands on the entry
+    bar itself — whose CHOP(14) is computed from its own high/low/close and therefore is
+    not known until an hour AFTER the fill. Reading it leaked ~+0.29 R/trade and flipped
+    the CHOP gate's sign out-of-sample. Step back one bar to the BOS candle, which is what
+    the live bot can actually see. See STRATEGY_VERDICT_2026-08-11.md 2.1.
+    """
     if symbol not in chop_map:
         return None
     series = chop_map[symbol]
-    # Floor to nearest hour
-    ts = pd.Timestamp(entry_time).floor('h')
+    # Floor to the entry hour, then step back one bar to the last CLOSED candle.
+    ts = pd.Timestamp(entry_time).floor('h') - pd.Timedelta(hours=1)
     if ts in series.index:
         val = series.loc[ts]
         return val if pd.notna(val) else None
@@ -368,8 +375,19 @@ def run_simulation(trades_df, chop_map, scenario='production',
         symbol = trade['symbol']
 
         # ─── STEP A: Close expired positions (exit_time <= current entry_time) ───
-        closed_keys = [k for k, pos in open_positions.items()
-                       if pos['exit_time'] <= entry_time]
+        # Sorted by exit_time, NOT by dict insertion order. `open_positions` iterates in
+        # the order positions were OPENED, so whenever several close in the same batch
+        # their PnL, peak/drawdown updates and regime-window pushes were applied out of
+        # chronological order. On the live universe 2,106 batches close 2+ positions at
+        # once and 67% of those were mis-ordered; an isolated 3-trade reproduction
+        # reported maxDD 50.33% against a true 34.22%. Final balance is unaffected
+        # (addition commutes) but every path-dependent quantity — drawdown, the 20-trade
+        # regime window, and therefore sizing — was wrong, and the error grows with
+        # risk-per-trade. Found by the engine audit, 2026-08-11.
+        closed_keys = [k for k, _ in sorted(
+            ((k, pos) for k, pos in open_positions.items()
+             if pos['exit_time'] <= entry_time),
+            key=lambda kv: kv[1]['exit_time'])]
 
         for pk in closed_keys:
             pos = open_positions.pop(pk)
@@ -727,7 +745,10 @@ def run_simulation(trades_df, chop_map, scenario='production',
             open_short_risk += risk_usd
 
     # ─── Close remaining open positions at end of data ───
-    for pk, pos in list(open_positions.items()):
+    # Exit-time order, for the same reason as STEP A above: this final flush books every
+    # still-open position, and in insertion order it corrupts the tail of the equity curve
+    # and hence max_dd_pct.
+    for pk, pos in sorted(open_positions.items(), key=lambda kv: kv[1]['exit_time']):
         margin_used -= pos['margin']
 
         hold_hours = (pos['exit_time'] - pos['entry_time']).total_seconds() / 3600

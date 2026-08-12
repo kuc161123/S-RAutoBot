@@ -1,0 +1,5 @@
+group,n_trades,mean_net_r,ci_lo,ci_hi
+"prod_selected_728 (live cfg, actual settings)",10267.0,0.15736340244155625,-0.07998940239075027,0.41211222500626976
+prod_rejected_376 (grid-avg proxy),17384.0,-0.34704892475914767,,
+"all_1100_pairs (grid-avg proxy, test period)",58320.0,-0.12814984212229877,,
+"prod_selected_728 (grid-avg proxy, for apples-to-apples vs rejected)",,-0.01476979241398612,,

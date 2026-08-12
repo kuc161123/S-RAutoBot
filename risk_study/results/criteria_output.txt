@@ -1,0 +1,56 @@
+A0 32,913  A1 32,102  paired 31,766 (99.0% of the smaller arm)
+
+====================================================================================
+CRITERION 2 — beat A0 in >=3 of 4 walk-forward test folds
+====================================================================================
+fold           n   A0 netR   A1 netR     diff              95% CI      
+F1          4652    0.0628    0.3205   0.2577   [+0.0228,+0.4889]   WIN
+F2          5184    0.2833    0.3447   0.0614   [-0.0634,+0.1965]   WIN
+F3          6861    0.1438    0.3092   0.1654   [-0.0493,+0.3952]   WIN
+F4          7225    0.0679    0.1001   0.0321   [-0.0793,+0.1444]   WIN
+HOLDOUT     1698   -0.1834    0.0167   0.2001   [+0.0104,+0.3890]   WIN
+
+  A1 wins 4/4 walk-forward folds  ->  PASS (protocol needs >=3)
+
+====================================================================================
+CRITERION 3 — beat a size-matched RANDOM assignment, and survive best-of-8
+====================================================================================
+  8 built global arms
+  usable rows across all 8 arms: 31,766
+
+  (a) RANDOM per-pair (rr,atr) assignment, 2000 draws:
+      random mean netR   +0.0947  sd 0.0053  [+0.0845,+0.1053]
+      A1 global rr10/a3  +0.1908   percentile 100.00%  p=0.0005
+      A0 LIVE FITTED     +0.0620   percentile   0.00%
+      -> the bot's fitted assignment is WORSE than a coin-flip assignment
+
+  (b) BEST-OF-8 under resampling (2000 weekly block bootstraps):
+      best-of-8 beats A0 in 100.0% of resamples
+      margin mean +0.1282  95% CI [+0.0564,+0.2006]
+      -> CRITERION 3 PASS
+
+====================================================================================
+CRITERION 5 — advantage not concentrated in a handful of trades
+====================================================================================
+removed        A0 netR   A1 netR     diff  hostile diff   (hostile = strip A1's best only)
+   0.0%          0.0620    0.1908   0.1287        0.1287
+   0.5%          0.0183    0.1436   0.1253        0.0816
+   1.0%         -0.0162    0.1113   0.1276        0.0493
+   2.0%         -0.0697    0.0612   0.1309       -0.0008
+   5.0%         -0.2089   -0.0617   0.1472       -0.1238
+  A0: top 1% = 125.9% of total net R · top 5% = 420.0%
+  A1: top 1% =  42.2% of total net R · top 5% = 130.7%
+
+====================================================================================
+CRITERION 4 — market controls (unlevered)
+====================================================================================
+  benchmark                               ROI%   maxDD%   ROI/DD    CAGR%  Sharpe  holdout%
+  C2  BTC buy & hold                     136.7     53.8     2.54     31.5    0.83     -17.0
+  C4  BTC 200-EMA trend follow           -83.6     85.8    -0.97    -43.7   -1.43     -21.5
+  C3  long-only basket (277 syms)        -29.3     81.2    -0.36    -10.4    0.23     -18.2
+
+  STRATEGY (levered, 0.3% risk)           ROI%   maxDD%   ROI/DD
+  A0 live fitted config                  472.5     64.9     7.28                      -44.8
+  A1 global rr10/atr3                   1285.0     47.5    27.05                        6.9
+
+  BTC return over the window: +136.7%

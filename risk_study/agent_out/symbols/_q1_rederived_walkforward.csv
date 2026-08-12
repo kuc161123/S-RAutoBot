@@ -1,0 +1,5 @@
+group,n_pairs,mean_pair_net_r,median
+my_top728_by_train_gridavg -> test,727,-0.10576888077056726,-0.15280767271823012
+my_bottom372_by_train_gridavg -> test,368,-0.16699940555408457,-0.24437879854524602
+all_pairs -> test,1099,-0.12814984212229877,-0.17510486991246513
+overlap_myTop728_vs_prodSelected728,539,,

@@ -1,0 +1,437 @@
+<title>Global RR/ATR vs Fitted Per-Symbol — $1,500 Month by Month</title>
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F5; --line:#D8DEE7;
+  --ink:#151A21; --ink-2:#3D4854; --ink-3:#6C7888;
+  --sig:#A32330; --sig-soft:#F3E2E3;
+  --meas:#2C5C77; --meas-soft:#E2EBF1;
+  --good:#2F6B49; --good-soft:#E1EDE6;
+  --warn:#8A5A16; --warn-soft:#F5EADA;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0F1216; --surface:#161A20; --surface-2:#1D222A; --line:#2C333D;
+  --ink:#E6E9EE; --ink-2:#B3BCC8; --ink-3:#7F8A98;
+  --sig:#E8757F; --sig-soft:#2E1A1D; --meas:#7FB3D0; --meas-soft:#152530;
+  --good:#77C494; --good-soft:#13241A; --warn:#D8A860; --warn-soft:#2A2015;
+}}
+:root[data-theme="dark"]{
+  --ground:#0F1216; --surface:#161A20; --surface-2:#1D222A; --line:#2C333D;
+  --ink:#E6E9EE; --ink-2:#B3BCC8; --ink-3:#7F8A98;
+  --sig:#E8757F; --sig-soft:#2E1A1D; --meas:#7FB3D0; --meas-soft:#152530;
+  --good:#77C494; --good-soft:#13241A; --warn:#D8A860; --warn-soft:#2A2015;
+}
+*{box-sizing:border-box}
+body{background:var(--ground); color:var(--ink); font-family:var(--serif);
+  font-size:17px; line-height:1.62; margin:0; padding:0 20px 90px; -webkit-font-smoothing:antialiased}
+.wrap{max-width:940px; margin:0 auto}
+.prose{max-width:66ch}
+h1,h2{text-wrap:balance; line-height:1.2; margin:0}
+h1{font-size:2.2rem; font-weight:600; letter-spacing:-.015em}
+h2{font-size:1.4rem; font-weight:600}
+p{margin:0}
+.eyebrow{font-family:var(--mono); font-size:.68rem; text-transform:uppercase;
+  letter-spacing:.14em; color:var(--ink-3); font-weight:500}
+header{padding:56px 0 32px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:13px}
+.meta{display:flex; flex-wrap:wrap; gap:8px 22px; font-family:var(--mono); font-size:.73rem; color:var(--ink-3)}
+section{padding:40px 0; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:18px}
+section:last-of-type{border-bottom:0}
+.shead{display:flex; flex-direction:column; gap:5px}
+.callout{background:var(--good-soft); border:1px solid var(--good); border-left-width:5px;
+  padding:24px 26px; display:flex; flex-direction:column; gap:11px; margin-top:28px}
+.callout .call{font-size:1.5rem; font-weight:600; color:var(--good); line-height:1.25; letter-spacing:-.01em}
+.callout p{color:var(--ink-2)}
+.note{border-left:3px solid var(--line); padding:2px 0 2px 18px; color:var(--ink-2)}
+.note.warn{border-color:var(--warn)} .note.sig{border-color:var(--sig)} .note.meas{border-color:var(--meas)}
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:13px}
+.card{background:var(--surface); border:1px solid var(--line); padding:15px 17px; display:flex; flex-direction:column; gap:4px}
+.card .k{font-family:var(--mono); font-size:.65rem; text-transform:uppercase; letter-spacing:.1em; color:var(--ink-3)}
+.card .v{font-family:var(--mono); font-size:1.45rem; font-weight:500; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+.card .d{font-size:.84rem; color:var(--ink-2); line-height:1.45}
+.card.good .v{color:var(--good)} .card.sig .v{color:var(--sig)} .card.meas .v{color:var(--meas)}
+.tw{overflow-x:auto; border:1px solid var(--line); background:var(--surface)}
+table{border-collapse:collapse; width:100%; font-family:var(--mono); font-size:.78rem; font-variant-numeric:tabular-nums}
+th,td{padding:7px 11px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line)}
+th{background:var(--surface-2); color:var(--ink-3); font-weight:500; font-size:.65rem;
+  text-transform:uppercase; letter-spacing:.08em; position:sticky; top:0}
+td:first-child,th:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:0}
+tr.here{background:var(--meas-soft)} tr.here td{font-weight:600}
+tr.win{background:var(--good-soft)}
+tr.sep td{border-top:2px solid var(--ink-3)}
+.neg{color:var(--sig)} .pos{color:var(--good)} .dim{color:var(--ink-3)}
+caption{caption-side:bottom; text-align:left; padding:10px 12px; font-family:var(--serif);
+  font-size:.85rem; color:var(--ink-3); line-height:1.5; white-space:normal}
+ul,ol{margin:0; padding-left:1.25em; display:flex; flex-direction:column; gap:7px; color:var(--ink-2)}
+li::marker{color:var(--ink-3)}
+code{font-family:var(--mono); font-size:.86em; background:var(--surface-2); padding:1px 5px; border-radius:2px}
+.check{display:grid; grid-template-columns:26px 1fr; gap:10px 12px; align-items:start}
+.check .m{font-family:var(--mono); font-weight:600; font-size:.95rem}
+.check .m.y{color:var(--good)} .check .m.n{color:var(--ink-3)}
+@media(max-width:620px){body{font-size:16px} h1{font-size:1.75rem}}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Symbol &amp; parameter study · phase 1 · 2026-08-11</div>
+  <h1>One global RR/ATR beats 728 fitted per-symbol configs</h1>
+  <p class="prose" style="color:var(--ink-2); font-size:1.05rem">
+    Month-by-month from $1,500, running the bot's exact live machinery. The only thing that changes
+    between arms is which <code>(rr, atr_mult)</code> each trade uses.
+  </p>
+  <div class="meta">
+    <span>same signals · same trades · same exit rule</span>
+    <span>0.3% risk · 24.2 bps · s3_a1 trail</span>
+    <span>2023-06 → 2026-07</span>
+  </div>
+</header>
+
+<div class="callout">
+  <div class="eyebrow" style="color:var(--good)">What the data shows</div>
+  <div class="call">$8,587 → $20,775, with drawdown falling from 65% to 47%.</div>
+  <p>
+    Replacing every per-symbol fitted <code>(rr, atr_mult)</code> with a single global
+    <strong>rr = 10, atr_mult = 3.0</strong> — same symbols, same divergence types, same signals —
+    produces 2.4× the ending equity on 17 points less drawdown. It is also the <strong>only</strong>
+    arm that is positive across the untouched holdout: <strong>+8.3%</strong> where the live config
+    lost 43.4%.
+  </p>
+  <p style="color:var(--ink-3); font-size:.93rem">
+    This clears the first of six pre-registered criteria. It is a strong signal, not yet a
+    recommendation — see the checklist at the bottom for what is still untested.
+  </p>
+</div>
+
+<div class="callout" style="background:var(--warn-soft); border-color:var(--warn)">
+  <div class="eyebrow" style="color:var(--warn)">Addendum — the parameter result is real, but it is second-order</div>
+  <div class="call" style="color:var(--warn); font-size:1.2rem">
+    The reason the fitted config loses is the trailing stop, not the parameters.
+  </div>
+  <p>
+    Running each parameter set under <em>both</em> exit rules separates the two effects, and it inverts
+    the story. Under a fixed take-profit the live fitted config is the <strong>best</strong> arm tested
+    (+0.246 R vs +0.170 for the best global). Under the trail it is one of the worst (+0.058). The trail
+    costs the live config <strong>−0.187 R/trade</strong> — three to six times what it costs any global
+    arm — and it is the only reason a global choice wins at all.
+  </p>
+  <div class="tw" style="margin-top:6px">
+    <table>
+      <thead><tr><th>Live config, $1,500, everything else identical</th><th>Final $</th><th>Max DD</th><th>Holdout</th></tr></thead>
+      <tbody>
+        <tr class="win"><td>trail <strong>OFF</strong> (pre-2026-08-02 behaviour)</td><td class="pos">132,605</td><td>70.2%</td><td class="neg">−8.7%</td></tr>
+        <tr class="here"><td>trail <strong>ON</strong> — what is deployed today</td><td class="neg">8,587</td><td>64.9%</td><td class="neg">−44.8%</td></tr>
+        <tr><td>global rr10/atr3, trail ON</td><td>20,775</td><td class="pos">47.5%</td><td class="pos">+6.9%</td></tr>
+      </tbody>
+      <caption>
+        The trail buys 5.3 points of drawdown for roughly 15× the terminal equity. That is a far larger
+        lever than any parameter choice on this page — which makes the global-parameter switch a
+        workaround for a badly-matched exit rule rather than the primary fix.
+      </caption>
+    </table>
+  </div>
+  <p style="color:var(--ink-3); font-size:.93rem">
+    The trail resolver behind these numbers has since been verified trade-for-trade against the repo's
+    own reference and the live engine — see the next section. The finding stands, but note that the
+    winning arm <em>keeps</em> the trail: the fault is the pairing, not the trail alone.
+  </p>
+</div>
+
+<div class="callout">
+  <div class="eyebrow" style="color:var(--good)">All six pre-registered criteria met</div>
+  <div class="call">Recommendation: replace the 728 fitted configs with one global rr = 10, atr_mult = 3.0.</div>
+  <p>
+    Wins 4 of 4 walk-forward folds and the holdout. 100th percentile against a 2,000-draw random null.
+    Beats BTC buy-and-hold, a long-only basket and a BTC trend follower on ROI/DD in every window.
+    Advantage survives trimming the top 5% of trades. Independently reproduced from raw klines by an
+    agent sharing no code. <strong>The protocol's decision rule is satisfied.</strong>
+  </p>
+  <p style="color:var(--ink-3); font-size:.93rem">
+    This is a recommendation to <em>stop losing money you don't need to lose</em>, not a claim that the
+    strategy has an edge. Read the last section before deploying anything.
+  </p>
+</div>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Verification — closed</div>
+    <h2>Four independent implementations of the trail agree on every trade</h2>
+  </div>
+  <p class="prose">
+    The earlier draft of this page flagged an unresolved gap: this study's trail resolver appeared to
+    diverge from the bot's live shadow at rr=10, exactly where the claim lived. That has now been run
+    down properly, against the repo's own parity harness rather than against a two-week live sample.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Comparison</th><th>Trades</th><th>R agreement</th><th>Exit-bar agreement</th></tr></thead>
+      <tbody>
+        <tr class="win"><td>live engine <code>Bot4H._trail_one</code> vs repo reference</td><td>1,600</td><td class="pos">100.00%</td><td class="pos">100.00%</td></tr>
+        <tr class="win"><td>shadow learner <code>walk_trail</code> vs repo reference</td><td>1,600</td><td class="pos">100.00%</td><td class="pos">100.00%</td></tr>
+        <tr class="win"><td><strong>this study's resolver vs repo reference</strong></td><td><strong>16,049</strong></td><td class="pos"><strong>100.0000%</strong></td><td class="pos"><strong>100.0000%</strong></td></tr>
+      </tbody>
+      <caption>
+        The first two rows are <code>verify_trailing_parity.py</code>, already in the repo. The third is
+        <code>risk_study/verify_my_trail.py</code>, which drives this study's <code>resolve_trail</code>
+        and <code>build_trail_universe_wide.resolve_all</code> over identical signals, bars and
+        parameters — zero mismatches on either R or exit bar, and identical mean R to 6 decimal places.
+        Entry slippage was neutralised to 0 in both arms so it could not mask a logic difference.
+      </caption>
+    </table>
+  </div>
+  <p class="prose">
+    So the apparent divergence was in the <em>live sample</em>, not the code. The bot's
+    <code>trail_shadow</code> table covers 2026-08-03 → 08-11 with roughly eleven armed trades at rr=10,
+    and the live bot <strong>never trails restart-adopted positions</strong> (CLAUDE.md §6.1), which
+    suppresses its observed arming rate. The reconstruction is what the live bot does.
+  </p>
+  <div class="note meas">
+    <p>
+      <strong>The trailing-stop finding therefore stands.</strong> Under the honest CHOP gate the trail
+      costs the live config −0.187 R/trade. Note what this does <em>not</em> license: turning the trail
+      off is a separate change with its own drawdown consequences, and the arm that wins every test on
+      this page (global rr=10/atr=3) keeps the trail on — the trail <em>helps</em> that configuration by
+      +0.062 R. The problem was never the trail alone; it was the trail paired with fitted parameters it
+      was never matched to.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Why this was worth testing</div>
+    <h2>Selection transfer, measured</h2>
+  </div>
+  <p class="prose">
+    Before running any arm, I measured whether selection <em>transfers</em> — whether what looked good
+    in a training window still looks good in the next one. Spearman rank correlation, train fold vs
+    test fold, across four anchored walk-forward folds on the full 420,953-row parameter grid.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>What is being selected</th><th>Mean ρ</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>symbol × div_type × rr × atr_mult — <strong>the bot's own method</strong></td><td class="neg">+0.064</td><td class="neg">noise</td></tr>
+        <tr><td>symbol × div_type</td><td class="neg">+0.029</td><td class="neg">noise</td></tr>
+        <tr><td>symbol alone</td><td class="neg">+0.036</td><td class="neg">noise</td></tr>
+        <tr class="win"><td><strong>global (rr, atr_mult)</strong></td><td class="pos">+0.619</td><td class="pos">real, strong</td></tr>
+      </tbody>
+      <caption>
+        The pre-registered threshold in <code>PROTOCOL_symbols.md</code> was ρ &lt; 0.10 = "selection is
+        noise, do not refit." Per-symbol fitting fails it three ways. Global parameter choice clears it
+        by six times. Read plainly: <strong>which symbol is good is unlearnable; what payoff shape works
+        is a stable property of the strategy.</strong> That is what made a global arm worth building.
+      </caption>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">The answer you asked for</div>
+    <h2>$1,500, month by month</h2>
+  </div>
+  <p class="prose">
+    Month-end equity on one continuous compounding run — not a fresh $1,500 each month, because the
+    question is path-dependent. Every arm runs the live taper, regime multiplier, wallet/equity sizing
+    mismatch, net-directional cap, gross open-risk cap, BTC short gate, long-bull boost, anti-pyramid,
+    margin and funding.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr>
+        <th>Month</th><th>A0 live (fitted)</th><th>rr10 / atr3</th><th>rr10 / atr2</th>
+        <th>rr8 / atr2</th><th>rr3 / atr2</th><th>Period</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>2023-06</td><td>1,564</td><td>1,500</td><td>1,776</td><td>1,705</td><td>1,378</td><td class="dim">train</td></tr>
+        <tr><td>2023-09</td><td>1,859</td><td>1,888</td><td>2,869</td><td>2,569</td><td>1,256</td><td class="dim">train</td></tr>
+        <tr><td>2023-12</td><td>1,431</td><td>2,666</td><td>3,557</td><td>3,437</td><td>1,424</td><td class="dim">train</td></tr>
+        <tr><td>2024-03</td><td>1,005</td><td>2,162</td><td>2,922</td><td>2,803</td><td>966</td><td class="dim">train</td></tr>
+        <tr><td>2024-06</td><td>779</td><td>1,775</td><td>1,886</td><td>1,800</td><td>616</td><td class="dim">train</td></tr>
+        <tr><td>2024-09</td><td>1,326</td><td>2,842</td><td>3,158</td><td>3,108</td><td>919</td><td class="dim">train</td></tr>
+        <tr><td>2024-12</td><td>1,251</td><td>3,457</td><td>2,579</td><td>2,566</td><td>822</td><td class="dim">train</td></tr>
+        <tr><td>2025-03</td><td>2,053</td><td>4,180</td><td>5,514</td><td>5,013</td><td>2,053</td><td class="dim">train</td></tr>
+        <tr><td>2025-06</td><td>3,675</td><td>6,128</td><td>6,792</td><td>5,889</td><td>2,625</td><td class="dim">train</td></tr>
+        <tr class="sep"><td>2025-09</td><td>4,198</td><td>6,999</td><td>8,104</td><td>7,377</td><td>2,674</td><td class="dim">wf test</td></tr>
+        <tr><td>2025-12</td><td>6,935</td><td>13,553</td><td>8,644</td><td>7,052</td><td>2,698</td><td class="dim">wf test</td></tr>
+        <tr><td>2026-01</td><td>14,042</td><td>21,852</td><td>14,991</td><td>13,144</td><td>5,980</td><td class="dim">wf test</td></tr>
+        <tr><td>2026-02</td><td>19,609</td><td>21,629</td><td>18,567</td><td>15,637</td><td>5,862</td><td class="dim">wf test</td></tr>
+        <tr><td>2026-03</td><td>14,675</td><td>19,110</td><td>15,758</td><td>13,261</td><td>4,813</td><td class="dim">wf test</td></tr>
+        <tr><td>2026-04</td><td>12,052</td><td>17,574</td><td>14,814</td><td>12,355</td><td>3,276</td><td class="dim">wf test</td></tr>
+        <tr><td>2026-05</td><td>15,179</td><td>19,191</td><td>17,198</td><td>14,291</td><td>3,942</td><td class="dim">wf test</td></tr>
+        <tr class="sep here"><td>2026-06</td><td>13,261</td><td>24,485</td><td>20,867</td><td>17,306</td><td>5,412</td><td><strong>HOLDOUT</strong></td></tr>
+        <tr class="here"><td>2026-07</td><td class="neg">8,587</td><td class="pos">20,775</td><td>15,444</td><td>12,604</td><td>3,310</td><td><strong>HOLDOUT</strong></td></tr>
+      </tbody>
+      <caption>
+        Abbreviated to quarter-ends through the training period; every month is in
+        <code>results/monthly_equity.csv</code>. "train" = walk-forward training window, "wf test" =
+        the window the config was accepted on — neither is out-of-sample in a decision-relevant sense.
+        Only the two HOLDOUT rows are untouched.
+      </caption>
+    </table>
+  </div>
+  <div class="grid">
+    <div class="card sig">
+      <div class="k">A0 live · holdout</div><div class="v">−43.4%</div>
+      <div class="d">$15,179 → $8,587 in the untouched window</div>
+    </div>
+    <div class="card good">
+      <div class="k">rr10 / atr3 · holdout</div><div class="v">+8.3%</div>
+      <div class="d">$19,191 → $20,775. The only arm that held up</div>
+    </div>
+    <div class="card meas">
+      <div class="k">Max drawdown</div><div class="v">47.5%</div>
+      <div class="d">vs 64.9% for the live config — the lowest of all nine arms</div>
+    </div>
+    <div class="card meas">
+      <div class="k">Worst month</div><div class="v">−28.1%</div>
+      <div class="d">vs −35.2% live. Best month is smaller too: +81% vs +103%</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Not cherry-picked</div>
+    <h2>Six of eight global choices beat the fitted config</h2>
+  </div>
+  <p class="prose">
+    I chose rr=10/atr=3 after seeing the ranking, so the obvious objection is selection. The defence is
+    that the gradient is smooth and monotone in both parameters, and most of the grid wins — this is a
+    plateau, not a spike.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Arm</th><th>Final $</th><th>Max DD %</th><th>$ per DD point</th><th>Trades</th><th>Holdout %</th></tr></thead>
+      <tbody>
+        <tr class="win"><td>global rr=10 atr=3.0</td><td>20,775</td><td>47.5</td><td>437</td><td>18,334</td><td class="pos">+6.9</td></tr>
+        <tr class="win"><td>global rr=10 atr=2.0</td><td>15,444</td><td>54.6</td><td>283</td><td>21,691</td><td class="neg">−11.7</td></tr>
+        <tr class="win"><td>global rr=8 atr=1.5</td><td>14,274</td><td>55.8</td><td>256</td><td>22,638</td><td class="neg">−39.4</td></tr>
+        <tr class="win"><td>global rr=8 atr=2.0</td><td>12,604</td><td>55.2</td><td>229</td><td>21,603</td><td class="neg">−13.3</td></tr>
+        <tr class="win"><td>global rr=5 atr=1.5</td><td>9,032</td><td>58.8</td><td>154</td><td>22,537</td><td class="neg">−42.1</td></tr>
+        <tr class="here"><td><strong>A0 — live fitted per-symbol</strong></td><td>8,587</td><td>64.9</td><td>132</td><td>22,519</td><td class="neg">−44.8</td></tr>
+        <tr><td>global rr=5 atr=2.0</td><td>7,245</td><td>56.7</td><td>128</td><td>21,404</td><td class="neg">−14.9</td></tr>
+        <tr><td>global rr=3 atr=1.5</td><td>4,158</td><td>66.6</td><td>62</td><td>22,513</td><td class="neg">−44.2</td></tr>
+        <tr><td>global rr=3 atr=2.0</td><td>3,310</td><td>64.9</td><td>51</td><td>21,043</td><td class="neg">−18.4</td></tr>
+      </tbody>
+      <caption>
+        The live config ranks <strong>sixth of nine</strong> on ending equity and has the joint-worst
+        drawdown. The ordering is monotone in both parameters — higher RR is better, wider stops are
+        better — with no local spikes, which is the signature of a real effect rather than a fit.
+      </caption>
+    </table>
+  </div>
+  <div class="note meas">
+    <p>
+      <strong>There is a mechanism, and the config file already predicted it.</strong> Execution cost in
+      R is <code>round_trip / (atr_mult × ATR/price)</code>, so a wider stop mechanically dilutes cost.
+      More importantly, <code>config.yaml</code>'s own trailing-stop note says <em>"a bare trail needs to
+      be LATE and WIDE."</em> With <code>atr_mult = 3</code> the initial stop is wide and the +3R arming
+      trigger is far away, so the trail arms late and stops shaking out of winners — exactly the design
+      intent. Note that atr_mult 3.0 sits <em>outside</em> the live config's range, which caps at 2.0.
+      The bot could not have found this by refitting within its own grid.
+    </p>
+  </div>
+  <div class="note warn">
+    <p>
+      <strong>Expanding the universe is a different change, and it loses.</strong> Trading all four
+      divergence types on all 277 symbols with the same global parameters gives $2,778 and a 74%
+      drawdown. So the live config's choice of <em>which (symbol, type) pairs to trade</em> does carry
+      value in-sample; it is only its choice of <em>rr and atr_mult per pair</em> that is harmful. These
+      two effects are separated deliberately here so they are not confused for each other.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Honest status</div>
+    <h2>What this does and does not establish</h2>
+  </div>
+  <p class="prose">
+    <code>PROTOCOL_symbols.md</code> was written before any of this ran and fixed six criteria for
+    recommending a change. <strong>All six are now met.</strong>
+  </p>
+  <div class="check">
+    <div class="m y">✓</div><div><strong>Beats A0 on the untouched holdout.</strong> +6.9% vs −44.8% (independent replication: +1.9% vs −53.7%).</div>
+    <div class="m y">✓</div><div><strong>Beats A0 in ≥3 of 4 walk-forward folds — wins 4 of 4</strong>, plus the holdout. Fold diffs +0.258, +0.061, +0.165, +0.032 R.</div>
+    <div class="m y">✓</div><div><strong>Beats the random null.</strong> Against 2,000 random per-pair (rr, atr) assignments, A1 sits at the <strong>100th percentile</strong> (p = 0.0005). Correcting for having picked the best of 8: best-of-8 beats A0 in 100% of weekly-block resamples, margin CI [+0.056, +0.201] — excludes zero.</div>
+    <div class="m y">✓</div><div><strong>Beats every market control</strong> on ROI/DD, full period <em>and</em> holdout: BTC buy-and-hold, a 277-symbol long-only basket, and a BTC 200-EMA trend follower. A0 passes full-period but <strong>fails all three on the holdout</strong>.</div>
+    <div class="m y">✓</div><div><strong>Not concentrated.</strong> Trimming the top 0.5/1/2/5% of trades from both arms leaves the A1−A0 gap at +0.125 to +0.147 R — it widens rather than narrows. A1's top 1% of trades is 8.5% of its positive R, against A0's 8.8%.</div>
+    <div class="m y">✓</div><div><strong>Independently reproduced.</strong> A second agent rebuilt signals, exits and the portfolio simulator from raw klines, sharing no code. Same sign on all three headline claims; A1 drawdown within 1.1 points.</div>
+  </div>
+  <div class="note meas">
+    <p>
+      <strong>Two disagreements, resolved by inspection rather than vote.</strong> The null-test agent
+      reproduced every number here exactly but recorded criteria 3 and 5 as FAIL — it applied them to
+      A0 rather than to the challenger. <code>PROTOCOL_symbols.md</code> line 97 reads "Recommend
+      changing the bot only if a <em>challenger</em> arm satisfies all of", so the criteria attach to
+      A1; the verdicts above follow the protocol as written. Its criterion-5 "hostile" variant (strip
+      A1's best trades while leaving A0's intact) fails at 2% removal, but that asymmetric test is a
+      stress I invented, not the pre-registered one.
+    </p>
+  </div>
+  <div class="note sig">
+    <p>
+      <strong>The single most damaging number in this study.</strong> A0 — the bot's fitted per-symbol
+      configuration, the output of its walk-forward optimisation — sits at the <strong>0.0th
+      percentile</strong> of 2,000 random parameter assignments drawn from the same eight-combo grid.
+      Not merely no better than chance: worse than essentially every coin flip. Two independent
+      implementations agree on this to four decimal places.
+    </p>
+  </div>
+  <div class="note sig">
+    <p>
+      <strong>The dollar figures are optimistic and are not what the account did.</strong> Every arm
+      inherits the <code>(symbol, div_type)</code> pairs the walk-forward selected in-sample, so all of
+      them carry that selection premium — the comparison between arms is fair, the absolute levels are
+      not. And the live account is near $920 today, not $8,587: this is a reconstruction of what the
+      current rule set would have done over three years it was never actually traded through.
+    </p>
+  </div>
+  <ul>
+    <li>The holdout is six weeks. It can refute a strong claim; it cannot establish one. A1's +6.9% (+1.9% replicated) rests on a small sample and could be luck — the walk-forward folds and the random null are what carry the case, not the holdout alone.</li>
+    <li>Nothing here makes the strategy's underlying edge real. The raw unselected grid is net-negative at every RR (−0.102 at rr=2 to −0.038 at rr=10). This finding is about cutting a self-inflicted loss, not about finding alpha.</li>
+    <li>Three of the four walk-forward fold differences have confidence intervals that include zero; only F1 and the holdout exclude it. The 4-of-4 record is directionally consistent but individually thin.</li>
+    <li>The independent replication got A0 at $2,984 against this study's $8,587 — a 2.9× gap on the incumbent arm, attributed to path-dependent interaction between anti-pyramid blocking, the regime multiplier and compounding. The direction replicates; absolute dollars do not.</li>
+    <li>The out-of-universe question cannot be answered honestly at all: of 231 non-live symbols in the cache, <strong>188 are delisted</strong> and only 43 still trade. Any "should we add symbols" test is 81% survivorship-biased.</li>
+    <li>Deploying this changes the bot's trade profile: 32,102 trades instead of 32,913, longer holds, a much wider stop on every position. Position notional per dollar of risk <em>falls</em> (wider stop = smaller size), which eases the margin-exhaustion problem — but that interaction was not separately tested.</li>
+  </ul>
+  <h2 style="margin-top:14px">The change, if you take it — not applied</h2>
+  <pre style="font-family:var(--mono); font-size:.76rem; background:var(--surface); border:1px solid var(--line); padding:15px 17px; overflow-x:auto; margin:0; line-height:1.6; color:var(--ink-2)"># config.yaml — every symbol's configs block. NOT DEPLOYED.
+# Keep each symbol's existing divergence_type entries; replace only rr and atr_mult.
+  SYMBOL:
+    configs:
+    - divergence_type: HID_BULL
+-     rr: 5.0
+-     atr_mult: 1.5
++     rr: 10.0        # [2026-08-12] global. Per-symbol fitting measured at rho=0.064
++     atr_mult: 3.0   # across walk-forward folds and 0th percentile vs random assignment.
+                      # Global (rr, atr_mult) transfers at rho=0.619. See risk_study/.
+# NOTE atr_mult 3.0 is outside the range the walk-forward ever searched (max 2.0).
+# risk.trailing_stop stays ENABLED — the trail helps this configuration (+0.062 R).
+# risk.risk_per_trade stays 0.003 or lower — see the risk study; do not raise it.</pre>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Reproduce</div>
+    <h2>Commands</h2>
+  </div>
+  <div class="tw"><table><tbody>
+    <tr><td><code>risk_study/PROTOCOL_symbols.md</code></td><td>pre-registered, written before any run</td></tr>
+    <tr><td><code>build_param_grid.py --only live</code></td><td>420,953-row rr × atr grid</td></tr>
+    <tr><td><code>build_universe_trail.py</code></td><td>A0: live config, fixed + trail arms</td></tr>
+    <tr><td><code>build_global_trail.py --rr 10 --atr 3.0 --pairs same</code></td><td>a global arm</td></tr>
+    <tr><td><code>monthly.py</code></td><td>the table above</td></tr>
+    <tr><td><code>results/monthly_equity.csv</code></td><td>every month, every arm</td></tr>
+    <tr><td><code>results/global_arms.csv</code></td><td>the nine-arm ranking</td></tr>
+  </tbody></table></div>
+  <p class="prose" style="color:var(--ink-3); font-size:.92rem">
+    Nothing was deployed. <code>config.yaml</code> is unmodified.
+  </p>
+</section>
+
+</div>

@@ -1,0 +1,43 @@
+rule,period,n,n_skipped,mean_net_r,total_net_r,worst10_days_r,notes
+"baseline: gate ON (shipped btc_short_gate, ret30d>0.10)",train,26405,3317,0.2166,5720.1,-964.7,
+"baseline: gate ON (shipped btc_short_gate, ret30d>0.10)",holdout,2380,0,-0.1155,-275.0,-429.9,
+baseline: gate OFF (no btc_short_gate),train,29722,0,0.2162,6425.9,-1004.1,current best-known baseline; beats shipped gate
+baseline: gate OFF (no btc_short_gate),holdout,2380,0,-0.1155,-275.0,-429.9,
+family1: skip short if ret_30d_causal>0.10 (=shipped gate replicated),train,26405,3317,0.2166,5720.1,-964.7,BTC/vol state gate
+family1: skip short if ret_30d_causal>0.10 (=shipped gate replicated),holdout,2380,0,-0.1155,-275.0,-429.9,BTC/vol state gate
+family1: skip short if ret_30d_causal>0.15,train,28277,1445,0.2342,6622.6,-985.0,BTC/vol state gate
+family1: skip short if ret_30d_causal>0.15,holdout,2380,0,-0.1155,-275.0,-429.9,BTC/vol state gate
+family1: skip short if rvol_30d_causal>0.0298 (top~15pct realized vol),train,26807,2915,0.2353,6307.9,-946.1,BTC/vol state gate
+family1: skip short if rvol_30d_causal>0.0298 (top~15pct realized vol),holdout,2380,0,-0.1155,-275.0,-429.9,BTC/vol state gate
+family1: skip short if rvol_14d_causal>0.0293,train,27129,2593,0.2595,7039.9,-994.5,BTC/vol state gate
+family1: skip short if rvol_14d_causal>0.0293,holdout,2331,49,-0.1106,-257.8,-407.7,BTC/vol state gate
+family2: skip short if density_all_72h>140 (universe-wide trailing-72h entry count),train,26438,3284,0.212,5604.1,-786.7,sensitivity check
+family2: skip short if density_all_72h>140 (universe-wide trailing-72h entry count),holdout,1919,461,-0.1663,-319.0,-390.7,sensitivity check
+family2: skip short if density_all_72h>150 (universe-wide trailing-72h entry count),train,27347,2375,0.2214,6053.8,-800.3,sensitivity check
+family2: skip short if density_all_72h>150 (universe-wide trailing-72h entry count),holdout,2075,305,-0.1305,-270.7,-403.1,sensitivity check
+family2: skip short if density_all_72h>160 (universe-wide trailing-72h entry count),train,28038,1684,0.2245,6294.5,-811.0,RECOMMENDED at thr=160
+family2: skip short if density_all_72h>160 (universe-wide trailing-72h entry count),holdout,2195,185,-0.1121,-246.1,-408.7,RECOMMENDED at thr=160
+family2: skip short if density_all_72h>170 (universe-wide trailing-72h entry count),train,28545,1177,0.2229,6362.4,-826.8,sensitivity check
+family2: skip short if density_all_72h>170 (universe-wide trailing-72h entry count),holdout,2288,92,-0.0918,-210.0,-422.4,sensitivity check
+family2: skip short if density_all_72h>180 (universe-wide trailing-72h entry count),train,28957,765,0.2178,6307.1,-851.4,sensitivity check
+family2: skip short if density_all_72h>180 (universe-wide trailing-72h entry count),holdout,2314,66,-0.0938,-217.1,-429.9,sensitivity check
+family3: scale ALL short net_r by 0.5 (always),train,29722,0,0.1229,3651.9,-579.8,"linear de-risking, not selective"
+family3: scale ALL short net_r by 0.5 (always),holdout,2380,0,-0.1031,-245.4,-255.3,"linear de-risking, not selective"
+family3: scale ALL short net_r by 0.65 (always),train,29722,0,0.1509,4484.1,-686.5,"linear de-risking, not selective"
+family3: scale ALL short net_r by 0.65 (always),holdout,2380,0,-0.1068,-254.3,-301.0,"linear de-risking, not selective"
+family3: scale ALL short net_r by 0.8 (always),train,29722,0,0.1789,5316.3,-810.9,"linear de-risking, not selective"
+family3: scale ALL short net_r by 0.8 (always),holdout,2380,0,-0.1106,-263.1,-355.2,"linear de-risking, not selective"
+family3b: scale short net_r by 0.0 only when density_all_72h>160,train,29722,1684,0.2118,6294.5,-811.0,dial between full skip (f=0) and no action (f=1)
+family3b: scale short net_r by 0.0 only when density_all_72h>160,holdout,2380,185,-0.1034,-246.1,-408.7,dial between full skip (f=0) and no action (f=1)
+family3b: scale short net_r by 0.5 only when density_all_72h>160,train,29722,0,0.214,6360.2,-863.5,dial between full skip (f=0) and no action (f=1)
+family3b: scale short net_r by 0.5 only when density_all_72h>160,holdout,2380,0,-0.1095,-260.5,-417.9,dial between full skip (f=0) and no action (f=1)
+family3b: scale short net_r by 0.65 only when density_all_72h>160,train,29722,0,0.2147,6379.9,-903.2,dial between full skip (f=0) and no action (f=1)
+family3b: scale short net_r by 0.65 only when density_all_72h>160,holdout,2380,0,-0.1113,-264.9,-421.4,dial between full skip (f=0) and no action (f=1)
+family3b: scale short net_r by 0.8 only when density_all_72h>160,train,29722,0,0.2153,6399.6,-946.4,dial between full skip (f=0) and no action (f=1)
+family3b: scale short net_r by 0.8 only when density_all_72h>160,holdout,2380,0,-0.1131,-269.2,-425.0,dial between full skip (f=0) and no action (f=1)
+family4: cap concurrent open shorts at 20,train,12452,17270,0.0964,1200.1,-511.6,poor cost/benefit -- see report
+family4: cap concurrent open shorts at 20,holdout,650,1730,-0.3457,-224.7,-201.9,poor cost/benefit -- see report
+family4: cap concurrent open shorts at 50,train,17151,12571,0.1293,2218.2,-524.9,poor cost/benefit -- see report
+family4: cap concurrent open shorts at 50,holdout,760,1620,-0.2759,-209.7,-218.8,poor cost/benefit -- see report
+family4: cap concurrent open shorts at 100,train,24115,5607,0.1779,4290.8,-601.3,poor cost/benefit -- see report
+family4: cap concurrent open shorts at 100,holdout,1501,879,-0.3191,-478.9,-354.7,poor cost/benefit -- see report

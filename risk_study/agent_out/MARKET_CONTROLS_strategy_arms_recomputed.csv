@@ -1,0 +1,3 @@
+label,roi_pct,cagr_pct,maxdd_pct,roi_over_maxdd,calmar,holdout_pct
+A0 LIVE fitted per-symbol,472.493,73.984,64.917,7.2785,1.1397,-44.799
+A1 GLOBAL rr=10 atr=3.0,1285.029,130.297,47.531,27.0357,2.7413,6.87

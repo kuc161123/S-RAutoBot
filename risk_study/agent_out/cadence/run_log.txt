@@ -1,0 +1,61 @@
+after chop+trim: 183084 date range 2023-06-01 00:00:00 2026-07-04 11:00:00
+long rows (resolved trades x pair): 914395
+T0 (first refit / OOS start): 2023-12-01 00:00:00  END: 2026-07-04 11:00:00
+cadence never done in 1.0s (n_refits=1)
+cadence 12m done in 2.3s (n_refits=3)
+cadence 6m done in 4.2s (n_refits=6)
+cadence 3m done in 6.6s (n_refits=11)
+cadence 1m done in 17.3s (n_refits=32)
+done simulating cadence x lookback grid in 31.8s
+S4 static trades: 40983 mean net_r: 0.07348200586779882
+('never', 'anchored', 'S1_global') 40983 0.0735
+('never', 'anchored', 'S2_persym_thr20') 554 -0.0046
+('never', 'anchored', 'S3_shrunk_thr20') 40990 0.0797
+('never', 'anchored', 'S2_persym_thr50') 0 EMPTY
+('never', 'anchored', 'S3_shrunk_thr50') 40983 0.0735
+('never', 'rolling12', 'S1_global') 40983 0.0735
+('never', 'rolling12', 'S2_persym_thr20') 554 -0.0046
+('never', 'rolling12', 'S3_shrunk_thr20') 40990 0.0797
+('never', 'rolling12', 'S2_persym_thr50') 0 EMPTY
+('never', 'rolling12', 'S3_shrunk_thr50') 40983 0.0735
+('12m', 'anchored', 'S1_global') 41429 0.066
+('12m', 'anchored', 'S2_persym_thr20') 15883 -0.0161
+('12m', 'anchored', 'S3_shrunk_thr20') 41482 0.0534
+('12m', 'anchored', 'S2_persym_thr50') 3670 -0.0418
+('12m', 'anchored', 'S3_shrunk_thr50') 41427 0.0644
+('12m', 'rolling12', 'S1_global') 41059 0.0461
+('12m', 'rolling12', 'S2_persym_thr20') 11269 0.0296
+('12m', 'rolling12', 'S3_shrunk_thr20') 41285 0.0576
+('12m', 'rolling12', 'S2_persym_thr50') 26 -0.4285
+('12m', 'rolling12', 'S3_shrunk_thr50') 41059 0.0462
+('6m', 'anchored', 'S1_global') 41486 0.063
+('6m', 'anchored', 'S2_persym_thr20') 20107 0.0414
+('6m', 'anchored', 'S3_shrunk_thr20') 41643 0.0755
+('6m', 'anchored', 'S2_persym_thr50') 4966 -0.0834
+('6m', 'anchored', 'S3_shrunk_thr50') 41545 0.0659
+('6m', 'rolling12', 'S1_global') 41278 0.0536
+('6m', 'rolling12', 'S2_persym_thr20') 14392 0.0508
+('6m', 'rolling12', 'S3_shrunk_thr20') 41504 0.0673
+('6m', 'rolling12', 'S2_persym_thr50') 26 -0.4417
+('6m', 'rolling12', 'S3_shrunk_thr50') 41278 0.0538
+('3m', 'anchored', 'S1_global') 41490 0.0045
+('3m', 'anchored', 'S2_persym_thr20') 22346 0.0273
+('3m', 'anchored', 'S3_shrunk_thr20') 41658 0.0375
+('3m', 'anchored', 'S2_persym_thr50') 5858 -0.066
+('3m', 'anchored', 'S3_shrunk_thr50') 41548 0.0122
+('3m', 'rolling12', 'S1_global') 41435 -0.0374
+('3m', 'rolling12', 'S2_persym_thr20') 15820 0.0328
+('3m', 'rolling12', 'S3_shrunk_thr20') 41608 0.0019
+('3m', 'rolling12', 'S2_persym_thr50') 32 -0.6042
+('3m', 'rolling12', 'S3_shrunk_thr50') 41435 -0.0372
+('1m', 'anchored', 'S1_global') 41546 0.051
+('1m', 'anchored', 'S2_persym_thr20') 23925 0.0452
+('1m', 'anchored', 'S3_shrunk_thr20') 41706 0.0671
+('1m', 'anchored', 'S2_persym_thr50') 6392 -0.0194
+('1m', 'anchored', 'S3_shrunk_thr50') 41600 0.0568
+('1m', 'rolling12', 'S1_global') 41422 0.0532
+('1m', 'rolling12', 'S2_persym_thr20') 16851 0.0479
+('1m', 'rolling12', 'S3_shrunk_thr20') 41628 0.0522
+('1m', 'rolling12', 'S2_persym_thr50') 10 -1.1649
+('1m', 'rolling12', 'S3_shrunk_thr50') 41422 0.0532
+('static', 'na', 'S4_static') 40983 0.0735

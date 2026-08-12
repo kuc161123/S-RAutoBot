@@ -1,0 +1,7 @@
+c4_switches_full_period=1010
+btc_roi_full_pct=137.7089
+btc_roi_holdout_pct=-18.6573
+n_live_symbols=277
+c3_first_rebal_eligible=89
+c3_last_rebal_eligible=272
+c3_n_rebalances=38

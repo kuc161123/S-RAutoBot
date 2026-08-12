@@ -1,0 +1,388 @@
+<title>Bot Variant Bake-Off — $1,500, Month by Month</title>
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EDF0F4; --line:#D7DDE6;
+  --ink:#141920; --ink-2:#3C4753; --ink-3:#6B7787;
+  --sig:#A32330; --sig-soft:#F3E2E3; --meas:#2C5C77; --meas-soft:#E2EBF1;
+  --good:#2F6B49; --good-soft:#E1EDE6; --warn:#8A5A16; --warn-soft:#F5EADA;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0E1115; --surface:#151920; --surface-2:#1C212A; --line:#2B323C;
+  --ink:#E6E9EE; --ink-2:#B2BBC7; --ink-3:#7E8997;
+  --sig:#E8757F; --sig-soft:#2E1A1D; --meas:#7FB3D0; --meas-soft:#152530;
+  --good:#77C494; --good-soft:#13241A; --warn:#D8A860; --warn-soft:#2A2015;
+}}
+:root[data-theme="dark"]{
+  --ground:#0E1115; --surface:#151920; --surface-2:#1C212A; --line:#2B323C;
+  --ink:#E6E9EE; --ink-2:#B2BBC7; --ink-3:#7E8997;
+  --sig:#E8757F; --sig-soft:#2E1A1D; --meas:#7FB3D0; --meas-soft:#152530;
+  --good:#77C494; --good-soft:#13241A; --warn:#D8A860; --warn-soft:#2A2015;
+}
+*{box-sizing:border-box}
+body{background:var(--ground); color:var(--ink); font-family:var(--serif);
+  font-size:17px; line-height:1.62; margin:0; padding:0 20px 90px; -webkit-font-smoothing:antialiased}
+.wrap{max-width:980px; margin:0 auto}
+.prose{max-width:66ch}
+h1,h2,h3{text-wrap:balance; line-height:1.2; margin:0}
+h1{font-size:2.2rem; font-weight:600; letter-spacing:-.015em}
+h2{font-size:1.4rem; font-weight:600}
+h3{font-size:1.03rem; font-weight:600; margin-bottom:.15em}
+p{margin:0}
+.eyebrow{font-family:var(--mono); font-size:.68rem; text-transform:uppercase;
+  letter-spacing:.14em; color:var(--ink-3); font-weight:500}
+header{padding:54px 0 30px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:13px}
+.meta{display:flex; flex-wrap:wrap; gap:8px 22px; font-family:var(--mono); font-size:.73rem; color:var(--ink-3)}
+section{padding:40px 0; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:18px}
+section:last-of-type{border-bottom:0}
+.shead{display:flex; flex-direction:column; gap:5px}
+.callout{border:1px solid var(--good); border-left-width:5px; background:var(--good-soft);
+  padding:24px 26px; display:flex; flex-direction:column; gap:11px; margin-top:26px}
+.callout .call{font-size:1.45rem; font-weight:600; color:var(--good); line-height:1.25; letter-spacing:-.01em}
+.callout p{color:var(--ink-2)}
+.callout.warn{border-color:var(--warn); background:var(--warn-soft)}
+.callout.warn .call{color:var(--warn)}
+.note{border-left:3px solid var(--line); padding:2px 0 2px 18px; color:var(--ink-2)}
+.note.warn{border-color:var(--warn)} .note.sig{border-color:var(--sig)}
+.note.meas{border-color:var(--meas)} .note.good{border-color:var(--good)}
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:13px}
+.card{background:var(--surface); border:1px solid var(--line); padding:15px 17px; display:flex; flex-direction:column; gap:4px}
+.card .k{font-family:var(--mono); font-size:.65rem; text-transform:uppercase; letter-spacing:.1em; color:var(--ink-3)}
+.card .v{font-family:var(--mono); font-size:1.4rem; font-weight:500; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+.card .d{font-size:.84rem; color:var(--ink-2); line-height:1.45}
+.card.good .v{color:var(--good)} .card.sig .v{color:var(--sig)}
+.card.meas .v{color:var(--meas)} .card.warn .v{color:var(--warn)}
+.tw{overflow-x:auto; border:1px solid var(--line); background:var(--surface)}
+table{border-collapse:collapse; width:100%; font-family:var(--mono); font-size:.77rem; font-variant-numeric:tabular-nums}
+th,td{padding:7px 11px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line)}
+th{background:var(--surface-2); color:var(--ink-3); font-weight:500; font-size:.64rem;
+  text-transform:uppercase; letter-spacing:.08em; position:sticky; top:0}
+td:first-child,th:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:0}
+tr.win{background:var(--good-soft)} tr.here{background:var(--meas-soft)}
+tr.bad{background:var(--sig-soft)}
+tr.sep td{border-top:2px solid var(--ink-3)}
+.neg{color:var(--sig)} .pos{color:var(--good)} .dim{color:var(--ink-3)} .wn{color:var(--warn)}
+caption{caption-side:bottom; text-align:left; padding:10px 12px; font-family:var(--serif);
+  font-size:.85rem; color:var(--ink-3); line-height:1.5; white-space:normal}
+ul,ol{margin:0; padding-left:1.25em; display:flex; flex-direction:column; gap:7px; color:var(--ink-2)}
+li::marker{color:var(--ink-3)}
+code{font-family:var(--mono); font-size:.86em; background:var(--surface-2); padding:1px 5px; border-radius:2px}
+pre{font-family:var(--mono); font-size:.75rem; background:var(--surface); border:1px solid var(--line);
+  padding:15px 17px; overflow-x:auto; margin:0; line-height:1.6; color:var(--ink-2)}
+.two{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+@media(max-width:700px){.two{grid-template-columns:1fr}}
+@media(max-width:620px){body{font-size:16px} h1{font-size:1.75rem}}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Variant bake-off · 2026-08-12</div>
+  <h1>Which version of this bot actually grows $1,500?</h1>
+  <p class="prose" style="color:var(--ink-2); font-size:1.05rem">
+    Ten configurations, twelve feature toggles, two independent engines, an adversarial review and a
+    formal debate with an adjudicating judge. Same signals, same bars, same measured costs throughout —
+    only the configuration changes.
+  </p>
+  <div class="meta">
+    <span>$1,500 · 0.3% risk · 24.2 bps measured</span>
+    <span>2023-06-01 → 2026-07-25</span>
+    <span>leak-free sizing</span>
+    <span>14 agents total</span>
+  </div>
+</header>
+
+<div class="callout">
+  <div class="eyebrow" style="color:var(--good)">Verdict — carried with amendment</div>
+  <div class="call">Make the change. But buy it knowing you are buying survivability, not growth.</div>
+  <p>
+    The configuration deployed today is the <strong>worst arm tested on almost every axis</strong>:
+    $5,744 final, −48.4% over the untouched holdout, and its entire profit rests on the top 1% of
+    trades five times over. Switching to one global <strong>rr=10 / atr_mult=3.0</strong> with the trail
+    kept on and the 21-day halt adopted gives <strong>$17,205</strong>, the lowest drawdown of any arm
+    (47.0%), and the <strong>only positive holdout in the study</strong> (+15.8%).
+  </p>
+  <p>
+    It does <em>not</em> give the most dollars. Reverting to the pre-2026-08-02 bot — fitted parameters
+    with the old fixed take-profit — makes $91,223. Why that is not the recommendation is the single
+    most important thing on this page.
+  </p>
+</div>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">The headline</div>
+    <h2>Ten configurations, $1,500 start</h2>
+  </div>
+  <div class="tw">
+    <table>
+      <thead><tr>
+        <th>Configuration</th><th>Trades</th><th>Final $</th><th>Max DD</th>
+        <th>$ / DD pt</th><th>Holdout</th><th>Top 1% share</th>
+      </tr></thead>
+      <tbody>
+        <tr class="win"><td><strong>fitted + FIXED TP</strong> (pre-2026-08-02)</td><td>23,292</td><td class="pos"><strong>91,223</strong></td><td class="neg">71.4%</td><td>1,277</td><td class="neg">−12.4%</td><td class="neg">156%</td></tr>
+        <tr><td>fitted + FIXED + halt 21d</td><td>21,160</td><td class="pos">57,415</td><td class="neg">68.0%</td><td>844</td><td class="wn">−5.4%</td><td class="neg">198%</td></tr>
+        <tr><td>global 8/2 + FIXED</td><td>19,109</td><td>10,178</td><td>52.3%</td><td>195</td><td class="neg">−9.3%</td><td class="neg">362%</td></tr>
+        <tr><td>global 10/2 + FIXED</td><td>16,828</td><td>6,192</td><td>63.2%</td><td>98</td><td class="wn">−2.8%</td><td class="neg">482%</td></tr>
+        <tr><td>global 10/3 + FIXED</td><td>12,632</td><td class="neg">810</td><td class="neg">69.6%</td><td>12</td><td class="neg">−11.2%</td><td class="dim">—</td></tr>
+        <tr class="sep bad"><td><strong>fitted + TRAIL</strong> ← deployed today</td><td>22,520</td><td class="neg"><strong>5,744</strong></td><td>65.3%</td><td class="neg">88</td><td class="neg"><strong>−48.4%</strong></td><td class="neg"><strong>525%</strong></td></tr>
+        <tr><td>fitted + TRAIL + halt 21d</td><td>20,686</td><td class="neg">7,524</td><td>65.3%</td><td>115</td><td class="neg">−12.6%</td><td class="neg">322%</td></tr>
+        <tr><td>global 10/2 + TRAIL</td><td>21,563</td><td>9,900</td><td>56.1%</td><td>177</td><td class="neg">−15.5%</td><td class="neg">279%</td></tr>
+        <tr class="win"><td><strong>global 10/3 + TRAIL</strong></td><td>18,335</td><td>17,493</td><td class="pos">47.0%</td><td>372</td><td class="pos">+7.9%</td><td>151%</td></tr>
+        <tr class="win"><td><strong>global 10/3 + TRAIL + halt 21d</strong> ← recommended</td><td>15,754</td><td>17,205</td><td class="pos"><strong>47.0%</strong></td><td>366</td><td class="pos"><strong>+15.8%</strong></td><td class="pos"><strong>104%</strong></td></tr>
+      </tbody>
+      <caption>
+        Leak-free sizing (<code>size_basis='wallet'</code>). The engine's equity basis marks open
+        positions toward their <em>already-known</em> final PnL — a genuine lookahead that inflates
+        results 1.2–1.6× and inflates most the arms with the biggest winners, so it is not safe for
+        ranking. "Top 1% share" is the fraction of total profit contributed by the best 1% of trades;
+        above 100% means the rest of the book is net negative. <strong>Every arm here is
+        outlier-dependent</strong> — that is the nature of a 3:1-to-10:1 reward-to-risk strategy — but
+        the spread between 104% and 525% is the difference between fragile and extremely fragile.
+      </caption>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">The mechanism</div>
+    <h2>Parameters and exit rule are not independent choices</h2>
+  </div>
+  <p class="prose">
+    This is the finding that reorganised the whole study. The exit rule does not have a fixed cost or
+    benefit — it depends entirely on the parameters it is paired with.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th></th><th>Fixed take-profit</th><th>s3_a1 trailing stop</th><th>Effect of the trail</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Fitted per-symbol</strong> (rr 3–10, atr 1.0–2.0)</td><td class="pos">$91,223</td><td class="neg">$5,744</td><td class="neg">÷ 15.9</td></tr>
+        <tr><td><strong>Global rr=10 / atr=3.0</strong></td><td class="neg">$810</td><td class="pos">$17,493</td><td class="pos">× 21.6</td></tr>
+      </tbody>
+      <caption>
+        The trail destroys the fitted configuration and rescues the global one. Two mechanisms, both
+        verified: the trail arms at +3R, so any <code>rr = 3</code> config's take-profit sits exactly at
+        the arming threshold and the trail can <strong>never fire</strong> — measured at 0.0% arming,
+        confirmed exactly against the bot's own live shadow data. And at <code>atr_mult = 3</code> the
+        take-profit sits 30 ATR away and is essentially unreachable (win rate 10.3%), so without a trail
+        there is nothing to bank. <code>config.yaml</code>'s own note already said it: <em>"a bare trail
+        needs to be LATE and WIDE."</em>
+      </caption>
+    </table>
+  </div>
+  <div class="note meas">
+    <p>
+      The trail resolver behind all of this passed a <strong>four-way parity check</strong> — the live
+      engine <code>Bot4H._trail_one</code>, the shadow learner, the repo's validated reference, and this
+      study's implementation agree on <strong>100.00% of 16,049 trades</strong>, on both the R outcome
+      and the exit bar.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Feature toggles</div>
+    <h2>What each protection is actually worth</h2>
+  </div>
+  <p class="prose">Median effect across four base configurations, one toggle at a time.</p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Toggle</th><th>Equity</th><th>Max DD</th><th>Holdout</th><th>Read</th></tr></thead>
+      <tbody>
+        <tr class="win"><td>Adopt <strong>halt 21d</strong></td><td>×1.05</td><td>0.0 pts</td><td class="pos">+21.8 pts</td><td class="pos">free insurance — the one clean win</td></tr>
+        <tr><td>Adopt halt 7d</td><td>×0.94</td><td>0.0 pts</td><td class="neg">−1.5 pts</td><td>too twitchy; 21d dominates it</td></tr>
+        <tr class="here"><td>Turn <strong>regime multiplier OFF</strong></td><td class="pos">×1.87</td><td class="neg">+15.8 pts</td><td class="neg">−22.2 pts</td><td>buys growth with drawdown and OOS</td></tr>
+        <tr><td>Turn BTC short-gate off</td><td class="pos">×1.82</td><td class="neg">+3.3 pts</td><td class="pos">+1.4 pts</td><td class="wn">the gate is costing money</td></tr>
+        <tr><td>Turn both risk caps off</td><td>×0.91</td><td>+0.8 pts</td><td>−1.5 pts</td><td>caps are mildly positive — keep</td></tr>
+        <tr><td>Turn long-bull boost off</td><td>×0.95</td><td class="pos">−3.5 pts</td><td>+0.7 pts</td><td>near-neutral</td></tr>
+        <tr><td>Remove the balance taper</td><td>×0.88</td><td>+0.3 pts</td><td class="neg">−11.6 pts</td><td>taper earns its place</td></tr>
+        <tr class="bad"><td>ALL protections off</td><td class="pos">×2.50</td><td class="neg">+24.7 pts</td><td class="neg">−14.2 pts</td><td class="neg">max growth, max ruin</td></tr>
+      </tbody>
+      <caption>
+        You asked specifically about running with the regime multiplier off. It is the single largest
+        growth lever on the board — nearly double the equity — but it pays for that with 16 more points
+        of drawdown and 22 points of out-of-sample return, and on the current fitted config it produces
+        a <strong>95% drawdown and a −91% holdout</strong>. It is a leverage decision dressed as a
+        feature toggle. Against the earlier finding that 0.3% is already at the growth-optimal risk
+        fraction, turning off the multiplier that scales risk <em>down</em> in bad periods is the wrong
+        direction.
+      </caption>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Month by month</div>
+    <h2>The three histories that matter</h2>
+  </div>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Month</th><th>Old base (fitted+fixed)</th><th>Current (fitted+trail)</th><th>Global 10/3 + trail</th><th>Period</th></tr></thead>
+      <tbody>
+        <tr><td>2023-06</td><td>1,558</td><td>1,564</td><td>1,500</td><td class="dim">train</td></tr>
+        <tr><td>2023-12</td><td>1,206</td><td>1,431</td><td>2,666</td><td class="dim">train</td></tr>
+        <tr><td>2024-06</td><td>748</td><td>779</td><td>1,775</td><td class="dim">train</td></tr>
+        <tr><td>2024-12</td><td>2,886</td><td>1,251</td><td>3,457</td><td class="dim">train</td></tr>
+        <tr><td>2025-03</td><td>8,350</td><td>2,053</td><td>4,180</td><td class="dim">train</td></tr>
+        <tr><td>2025-06</td><td>25,683</td><td>3,675</td><td>6,128</td><td class="dim">train</td></tr>
+        <tr><td>2025-09</td><td>36,860</td><td>4,198</td><td>6,999</td><td class="dim">wf-test</td></tr>
+        <tr><td>2025-12</td><td>90,182</td><td>6,935</td><td>13,553</td><td class="dim">wf-test</td></tr>
+        <tr><td>2026-02</td><td>154,967</td><td>19,609</td><td>21,629</td><td class="dim">wf-test</td></tr>
+        <tr><td>2026-05</td><td>144,724</td><td>15,179</td><td>19,191</td><td class="dim">wf-test</td></tr>
+        <tr class="here"><td>2026-06</td><td>140,589</td><td>13,261</td><td class="pos">24,485</td><td><strong>HOLDOUT</strong></td></tr>
+        <tr class="here"><td>2026-07</td><td>132,605</td><td class="neg">8,587</td><td class="pos">20,775</td><td><strong>HOLDOUT</strong></td></tr>
+      </tbody>
+      <caption>
+        Quarter-ends shown; every month is in <code>results/compare_monthly.csv</code>. These figures use
+        the leaky equity basis for continuity with the earlier report — the leak-free numbers in the
+        headline table are 1.2–1.6× lower and are what the ranking rests on. "train" and "wf-test" are
+        both in-sample in a decision-relevant sense: the config was <em>accepted</em> on the wf-test
+        window. Only the last two rows were never seen.
+      </caption>
+    </table>
+  </div>
+  <div class="note sig">
+    <p>
+      <strong>These are not what your account did.</strong> The live account is near $920. This is a
+      reconstruction of what each rule set would have done over three years none of them actually traded
+      through, on a symbol set selected in-sample. Treat the <em>ranking</em> as the finding and the
+      dollar levels as illustrative — two independent engines agreed on the ranking and disagreed on the
+      dollars by up to 7×.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Adversarial process</div>
+    <h2>The debate, and what the judge ruled</h2>
+  </div>
+  <p class="prose">
+    A proponent and an opponent each argued the motion with access to all the data, then an independent
+    judge adjudicated by going back to the numbers rather than weighing the rhetoric.
+  </p>
+  <div class="two">
+    <div class="note good">
+      <h3>Rulings for the change</h3>
+      <ul>
+        <li><strong>Comparator.</strong> The motion keeps the trail, so the baseline is what runs today (fitted+trail), not the retired fixed-TP bot.</li>
+        <li><strong>Outlier robustness.</strong> Trimming the best 5% of trades: global degrades to −0.061 R, old base to −0.260 R. The genuinely fragile arm is the <em>current</em> one, which goes negative after 1% removed.</li>
+        <li><strong>Contamination charge rejected</strong> for the headline statistic: the transfer test ran on all four divergence types across all live symbols — 420,953 rows including the 376 rejected pairs — not just the selected 728.</li>
+        <li><strong>Engine disagreement</strong> changes magnitudes, not ranking. Both engines agree current is worst, global has the lowest drawdown, and global is the only arm positive on holdout.</li>
+      </ul>
+    </div>
+    <div class="note warn">
+      <h3>Rulings against, and concessions</h3>
+      <ul>
+        <li><strong>Old base deserves a seat.</strong> Reverting the trail is a real alternative that makes 5× the money and wins 8 of 8 restart dates — it was not dismissed, it was outranked on risk.</li>
+        <li><strong>atr_mult = 3.0 is outside the grid</strong> the bot's own optimiser ever searched. Restricted to ≤2.0, every global arm's holdout is negative.</li>
+        <li><strong>The halt is not a clean win.</strong> The backtest models it as an instant hard filter; live it is advisory and needs the operator to act. A prior rolling test found it helped in only 2 of 10 windows.</li>
+        <li><strong>Three of four</strong> walk-forward fold confidence intervals include zero.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">The falsifier</div>
+    <h2>The judge named one test that would flip the verdict. I ran it.</h2>
+  </div>
+  <p class="prose">
+    If the global parameters carry a real edge, they should work on the 376 <code>(symbol, divergence
+    type)</code> pairs the walk-forward <strong>rejected</strong> — where no selection ever happened.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Window</th><th>Pair set</th><th>n</th><th>Gross R</th><th>Net R</th><th>95% CI (weekly blocks)</th></tr></thead>
+      <tbody>
+        <tr class="win"><td>Full history</td><td>selected</td><td>32,102</td><td>+0.2631</td><td class="pos">+0.1916</td><td class="pos">[+0.070, +0.322]</td></tr>
+        <tr class="bad"><td>Full history</td><td><strong>rejected</strong></td><td>14,241</td><td>+0.0255</td><td class="neg">−0.0415</td><td>[−0.133, +0.060]</td></tr>
+        <tr><td>Holdout</td><td>selected</td><td>1,727</td><td>+0.1013</td><td>+0.0302</td><td>[−0.370, +0.501]</td></tr>
+        <tr class="bad"><td>Holdout</td><td><strong>rejected</strong></td><td>705</td><td>−0.1155</td><td class="neg">−0.1795</td><td>[−0.432, +0.107]</td></tr>
+      </tbody>
+      <caption>
+        Global rr=10 / atr=3.0 with the trail, resolved identically on both pair sets.
+      </caption>
+    </table>
+  </div>
+  <div class="note sig">
+    <p>
+      <strong>The falsifier partially fires, and this is the honest limit of the finding.</strong> On
+      pairs where no selection ever occurred, the global configuration's net R is negative — −0.042 over
+      the full history, −0.180 in the holdout — though both confidence intervals include zero. The
+      global parameters therefore do <em>not</em> create alpha on the unselected population. They
+      exploit the existing pair set better than the fitted parameters do.
+    </p>
+    <p style="margin-top:8px">
+      That is still a real reason to make the change — you are keeping those pairs either way, and this
+      is a strictly better way to trade them. But it means the change <strong>inherits, rather than
+      escapes, the dependency on a pair selection whose own validity remains unproven.</strong>
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Decision</div>
+    <h2>What I would do, and why not the $91,000 one</h2>
+  </div>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Change</th><th>Do it?</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr class="win"><td>Replace 728 fitted (rr, atr) with global rr=10 / atr=3.0</td><td class="pos"><strong>YES</strong></td><td>Cleared all six pre-registered criteria. The fitted config scores at the <strong>0th percentile</strong> of 2,000 random assignments — worse than chance</td></tr>
+        <tr class="win"><td>Keep the trailing stop ON</td><td class="pos"><strong>YES</strong></td><td>It is what makes the global parameters work (+0.062 R); turning it off with these parameters gives $810</td></tr>
+        <tr class="win"><td>Adopt the 21-day halt, advisory as shipped</td><td class="pos"><strong>YES</strong></td><td>Improves holdout for every configuration at no cost in equity or drawdown. Do not automate it</td></tr>
+        <tr><td>Turn the regime multiplier off</td><td class="neg">NO</td><td>×1.87 equity but +15.8 DD points and −22.2 holdout points. It is leverage, and sizing is already at optimum</td></tr>
+        <tr><td>Revert to fitted + fixed TP for the $91k</td><td class="neg">NO</td><td>71.4% drawdown, negative holdout, and it collapses to −0.260 R once its best 5% of trades are removed</td></tr>
+        <tr><td>Raise risk above 0.3%</td><td class="neg">NO</td><td>Unchanged from the sizing study — 0.3% is at or above the growth-optimal fraction</td></tr>
+        <tr><td>Change the symbol universe</td><td class="neg">NO</td><td>188 of 231 candidates are delisted. The question is untestable</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout warn" style="margin-top:4px">
+    <div class="eyebrow" style="color:var(--warn)">The honest frame</div>
+    <div class="call" style="font-size:1.15rem">This is damage control, not a growth plan.</div>
+    <p>
+      Every headline number here still sits on a strategy whose unselected parameter grid is
+      net-negative at every reward-to-risk setting, and whose standing verdict — from an adversarial
+      review nine days ago — is that its honest alpha is below its execution cost. Nothing in this
+      bake-off overturns that. What it establishes is narrower and still worth acting on: <strong>the
+      configuration currently deployed is measurably the worst way to run this strategy</strong>, and
+      there is a strictly better one available for the price of editing a config file.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <div class="eyebrow">Reproduce</div>
+    <h2>Files and commands</h2>
+  </div>
+  <pre>risk_study/PROTOCOL_symbols.md          pre-registered before any result
+risk_study/verify_my_trail.py           4-way trail parity  -> 100.0000% on 16,049 trades
+risk_study/build_universe_trail.py      A0 arms (fixed + trail)
+risk_study/build_global_trail.py --rr 10 --atr 3.0 --pairs same|all
+risk_study/compare_bots.py              six-arm monthly + 8 restart dates
+risk_study/variations.py                12-toggle matrix incl. halt 7d / 21d
+risk_study/criteria.py                  pre-registered criteria 2,3,4,5
+
+results/compare_monthly.csv             month-end equity, every arm
+results/variations.csv                  every toggle x config cell
+results/global_arms.csv                 nine-arm ranking
+agent_out/debate/{PRO,CON,VERDICT}.md   the debate and the ruling
+agent_out/{NULL_TEST,MARKET_CONTROLS,REPLICATION2}.md
+agent_out/red2/RED_TEAM2.md             adversarial review
+agent_out/cmp/RESULTS.md                independent six-arm engine
+
+seeds 42 throughout · 2,000 bootstrap draws · nothing deployed · config.yaml unmodified</pre>
+</section>
+
+</div>

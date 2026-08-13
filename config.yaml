@@ -155,9 +155,35 @@ risk:
     # window improved the untouched holdout by +21.8 points (median across 4 configurations)
     # at zero cost in equity or drawdown, while the 7d window cost 1.5 points. 21d switches
     # ~13x/yr vs 21x/yr, so it is also less operator load for an advisory signal.
+    # CORRECTION to the line above: "~13x/yr" is NOT what this configuration does. Measured
+    # on the current universe (risk_study/sweep_gate_thresholds.py, 220 threshold cells):
+    # 21d/-300/+200 fires 1.6x/yr — 3 halts and 2 resumes in 3.1 years. The 13x/yr figure
+    # was taken from the OLD per-symbol fitted rr/atr universe. Under global rr=10 the mean
+    # net R per signal moved +0.058 -> +0.192, so a 21d trailing sum now runs +112R instead
+    # of +35R and a fixed -300 slid from a normal trigger to the ~1st PERCENTILE of the
+    # distribution. Treat the operator-load argument above as void.
     window_days: 21         # 21 = validated 2026-08; 7 = previous setting, worse on holdout
     stop_r: -300            # advise halting when trailing R falls to/below this
-    start_r: 200            # advise resuming when trailing R recovers to/above this (21d pair)
+    # [CHANGED 2026-08-13 +200 -> -50 — see risk_study/gate_last18mo.py] Resume sooner after
+    # a halt. stop_r is UNCHANGED; this only governs how fast the bot comes back.
+    #
+    # Last 18 months from $1,500 (2025-01-25..2026-07-25), current config, 24.2 bps:
+    #   no gate      $8,955  maxDD 49.6%  ROI/DD 10.02  holdout -20.4%
+    #   +200 (old)  $14,808  maxDD 36.0%  ROI/DD 24.67  holdout  +0.9%
+    #   -50  (this) $15,280  maxDD 37.0%  ROI/DD 24.83  holdout +34.6%
+    # Also never materially worse across 18 rolling 12-month windows vs no-gate: median
+    # equity delta 0.0% against -2.3% for +200 (risk_study/gate_rolling_robust.py).
+    #
+    # THE HONEST CAVEAT, do not lose this: over those 18 months no-gate, +200 and -50 are
+    # IDENTICAL until 2026-02 ($14,197 each). The entire difference is one halt — 2026-03-16
+    # -> resume 2026-05-28 at +200 versus 2026-03-27 at -50. n=1. The 250R hysteresis gap is
+    # preserved so it still cannot flip-flop. What is NOT claimed: that -50 is an optimum.
+    # A 220-cell sweep could not rank thresholds at all — in-sample equity correlates -0.042
+    # with holdout, and the full-history ROI/DD winner (-150/-50, 136.5) placed SECOND-TO-LAST
+    # over the last 18 months, below no-gate. This value is "resume sooner than +200", not a
+    # tuned parameter. REVIEW TRIGGER: re-run gate_last18mo.py after the next 2 halt/resume
+    # cycles; if -50 does not still lead, revert to +200 rather than searching again.
+    start_r: -50            # advise resuming when trailing R recovers to/above this (21d pair)
     min_signals: 150        # refuse to act on thin data — hold current state below this
     recheck_minutes: 20     # how often to re-evaluate (DB query throttle)
   # [TRAILING STOP — variant "s3_a1"] Deployed 2026-08-02 as DRAWDOWN CONTROL ONLY.

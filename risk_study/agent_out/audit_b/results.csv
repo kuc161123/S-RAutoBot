@@ -1,0 +1,50 @@
+item,value,detail,window,n
+entry_leg_order_type,Market (taker),bybit.py:757-795 place_market; no tpOrderType/slOrderType set,n/a,
+tp_leg_order_type_live,"Market (taker, Bybit default)",bybit.py:778-788; dead set_tpsl at ~bybit.py:1092 sets tpOrderType=Limit but is never called from execute_trade,n/a,
+sl_leg_order_type_live,Market (taker),"bybit.py:786-788, amend_stop_loss for trail; slOrderType never set -> Market default",n/a,
+true_TP_exit_rate,0.003987,fraction of all trades whose r_result>=0.97*rr (i.e. actually reached the fixed TP rather than being cut by the s3_a1 trail),full 2023-06/2026-07,32102.0
+maker_TP_savings_R_per_trade,5e-05,"assumes taker 5.5bps/maker 2.0bps=3.5bps saved on the exit leg only, applied only to true-TP trades (0.4%) and averaged over ALL trades",full,32102.0
+maker_TP_savings_as_pct_of_measured_cost,0.0007,0.00005R / mean cost_R at 24.2bps (0.0715R) on current global config,full,32102.0
+mean_1_over_stop_frac_CURRENT_config,29.54,"uni_glob_rr10_am3_same.parquet (rr=10, atr_mult=3, the live config since 2026-08-12)",full,32102.0
+mean_1_over_stop_frac_OLD_config,67.35,"universe_chopBOS.parquet (rr 3/5/8/10 mixed, atr_mult 1/1.5/2 per-symbol, the pre-2026-08-12 config); this is the figure the AUDIT_PROMPT's '~67' refers to -- it is NOT the current config",full,32929.0
+mean_cost_R_at_24.2bps_CURRENT_config,0.0715,"0.00242 * mean(1/stop_frac)=29.54, using the config this audit is supposed to judge",full,32102.0
+mean_cost_R_at_24.2bps_OLD_config,0.163,0.00242 * 67.35 -- this is the number implied by the AUDIT_PROMPT's stated '~67',full,32929.0
+funding_R_per_trade_long,-0.005261,"real Bybit funding history (funding_cache/*.parquet), matched to entry/exit windows; longs pay on average",full,11355.0
+funding_R_per_trade_short,0.003854,real funding history; shorts earn on average,full,20587.0
+funding_R_per_trade_overall,0.000614,"book-weighted (20587 short / 11355 long, ~1.8:1); 95% weekly-block-bootstrap CI crosses zero",full,31942.0
+funding_R_overall_CI_lo,-0.000929,"weekly block bootstrap, 3000 draws, 165 weeks",full,31942.0
+funding_R_overall_CI_hi,0.002205,"weekly block bootstrap, 3000 draws, 165 weeks",full,31942.0
+funding_R_per_trade_OLD_config,-5.72e-05,same calc on uni_glob_rr8_am2_same.parquet (shorter holds); shows funding only became a net positive after atr_mult widened 2->3 lengthened holding time,full,32872.0
+hold_hours_mean_long_CURRENT,54.92,uni_glob_rr10_am3_same.parquet,full,11430.0
+hold_hours_mean_short_CURRENT,71.78,uni_glob_rr10_am3_same.parquet,full,20672.0
+hold_hours_mean_long_OLD,25.18,uni_glob_rr8_am2_same.parquet,full,11444.0
+hold_hours_mean_short_OLD,33.69,uni_glob_rr8_am2_same.parquet,full,21428.0
+hold_time_multiplier_new_vs_old,2.15,~2.1-2.2x longer holds under current atr_mult=3.0/rr=10 vs prior atr_mult~2.0/rr~8,n/a,
+backtest_FUNDING_LONG_assumed,0.0001,"backtest_production_correct.py:52, flat constant per 8h",n/a,
+backtest_FUNDING_SHORT_assumed,-3e-05,"backtest_production_correct.py:53, flat constant per 8h",n/a,
+measured_implied_long_funding_per_8h,-2.93e-05,"real data: longs' average funding rate during their own hold windows was actually slightly NEGATIVE (they receive, not pay) -- opposite sign to the backtest assumption, but tiny",full,11355.0
+measured_implied_short_funding_per_8h,1.66e-05,"real data implied average short-side funding income ~0.0000166/8h, about half the backtest's assumed 0.00003/8h",full,20587.0
+exec_log_n_rows,196,"risk_study/results/live_exec_log.parquet, 2026-08-03 to 2026-08-11",live,196.0
+exec_log_actual_entry_equals_intended_entry_fraction,1.0,196/196 rows -- actual_entry is byte-identical to intended_entry in every row,live,196.0
+exec_log_slippage_frac_nonzero_fraction,0.0,0/196 rows nonzero,live,196.0
+exec_log_fee_usd_populated_fraction,0.0,0/196 rows non-null,live,196.0
+exec_log_funding_usd_populated_fraction,0.0,0/196 rows non-null; bot.py:2685 hard-codes funding_usd=None with a comment that the join was never built,live,196.0
+fill_lag_sec_median,75.9,matches AUDIT_PROMPT's cited 74s,live,196.0
+fill_lag_sec_p95,122.5,matches AUDIT_PROMPT's cited 122s,live,196.0
+fill_lag_sec_max,1566.7,"one extreme outlier, ~26 minutes -- late in the 277-symbol sweep",live,196.0
+expected_1sigma_entry_drift_R_median,0.107,"back-of-envelope: (atr/entry)*sqrt(fill_lag_sec/3600)/stop_frac, using exec_log's own atr/fill_lag -- NOT a real measurement, the true sign/magnitude is unrecoverable because actual_entry was never logged and cache_5m stops 2026-08-02 (before this window starts)",live,196.0
+expected_1sigma_entry_drift_bps_median,12.0,"same back-of-envelope calc, in bps of notional; backtest assumes a flat 3bps entry slippage (SLIPPAGE_PER_SIDE)",live,196.0
+net_R_at_11bps_PRE,0.2549,"entries <=2026-05-25, minus 21d trim",pre-2026-05-25,29722.0
+net_R_at_11bps_POST,0.0723,"entries >=2026-05-25, minus 21d trim",post-2026-05-25 (holdout),1702.0
+net_R_at_18bps_PRE,0.2344,,pre-2026-05-25,29722.0
+net_R_at_18bps_POST,0.0521,,post-2026-05-25 (holdout),1702.0
+net_R_at_24.2bps_PRE,0.2162,"CI [0.0904, 0.3533] weekly block bootstrap",pre-2026-05-25,29722.0
+net_R_at_24.2bps_POST,0.0341,"CI [-0.3712, 0.4940] weekly block bootstrap -- crosses zero",post-2026-05-25 (holdout),1702.0
+net_R_at_30bps_PRE,0.1992,,pre-2026-05-25,29722.0
+net_R_at_30bps_POST,0.0173,,post-2026-05-25 (holdout),1702.0
+net_R_at_40bps_PRE,0.1699,"CI [0.0385, 0.3060]",pre-2026-05-25,29722.0
+net_R_at_40bps_POST,-0.0117,"CI [-0.4194, 0.4383] -- crosses zero",post-2026-05-25 (holdout),1702.0
+breakeven_cost_bps_PRE,97.9,linear in bps since net=r-bps/1e4/stop_frac,pre-2026-05-25,29722.0
+breakeven_cost_bps_POST,36.0,"holdout breakeven is much closer to current 24.2bps, but the holdout sample (n=1702, 165wk->fewer in this window) is noisy: CI on net_R at 24.2bps already crosses zero",post-2026-05-25 (holdout),1702.0
+gross_r_mean_PRE,0.2872,no cost applied,pre-2026-05-25,29722.0
+gross_r_mean_POST,0.1042,no cost applied,post-2026-05-25 (holdout),1702.0

@@ -1,0 +1,16 @@
+
+  Loading CHOP data for 277 symbols...
+    ... loaded 50/277
+    ... loaded 100/277
+    ... loaded 150/277
+    ... loaded 200/277
+    ... loaded 250/277
+  Loaded CHOP for 277 symbols
+gated+halted population: 27394 rows
+  regime_window=10 (window=10)             IS $    38,344 roi +2456.3% dd  48.1%  n= 16330  avgR+0.273  |  HOLD $    1,627 roi   +8.5% dd  17.6% n=  669 avgR+0.220
+  regime_window=20 (live)                  IS $    34,247 roi +2183.1% dd  44.5%  n= 16238  avgR+0.281  |  HOLD $    1,664 roi  +11.0% dd  18.3% n=  661 avgR+0.086
+  regime_window=40 (window=40)             IS $    25,319 roi +1587.9% dd  50.5%  n= 15666  avgR+0.288  |  HOLD $    1,667 roi  +11.2% dd  19.0% n=  643 avgR+0.203
+  regime_window=60 (window=60)             IS $    20,705 roi +1280.3% dd  35.6%  n= 14991  avgR+0.292  |  HOLD $    1,589 roi   +6.0% dd  19.9% n=  636 avgR+0.231
+  regime OFF (flat tapered risk)           IS $    36,242 roi +2316.1% dd  56.9%  n= 10421  avgR+0.270  |  HOLD $    1,554 roi   +3.6% dd  22.8% n=  307 avgR+0.168
+
+wrote item6_regime_results.csv

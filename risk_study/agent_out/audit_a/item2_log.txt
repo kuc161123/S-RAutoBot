@@ -1,0 +1,16 @@
+
+  Loading CHOP data for 277 symbols...
+    ... loaded 50/277
+    ... loaded 100/277
+    ... loaded 150/277
+    ... loaded 200/277
+    ... loaded 250/277
+  Loaded CHOP for 277 symbols
+ungated+halted population: 24012 rows, 2023-06-01 00:00:00..2026-06-26 23:00:00
+  CHOP[current (live, inverted)]           IS $       759 roi   -49.4% dd  65.7%  n=  5279  avgR+0.090  |  HOLD $    1,147 roi  -23.5% dd  24.0% n=  743 avgR-0.852
+  CHOP[flat-45]                            IS $     1,413 roi    -5.8% dd  35.9%  n=  2866  avgR+0.136  |  HOLD $    1,357 roi   -9.5% dd   9.5% n=  279 avgR-0.961
+  CHOP[flat-52]                            IS $       720 roi   -52.0% dd  66.7%  n=  5125  avgR+0.062  |  HOLD $    1,174 roi  -21.8% dd  21.9% n=  634 avgR-0.844
+  CHOP[corrected (tighter-when-worse)]     IS $       812 roi   -45.9% dd  54.5%  n=  1674  avgR-0.172  |  HOLD $    1,472 roi   -1.9% dd   1.8% n=   57 avgR-1.000
+  CHOP[no gate]                            IS $       539 roi   -64.0% dd  76.7%  n=  6758  avgR+0.034  |  HOLD $    1,031 roi  -31.2% dd  32.6% n=  975 avgR-0.786
+
+wrote item2_chop_schedule_results.csv

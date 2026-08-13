@@ -1,0 +1,27 @@
+
+  Loading CHOP data for 277 symbols...
+    ... loaded 50/277
+    ... loaded 100/277
+    ... loaded 150/277
+    ... loaded 200/277
+    ... loaded 250/277
+  Loaded CHOP for 277 symbols
+gated+halted population: 27394 rows
+
+-- net_directional_cap sweep (gross fixed at live 0.10) --
+  net_dir_cap=0.05 (0.05)                  IS $    18,193 roi +1112.8% dd  26.8%  n= 14208  avgR+0.254  |  HOLD $    1,444 roi   -3.8% dd  19.8% n=  596 avgR+0.022
+  net_dir_cap=0.1 (live)                   IS $    34,247 roi +2183.1% dd  44.5%  n= 16238  avgR+0.281  |  HOLD $    1,664 roi  +11.0% dd  18.3% n=  661 avgR+0.086
+  net_dir_cap=0.15 (0.15)                  IS $    34,247 roi +2183.1% dd  44.5%  n= 16238  avgR+0.281  |  HOLD $    1,664 roi  +11.0% dd  18.3% n=  661 avgR+0.086
+  net_dir_cap=0.2 (0.2)                    IS $    34,247 roi +2183.1% dd  44.5%  n= 16238  avgR+0.281  |  HOLD $    1,664 roi  +11.0% dd  18.3% n=  661 avgR+0.086
+  net_dir_cap=None (none)                  IS $    34,247 roi +2183.1% dd  44.5%  n= 16238  avgR+0.281  |  HOLD $    1,664 roi  +11.0% dd  18.3% n=  661 avgR+0.086
+
+-- gross_open_risk_cap sweep (net_dir fixed at live 0.10) --
+  gross_cap=0.05 (0.05)                    IS $    11,621 roi  +674.8% dd  26.2%  n= 10705  avgR+0.268  |  HOLD $    1,436 roi   -4.3% dd  14.6% n=  517 avgR+0.049
+  gross_cap=0.075 (0.075)                  IS $    23,106 roi +1440.4% dd  31.8%  n= 14545  avgR+0.262  |  HOLD $    1,517 roi   +1.1% dd  17.8% n=  583 avgR+0.076
+  gross_cap=0.1 (live)                     IS $    34,247 roi +2183.1% dd  44.5%  n= 16238  avgR+0.281  |  HOLD $    1,664 roi  +11.0% dd  18.3% n=  661 avgR+0.086
+  gross_cap=0.15 (0.15)                    IS $    37,691 roi +2412.7% dd  44.4%  n= 16854  avgR+0.280  |  HOLD $    1,614 roi   +7.6% dd  22.3% n=  740 avgR+0.057
+  gross_cap=0.2 (0.2)                      IS $    37,275 roi +2385.0% dd  44.4%  n= 16857  avgR+0.280  |  HOLD $    1,614 roi   +7.6% dd  22.3% n=  740 avgR+0.057
+  gross_cap=0.3 (0.3)                      IS $    37,275 roi +2385.0% dd  44.4%  n= 16857  avgR+0.280  |  HOLD $    1,614 roi   +7.6% dd  22.3% n=  740 avgR+0.057
+  gross_cap=None (none)                    IS $    37,275 roi +2385.0% dd  44.4%  n= 16857  avgR+0.280  |  HOLD $    1,614 roi   +7.6% dd  22.3% n=  740 avgR+0.057
+
+wrote item4_caps_results.csv

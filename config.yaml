@@ -36,11 +36,28 @@ notifications:
 risk:
   max_daily_loss: 0.1
   max_position_size_pct: 0.15
-  # [2026-07] Lowered 1.2% -> 0.3% base for small-account drawdown control. Validated
-  # on genuinely-OOS data ($1,500 start): 0.3% cut the cold-period drawdown ~63% -> ~26%
-  # (roughly HALVED loss + drawdown) vs the old 1.2%. Note: this reduces the SIZE of
-  # losses while the edge is cold; it does not create profit (edge is negative OOS).
-  risk_per_trade: 0.003
+  # [RAISED 2026-08-13 0.3% -> 0.75% — see risk_study/] Selected as the highest ROI-per-
+  # drawdown arm measured on the CURRENT config (global rr=10/atr_mult=3.0, trail on,
+  # gross cap 0.10, short-gate off, halt 21d ENFORCED). Over 15 months from $1,500:
+  #   0.30%  $8,692  maxDD 29.2%  ROI/DD 16.4
+  #   0.50%  $9,090  maxDD 32.3%  ROI/DD 15.7
+  #   0.75%  $12,715 maxDD 35.6%  ROI/DD 21.0   <- this setting
+  # Full history 2023-06..2026-07: $97,928, maxDD 51.8%, ROI/DD 124.2.
+  #
+  # WHY THIS IS NOT SIMPLY MORE LEVERAGE: gross_open_risk_cap bounds TOTAL open risk at
+  # 10% of equity regardless of per-trade risk, so raising the per-trade figure buys
+  # CONCENTRATION (fewer, larger positions) rather than aggregate exposure. Measured worst
+  # single day is -10.5% at 0.75% vs -9.5% at 0.30%. Without that cap the same change
+  # takes the worst day to -14.2% — never run this risk level with the cap loosened.
+  #
+  # THE RISK, STATED PLAINLY: this setting is NEGATIVE on the untouched holdout
+  # (2026-05-25 onward): -7.0% vs +11.0% at 0.30%. Every risk level above 0.30% is worse
+  # out-of-sample, monotonically. The in-sample case rests heavily on two months
+  # (2025-10 +125%, 2026-01 +60%); strip those and the ranking collapses. This is a
+  # deliberate bet that the 3-year in-sample pattern is more representative than the
+  # 2-month holdout. REVIEW TRIGGER: collect 250+ trades under these exact rules and
+  # re-run risk_study/search_roidd.py; if the holdout ordering repeats, revert to 0.003.
+  risk_per_trade: 0.0075
   # [VALIDATED 2026-06] Net-directional exposure cap: block a new entry if it would push
   # |open long risk - open short risk| above this fraction of equity. Caps correlated
   # one-sided (net-short) blowups. Validated to cut max drawdown ~30-40pts across bull+bear
@@ -124,7 +141,16 @@ risk:
   # human in the loop captures ~99% of the benefit with none of the automation risk.
   shadow_gate:
     enabled: true
-    mode: advisory          # advisory | auto
+    # [CHANGED 2026-08-13 advisory -> auto] The risk sweep that selected risk_per_trade
+    # 0.0075 modelled this halt as a HARD FILTER, i.e. enforced in code. Left on advisory
+    # the bot only ALERTS and keeps trading, and the measured gap is large: over the same
+    # 15 months, acting instantly gives $8,692 / 29.2% DD while never acting gives
+    # $7,253 / 38.0% DD — and 2026-07 alone is +3% enforced vs -21% unenforced. Acting
+    # within 24h captures ~99% ($8,584), so a reliable human is nearly as good; auto is
+    # chosen because the raised risk level makes an unnoticed alert more expensive.
+    # TRADEOFF ACCEPTED: this puts a new failure mode inside the trading path — if the
+    # gate misfires or the DB read fails, entries stop. Revert to advisory to remove it.
+    mode: auto              # advisory | auto
     # [CHANGED 2026-08-12 7d -> 21d — see risk_study/] Across the full toggle matrix the 21d
     # window improved the untouched holdout by +21.8 points (median across 4 configurations)
     # at zero cost in equity or drawdown, while the 7d window cost 1.5 points. 21d switches
@@ -169,21 +195,27 @@ risk:
                             # value >0 lets the live stop lag the validated rule.
     notify: true            # Telegram on arm / R-milestone / failure
     shadow: true            # run the counterfactual learner (see /trailstats)
+  # [RESCALED 2026-08-13 x2.5 alongside risk_per_trade 0.003 -> 0.0075] The rungs keep the
+  # SAME SHAPE as before (each is 2.5x its old value), so this is the same taper POLICY at
+  # a larger scale rather than a policy change. That is exactly how the risk sweep was run:
+  # base risk and every rung were scaled together, so these numbers are what produced the
+  # ROI/DD 21.0 figure. Editing risk_per_trade WITHOUT rescaling these would silently taper
+  # the account back toward the old sizing as soon as it passes $1,500.
   taper_schedule:
   - - 1500
-    - 0.003
+    - 0.0075
   - - 3000
-    - 0.0028
+    - 0.007
   - - 5000
-    - 0.0025
+    - 0.00625
   - - 8000
-    - 0.0022
+    - 0.0055
   - - 12000
-    - 0.002
+    - 0.005
   - - 20000
-    - 0.0017
+    - 0.00425
   - - 40000
-    - 0.0014
+    - 0.0035
 strategy:
   name: 1h_merged_allweather_bear_bull
   description: 'GLOBAL rr=10 / atr_mult=3.0 on 277 symbols, 728 configs (2026-08-12).

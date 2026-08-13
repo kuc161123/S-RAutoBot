@@ -1,0 +1,16 @@
+
+  Loading CHOP data for 277 symbols...
+    ... loaded 50/277
+    ... loaded 100/277
+    ... loaded 150/277
+    ... loaded 200/277
+    ... loaded 250/277
+  Loaded CHOP for 277 symbols
+gated+halted population: 27394 rows
+  long_boost=1.0 (no boost)                IS $    29,491 roi +1866.1% dd  49.2%  n= 16388  avgR+0.279  |  HOLD $    1,648 roi   +9.9% dd  17.8% n=  668 avgR+0.068
+  long_boost=1.1 (boost=1.1)               IS $    33,729 roi +2148.6% dd  46.8%  n= 16386  avgR+0.280  |  HOLD $    1,647 roi   +9.8% dd  17.7% n=  663 avgR+0.071
+  long_boost=1.3 (live)                    IS $    34,247 roi +2183.1% dd  44.5%  n= 16238  avgR+0.281  |  HOLD $    1,664 roi  +11.0% dd  18.3% n=  661 avgR+0.086
+  long_boost=1.5 (boost=1.5)               IS $    34,540 roi +2202.7% dd  39.1%  n= 16133  avgR+0.283  |  HOLD $    1,659 roi  +10.6% dd  18.7% n=  654 avgR+0.092
+  long_boost=2.0 (boost=2.0)               IS $    35,205 roi +2247.0% dd  45.7%  n= 15731  avgR+0.291  |  HOLD $    1,660 roi  +10.7% dd  18.1% n=  639 avgR+0.110
+
+wrote item3_boost_results.csv

@@ -1,0 +1,13 @@
+
+  Loading CHOP data for 277 symbols...
+    ... loaded 50/277
+    ... loaded 100/277
+    ... loaded 150/277
+    ... loaded 200/277
+    ... loaded 250/277
+  Loaded CHOP for 277 symbols
+gated+halted population: 27394 rows
+  taper=current (live)                     IS $    34,247 roi +2183.1% dd  44.5%  n= 16238  avgR+0.281  |  HOLD $    1,664 roi  +11.0% dd  18.3% n=  661 avgR+0.086
+  taper=flat 0.3%                          IS $    40,609 roi +2607.3% dd  44.5%  n= 15069  avgR+0.277  |  HOLD $    1,664 roi  +11.0% dd  18.3% n=  661 avgR+0.086
+
+wrote item5_taper_results.csv

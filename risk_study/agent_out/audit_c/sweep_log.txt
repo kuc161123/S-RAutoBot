@@ -1,0 +1,167 @@
+=== --cell ===
+[piv_2_2] pivot=(2,2) dist=3 stale=10 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 31,017
+  160/277 · 64,929
+  240/277 · 92,976
+[piv_2_2] piv_2_2.parquet: 43,495 trades  gross +0.2470  net@24.2bps +0.1765  WR 29.17%
+=== --cell ===
+[piv_4_4] pivot=(4,4) dist=3 stale=10 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 16,197
+  160/277 · 33,789
+  240/277 · 48,727
+[piv_4_4] piv_4_4.parquet: 26,322 trades  gross +0.2496  net@24.2bps +0.1781  WR 28.89%
+=== --cell ===
+[piv_5_5] pivot=(5,5) dist=3 stale=10 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 12,842
+  160/277 · 26,592
+  240/277 · 38,812
+[piv_5_5] piv_5_5.parquet: 22,808 trades  gross +0.2357  net@24.2bps +0.1647  WR 28.56%
+=== --cell ===
+[piv_3_2] pivot=(3,2) dist=3 stale=10 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 25,320
+  160/277 · 53,184
+  240/277 · 76,081
+[piv_3_2] piv_3_2.parquet: 34,360 trades  gross +0.2395  net@24.2bps +0.1682  WR 28.92%
+=== --cell ===
+[piv_2_3] pivot=(2,3) dist=3 stale=10 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 26,077
+  160/277 · 54,178
+  240/277 · 78,818
+[piv_2_3] piv_2_3.parquet: 40,408 trades  gross +0.2639  net@24.2bps +0.1932  WR 29.59%
+=== --cell ===
+[wait_4] pivot=(3,3) dist=3 stale=10 rsi=14 wait=4 drop_ema=False · 277 symbols
+  80/277 · 14,824
+  160/277 · 30,617
+  240/277 · 44,747
+[wait_4] wait_4.parquet: 23,812 trades  gross +0.2434  net@24.2bps +0.1724  WR 28.99%
+=== --cell ===
+[wait_8] pivot=(3,3) dist=3 stale=10 rsi=14 wait=8 drop_ema=False · 277 symbols
+  80/277 · 19,072
+  160/277 · 39,881
+  240/277 · 57,733
+[wait_8] wait_8.parquet: 29,035 trades  gross +0.2607  net@24.2bps +0.1893  WR 29.36%
+=== --cell ===
+[wait_18] pivot=(3,3) dist=3 stale=10 rsi=14 wait=18 drop_ema=False · 277 symbols
+  80/277 · 23,469
+  160/277 · 48,526
+  240/277 · 70,909
+[wait_18] wait_18.parquet: 35,774 trades  gross +0.2592  net@24.2bps +0.1876  WR 29.34%
+=== --cell ===
+[wait_24] pivot=(3,3) dist=3 stale=10 rsi=14 wait=24 drop_ema=False · 277 symbols
+  80/277 · 24,787
+  160/277 · 51,307
+  240/277 · 74,887
+[wait_24] wait_24.parquet: 38,896 trades  gross +0.2603  net@24.2bps +0.1886  WR 29.23%
+=== --cell ===
+[stale_5] pivot=(3,3) dist=3 stale=5 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 20,093
+  160/277 · 41,803
+  240/277 · 60,745
+[stale_5] stale_5.parquet: 28,751 trades  gross +0.2660  net@24.2bps +0.1942  WR 29.51%
+=== --cell ===
+[stale_15] pivot=(3,3) dist=3 stale=15 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 21,821
+  160/277 · 45,189
+  240/277 · 65,567
+[stale_15] stale_15.parquet: 33,039 trades  gross +0.2639  net@24.2bps +0.1925  WR 29.48%
+=== --cell ===
+[stale_20] pivot=(3,3) dist=3 stale=20 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 21,905
+  160/277 · 45,315
+  240/277 · 66,117
+[stale_20] stale_20.parquet: 33,240 trades  gross +0.2644  net@24.2bps +0.1930  WR 29.49%
+=== --cell ===
+[dist_2] pivot=(3,3) dist=2 stale=10 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 21,590
+  160/277 · 44,451
+  240/277 · 64,886
+[dist_2] dist_2.parquet: 32,102 trades  gross +0.2631  net@24.2bps +0.1916  WR 29.45%
+=== --cell ===
+[dist_5] pivot=(3,3) dist=5 stale=10 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 20,728
+  160/277 · 43,229
+  240/277 · 62,798
+[dist_5] dist_5.parquet: 31,271 trades  gross +0.2657  net@24.2bps +0.1941  WR 29.46%
+=== --cell ===
+[dist_8] pivot=(3,3) dist=8 stale=10 rsi=14 wait=12 drop_ema=False · 277 symbols
+  80/277 · 20,709
+  160/277 · 43,058
+  240/277 · 63,119
+[dist_8] dist_8.parquet: 31,967 trades  gross +0.2149  net@24.2bps +0.1437  WR 28.45%
+=== --cell ===
+[rsi_7] pivot=(3,3) dist=3 stale=10 rsi=7 wait=12 drop_ema=False · 277 symbols
+  80/277 · 24,745
+  160/277 · 51,346
+  240/277 · 74,469
+[rsi_7] rsi_7.parquet: 37,013 trades  gross +0.1951  net@24.2bps +0.1255  WR 28.00%
+=== --cell ===
+[rsi_21] pivot=(3,3) dist=3 stale=10 rsi=21 wait=12 drop_ema=False · 277 symbols
+  80/277 · 20,917
+  160/277 · 43,634
+  240/277 · 63,523
+Process SpawnPoolWorker-2:
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/pool.py", line 131, in worker
+    put((job, i, result))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/queues.py", line 378, in put
+    self._writer.send_bytes(obj)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 205, in send_bytes
+    self._send_bytes(m[offset:offset + size])
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 409, in _send_bytes
+    self._send(header)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 373, in _send
+    n = write(self._handle, buf)
+BrokenPipeError: [Errno 32] Broken pipe
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/process.py", line 315, in _bootstrap
+    self.run()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/pool.py", line 136, in worker
+    put((job, i, (False, wrapped)))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/queues.py", line 378, in put
+    self._writer.send_bytes(obj)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 205, in send_bytes
+    self._send_bytes(m[offset:offset + size])
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 409, in _send_bytes
+    self._send(header)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 373, in _send
+    n = write(self._handle, buf)
+BrokenPipeError: [Errno 32] Broken pipe
+Process SpawnPoolWorker-6:
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/pool.py", line 131, in worker
+    put((job, i, result))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/queues.py", line 378, in put
+    self._writer.send_bytes(obj)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 205, in send_bytes
+    self._send_bytes(m[offset:offset + size])
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 409, in _send_bytes
+    self._send(header)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 373, in _send
+    n = write(self._handle, buf)
+BrokenPipeError: [Errno 32] Broken pipe
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/process.py", line 315, in _bootstrap
+    self.run()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/pool.py", line 136, in worker
+    put((job, i, (False, wrapped)))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/queues.py", line 378, in put
+    self._writer.send_bytes(obj)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 205, in send_bytes
+    self._send_bytes(m[offset:offset + size])
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 409, in _send_bytes
+    self._send(header)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/connection.py", line 373, in _send
+    n = write(self._handle, buf)
+BrokenPipeError: [Errno 32] Broken pipe
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/resource_tracker.py:216: UserWarning: resource_tracker: There appear to be 6 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

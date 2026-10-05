@@ -1,0 +1,428 @@
+{
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BLURUSDT",
+    "XRPUSDT",
+    "AVAXUSDT",
+    "LINKUSDT",
+    "1000BONKUSDT",
+    "GALAUSDT",
+    "WLDUSDT",
+    "DYDXUSDT",
+    "DOGEUSDT",
+    "1000PEPEUSDT",
+    "BNBUSDT",
+    "ORDIUSDT",
+    "SUIUSDT",
+    "SUSHIUSDT",
+    "RUNEUSDT",
+    "INJUSDT",
+    "APEUSDT",
+    "GMTUSDT",
+    "ATOMUSDT",
+    "ARBUSDT",
+    "OPUSDT",
+    "TRBUSDT",
+    "ADAUSDT",
+    "APTUSDT",
+    "NEARUSDT",
+    "LDOUSDT",
+    "LTCUSDT",
+    "DOTUSDT",
+    "ETCUSDT",
+    "SKLUSDT",
+    "MINAUSDT",
+    "AAVEUSDT",
+    "SNXUSDT",
+    "STORJUSDT",
+    "AXSUSDT",
+    "SANDUSDT",
+    "BCHUSDT",
+    "UNIUSDT",
+    "GRTUSDT",
+    "ILVUSDT",
+    "ZRXUSDT",
+    "SHIB1000USDT",
+    "IMXUSDT",
+    "STXUSDT",
+    "LUNA2USDT",
+    "FILUSDT",
+    "EGLDUSDT"
+  ],
+  "start": 1701043200,
+  "entry_cutoff": 1764115200,
+  "end": 1779667200,
+  "data_paths": {
+    "BTCUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/BTCUSDT.parquet",
+    "ETHUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ETHUSDT.parquet",
+    "SOLUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/SOLUSDT.parquet",
+    "BLURUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/BLURUSDT.parquet",
+    "XRPUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/XRPUSDT.parquet",
+    "AVAXUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/AVAXUSDT.parquet",
+    "LINKUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/LINKUSDT.parquet",
+    "1000BONKUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/1000BONKUSDT.parquet",
+    "GALAUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/GALAUSDT.parquet",
+    "WLDUSDT": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/WLDUSDT.parquet",
+    "DYDXUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/DYDXUSDT.parquet",
+    "DOGEUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/DOGEUSDT.parquet",
+    "1000PEPEUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/1000PEPEUSDT.parquet",
+    "BNBUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/BNBUSDT.parquet",
+    "ORDIUSDT": "/Users/lualakol/AutoTrading Bot/cache_data/1h/ORDIUSDT.parquet",
+    "SUIUSDT": "/Users/lualakol/AutoTrading Bot/cache_data/1h/SUIUSDT.parquet",
+    "SUSHIUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/SUSHIUSDT.parquet",
+    "RUNEUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/RUNEUSDT.parquet",
+    "INJUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/INJUSDT.parquet",
+    "APEUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/APEUSDT.parquet",
+    "GMTUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/GMTUSDT.parquet",
+    "ATOMUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ATOMUSDT.parquet",
+    "ARBUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ARBUSDT.parquet",
+    "OPUSDT": "/Users/lualakol/AutoTrading Bot/cache_data/1h/OPUSDT.parquet",
+    "TRBUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/TRBUSDT.parquet",
+    "ADAUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ADAUSDT.parquet",
+    "APTUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/APTUSDT.parquet",
+    "NEARUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/NEARUSDT.parquet",
+    "LDOUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/LDOUSDT.parquet",
+    "LTCUSDT": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/LTCUSDT.parquet",
+    "DOTUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/DOTUSDT.parquet",
+    "ETCUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ETCUSDT.parquet",
+    "SKLUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/SKLUSDT.parquet",
+    "MINAUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/MINAUSDT.parquet",
+    "AAVEUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/AAVEUSDT.parquet",
+    "SNXUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/SNXUSDT.parquet",
+    "STORJUSDT": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/STORJUSDT.parquet",
+    "AXSUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/AXSUSDT.parquet",
+    "SANDUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/SANDUSDT.parquet",
+    "BCHUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/BCHUSDT.parquet",
+    "UNIUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/UNIUSDT.parquet",
+    "GRTUSDT": "/Users/lualakol/AutoTrading Bot/cache_data/1h/GRTUSDT.parquet",
+    "ILVUSDT": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/ILVUSDT.parquet",
+    "ZRXUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ZRXUSDT.parquet",
+    "SHIB1000USDT": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/SHIB1000USDT.parquet",
+    "IMXUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/IMXUSDT.parquet",
+    "STXUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/STXUSDT.parquet",
+    "LUNA2USDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/LUNA2USDT.parquet",
+    "FILUSDT": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/FILUSDT.parquet",
+    "EGLDUSDT": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/EGLDUSDT.parquet"
+  },
+  "funding_paths": {
+    "BTCUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/BTCUSDT.parquet",
+    "ETHUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/ETHUSDT.parquet",
+    "SOLUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/SOLUSDT.parquet",
+    "BLURUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/BLURUSDT.parquet",
+    "XRPUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/XRPUSDT.parquet",
+    "AVAXUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/AVAXUSDT.parquet",
+    "LINKUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/LINKUSDT.parquet",
+    "1000BONKUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/1000BONKUSDT.parquet",
+    "GALAUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/GALAUSDT.parquet",
+    "WLDUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/WLDUSDT.parquet",
+    "DYDXUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/DYDXUSDT.parquet",
+    "DOGEUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/DOGEUSDT.parquet",
+    "1000PEPEUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/1000PEPEUSDT.parquet",
+    "BNBUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/BNBUSDT.parquet",
+    "ORDIUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/ORDIUSDT.parquet",
+    "SUIUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/SUIUSDT.parquet",
+    "SUSHIUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/SUSHIUSDT.parquet",
+    "RUNEUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/RUNEUSDT.parquet",
+    "INJUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/INJUSDT.parquet",
+    "APEUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/APEUSDT.parquet",
+    "GMTUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/GMTUSDT.parquet",
+    "ATOMUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/ATOMUSDT.parquet",
+    "ARBUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/ARBUSDT.parquet",
+    "OPUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/OPUSDT.parquet",
+    "TRBUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/TRBUSDT.parquet",
+    "ADAUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/ADAUSDT.parquet",
+    "APTUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/APTUSDT.parquet",
+    "NEARUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/NEARUSDT.parquet",
+    "LDOUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/LDOUSDT.parquet",
+    "LTCUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/LTCUSDT.parquet",
+    "DOTUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/DOTUSDT.parquet",
+    "ETCUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/ETCUSDT.parquet",
+    "SKLUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/SKLUSDT.parquet",
+    "MINAUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/MINAUSDT.parquet",
+    "AAVEUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/AAVEUSDT.parquet",
+    "SNXUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/SNXUSDT.parquet",
+    "STORJUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/STORJUSDT.parquet",
+    "AXSUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/AXSUSDT.parquet",
+    "SANDUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/SANDUSDT.parquet",
+    "BCHUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/BCHUSDT.parquet",
+    "UNIUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/UNIUSDT.parquet",
+    "GRTUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/GRTUSDT.parquet",
+    "ILVUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/ILVUSDT.parquet",
+    "ZRXUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/ZRXUSDT.parquet",
+    "SHIB1000USDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/SHIB1000USDT.parquet",
+    "IMXUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/IMXUSDT.parquet",
+    "STXUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/STXUSDT.parquet",
+    "LUNA2USDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/LUNA2USDT.parquet",
+    "FILUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/FILUSDT.parquet",
+    "EGLDUSDT": "/Users/lualakol/AutoTrading Bot/research/data/funding/EGLDUSDT.parquet"
+  },
+  "funding_transition_timestamps": {
+    "BTCUSDT": [],
+    "ETHUSDT": [],
+    "SOLUSDT": [],
+    "BLURUSDT": [
+      1772150400000,
+      1775865600000
+    ],
+    "XRPUSDT": [],
+    "AVAXUSDT": [],
+    "LINKUSDT": [],
+    "1000BONKUSDT": [],
+    "GALAUSDT": [],
+    "WLDUSDT": [],
+    "DYDXUSDT": [],
+    "DOGEUSDT": [],
+    "1000PEPEUSDT": [],
+    "BNBUSDT": [],
+    "ORDIUSDT": [],
+    "SUIUSDT": [],
+    "SUSHIUSDT": [],
+    "RUNEUSDT": [],
+    "INJUSDT": [
+      1772150400000
+    ],
+    "APEUSDT": [],
+    "GMTUSDT": [
+      1772150400000
+    ],
+    "ATOMUSDT": [],
+    "ARBUSDT": [],
+    "OPUSDT": [],
+    "TRBUSDT": [],
+    "ADAUSDT": [],
+    "APTUSDT": [],
+    "NEARUSDT": [],
+    "LDOUSDT": [],
+    "LTCUSDT": [],
+    "DOTUSDT": [],
+    "ETCUSDT": [],
+    "SKLUSDT": [],
+    "MINAUSDT": [],
+    "AAVEUSDT": [],
+    "SNXUSDT": [],
+    "STORJUSDT": [],
+    "AXSUSDT": [],
+    "SANDUSDT": [],
+    "BCHUSDT": [],
+    "UNIUSDT": [],
+    "GRTUSDT": [],
+    "ILVUSDT": [],
+    "ZRXUSDT": [
+      1772179200000
+    ],
+    "SHIB1000USDT": [],
+    "IMXUSDT": [],
+    "STXUSDT": [],
+    "LUNA2USDT": [
+      1772150400000
+    ],
+    "FILUSDT": [],
+    "EGLDUSDT": []
+  },
+  "source_sha256": {
+    "BTCUSDT": {
+      "hourly": "1fd35d6ae4ab717d968f54745e6c6f3c0eb01f794ce0a4d06bd0ddd8a80f305d",
+      "funding": "e854296c62891ba5636aecc21fd24f52edafb7ccca78ce4fa15a9b9ccaf23063"
+    },
+    "ETHUSDT": {
+      "hourly": "27b2e38df6bab6e6c8e1d3723656ec9da1293e592c9196decce0837e219df1fd",
+      "funding": "73e78ae968c54108d9ed8b27ab476e04ffec7b1555391d2630128963cc0b20b8"
+    },
+    "SOLUSDT": {
+      "hourly": "a03ec5b368ea170387f6ceadba38b6dcace32da42cb63303040566eb370973a4",
+      "funding": "d710caec985f79b94509d7b7057dea4a1075d64051888e6d650fdbe2831052c9"
+    },
+    "BLURUSDT": {
+      "hourly": "ad82edb81c4385fe7c7559197490e011c3c23c56c460b8b598b2914763b85ca2",
+      "funding": "6ae5ca070d22ea66ebe41a70c2ac94a7db0d87333e5be776a9cd1f18329e7af4"
+    },
+    "XRPUSDT": {
+      "hourly": "bbbe572a972d05cb64d670bb3f660a27320542065ad2fbd9810736dd0d70b7e8",
+      "funding": "95fa7f6d09054abcd12a4023a8b4d6fc09c7c57841eb345c23c79c69999f8411"
+    },
+    "AVAXUSDT": {
+      "hourly": "a1f805ab024beb398712cb90ddef66057f7291981e00d41362704c0a59337d0d",
+      "funding": "c42f7865b8728be1155b4be3f1459df5e6a38f1e96fade9a349d519453630da8"
+    },
+    "LINKUSDT": {
+      "hourly": "b436133e8f750ac29550fa06845ee52bb59b49cf0dbb03847f282c3179aafc3b",
+      "funding": "7744eacc9d605fdab44bd3c63da80b7cdd4457bcf4aa760e65d206b383667a31"
+    },
+    "1000BONKUSDT": {
+      "hourly": "338f3a036cd8e294cd427de43e54566f5b489e6150ac06ca6f0635b0a0a3fd5e",
+      "funding": "e78bb262e00b0b811679f7a94ab8f892c65fdc23c54dde061c208e48c1244185"
+    },
+    "GALAUSDT": {
+      "hourly": "91fd66e84252aaaca2bda377edf0a1d8b018c3c03e5151e97d6bc4d8e7a3ca54",
+      "funding": "4d30240c6aac6e1276a286ea35e9bc1b05f86c272e63b1aa9c1585ffc4d4d90b"
+    },
+    "WLDUSDT": {
+      "hourly": "2e72660d8353e089372d3bf090fc0b5a8b89e01deea45864c193322c87186d9f",
+      "funding": "d601cd1f8dab1f87f429b7c543d00344fbf137710dcb6ee569d1e9d34f95bd6c"
+    },
+    "DYDXUSDT": {
+      "hourly": "960299d109a1aec11d55657d89161f759113c80978a78bdac386149fcfb23da5",
+      "funding": "db9fb71042535fae6d22db84355753588e215bc067857094f3dd97f0bcc9d998"
+    },
+    "DOGEUSDT": {
+      "hourly": "cafcdb46100f09fb532b80d4abcca6f0e0cfbcca4145dbf1398de47a7fc37def",
+      "funding": "aec92740bc93d4435d8542a39728dac5f51dd64c9bb7b2b88ecfb08222628a69"
+    },
+    "1000PEPEUSDT": {
+      "hourly": "520764a1f8351b2f46e00aeb752bd3b6634bfaaea9a9d09b1fe87fae1466175a",
+      "funding": "af98a6e425ff0f05ea047428d6699129edefded4fa88e486f1144a41a22736f7"
+    },
+    "BNBUSDT": {
+      "hourly": "4fbe36f20a848d16f235a038f953621e788359cfef111d2eaf89e3444545ab57",
+      "funding": "0121d99058a2977fefb71789b4e5e5d4ffc640dd49984029f5a9c00d349ab3a3"
+    },
+    "ORDIUSDT": {
+      "hourly": "ad2fd90ce9a99b319b2dc4b74e9ee32be4caeb0bed661d4908766e65562a45d3",
+      "funding": "c64682bba8ee5ef689c488b76b286f2c0e127d37c2831ec1acaa9dafcd13832a"
+    },
+    "SUIUSDT": {
+      "hourly": "1a863c27f2945124e73fb296b24116f42ce3e40bd28d9e760af872ea88cbf840",
+      "funding": "b000daeb9275a20b4910451a61a14fe56b82ddc36f9d378d67e7796a29a8b5f7"
+    },
+    "SUSHIUSDT": {
+      "hourly": "32f3abffc1198edfb8d515e41bb1f3a9c28135d96a0e485f7a8a52c7085a61d7",
+      "funding": "992ee28d45b6f4533d261d59c4a6c27ec7db50275473f0307328512243a5e1a2"
+    },
+    "RUNEUSDT": {
+      "hourly": "610eb4d3ffa01aa8b55849993bddd789cab2754000aad75d8deb644db804aec1",
+      "funding": "7bd4e43267f4af68feaa637e2f0c0c6dbe82b80ba994d7db134c5a6d860dfa7d"
+    },
+    "INJUSDT": {
+      "hourly": "4b86c1c8d7abe7a3769554cf33462e6b86d6e45fb6c791d3e6edcf0b4a2d0479",
+      "funding": "ec7d3b7f303c6dec846a3a4e953b7bc2e6f1200e7610fc39b0800f976d47b015"
+    },
+    "APEUSDT": {
+      "hourly": "ae57cc0fb2194ee30d0b7215b394b701deedead7e4366fc53d55d38b57ea50df",
+      "funding": "8914d4fadf50b25a5cc631bef7332b6822b3f7d87b179eda258a64656ed07dce"
+    },
+    "GMTUSDT": {
+      "hourly": "52fb6a98b9617dcbb8f04ccbccdc4e2a4a5b6f975fbaf6bed030a5892118ad80",
+      "funding": "1e96cb61a4eaafa02decdd330d3e4a7b1cead39672c62b37c0039ee25f6e7912"
+    },
+    "ATOMUSDT": {
+      "hourly": "ea3806fb6b893bc92f1e862f6e9f753b86b39477832769cf668baeec55a6d841",
+      "funding": "0ada3d1a6c15ee66dcecef5a53663c8c4bfc8ceae3f9da00f18e0d2b0fea83bf"
+    },
+    "ARBUSDT": {
+      "hourly": "9b1ef69bc648c001973e198ea3d5c4cc89bffad8dcd05511ded21e4511489335",
+      "funding": "204aea72002b348a526e7d27c37697aab621f3af210c8ee5e56728dd3246561e"
+    },
+    "OPUSDT": {
+      "hourly": "6901d245c081064bea03b8325ce6165c1c68e14350e072a3f30a4a45e3ece1a4",
+      "funding": "9a9b0bf0ae9307db974b749669bef16d0f984f5a17a7831e4d1b30036c3bb199"
+    },
+    "TRBUSDT": {
+      "hourly": "5e94a2f96d47836698640cacc25e6c4d7bac5e5e0c0829ae3b9da7d5eb3352c0",
+      "funding": "6554c6b819720c2b57f412df0dee5caab3c6bea8f7d645316b2f33709ac86cf2"
+    },
+    "ADAUSDT": {
+      "hourly": "43c16edee288bcccb3309cf60b614dcdd829f68769732fc5fec20ae0420f8dbb",
+      "funding": "84e112da278760b5ff22db591172575c3efab0103930983eddc58f42105ce673"
+    },
+    "APTUSDT": {
+      "hourly": "8f998ca46460339b32d6cfc4bfe8ccc686cce4bbb0ad48828a1425a040f28130",
+      "funding": "ad0a6995819772417001e53dcb5e2e60739c62ac4c3279da036240a83e1bcfe3"
+    },
+    "NEARUSDT": {
+      "hourly": "39ecfc7505c5e83fa81b57f52815e253be7125757b1b7d8df865541156f33af6",
+      "funding": "6738b03924de5956f33437b316eca154e3b77de2e8a4e8f93c2822e7e99eb8e9"
+    },
+    "LDOUSDT": {
+      "hourly": "c4344f0e3fc7291a387a0917ad93b9da30b0d41a1c7b9a62c159ba5b255194e6",
+      "funding": "0d41626d496806797c877318ae546b6cf04fa06881654d5c85271cc94457389f"
+    },
+    "LTCUSDT": {
+      "hourly": "70dac18064c1ffb8814b659a8c7a09033c1ea2953a1865a31960a8f8febaa08e",
+      "funding": "172cf365286412afa637b17276b25a86f031ddbef1a73818be85337b3121b3ba"
+    },
+    "DOTUSDT": {
+      "hourly": "622a09ce4653251d323330ecde9fc57eba1aabb6460c4525ba242ec3a88e1acd",
+      "funding": "5541a864d022534e5f011edb65316f0465b720f126efa24f3aabf2bb22d6a8b7"
+    },
+    "ETCUSDT": {
+      "hourly": "325c1768954748f8301e62b3da97705edc027dbc892b140aadc6780d088a08cf",
+      "funding": "5fb552496fd06949c1b30b4e4faa43d7d526d0342d62da9985f270cf34e5432f"
+    },
+    "SKLUSDT": {
+      "hourly": "8867d31348a124d64489f6059b349be7ffdd5e6c6c293fe946e0143fc1784739",
+      "funding": "f6bd72d931db820678c4e215265c3a460a3d59d8d359292ff34f4f1ad91bfb0b"
+    },
+    "MINAUSDT": {
+      "hourly": "3b0fde5e442360b352c236d2fed3a583e184245461ca40a20216424dd0136f63",
+      "funding": "1dcf0c1659057c526958b6c2223f643e0af32cbc288d49514262523511fd665b"
+    },
+    "AAVEUSDT": {
+      "hourly": "166c4f5b1be9ef9c074608af540489439025ef59d953c0041161d08f85877539",
+      "funding": "48e925fa5f6f71231b988e5a78284dde19c9a349e61cae0fe031c84e833ddc6e"
+    },
+    "SNXUSDT": {
+      "hourly": "fea0b1ffb27a85f5f4a4af7891f55c81241e60332ff6c1468f90cb0b1b99fc1d",
+      "funding": "f665f12b4d9fb888276a67a9917653c8d2d8256e4106f98cae6d00a03234e8a4"
+    },
+    "STORJUSDT": {
+      "hourly": "8038fd28f87d73163dc9e44c1f7dbcae8c5a2264f3be3048df1405048cdff5a4",
+      "funding": "5fe95f45f2c1365c738746f0cd2e87aa6c3347e4638101411e74a30f456ad4c1"
+    },
+    "AXSUSDT": {
+      "hourly": "8397b2e69de9293a4c1d3889e7028d3c0d6cf0005bb639b90926c505bd89708d",
+      "funding": "5ae13e6388546ef6172ce394282735729fee37c9801750ea6bde6fa058d5de1e"
+    },
+    "SANDUSDT": {
+      "hourly": "557468d2ca0208aeb8ddb0d02d64eabf46b23d89febc70f465f38d3625647618",
+      "funding": "d209e4d953863aed929fa66a8566c3b02fa36ac81ec5929e84fc717ba441831f"
+    },
+    "BCHUSDT": {
+      "hourly": "e4712e10430891fa4d2b71905b193e14a98eaea76728295563f668ba9aae6b98",
+      "funding": "b00477315c98fdc67fa6c06f3bc095bdf4dcfeaecca5a67da0afbe4e496210fc"
+    },
+    "UNIUSDT": {
+      "hourly": "e15672e459aae8882a832e5323ab5d321d94f79f644da81826b33d0bd514ba1f",
+      "funding": "524f83fc67a5aa245b981dde286a5b6e5826818cbacdc14a96c832eebf40fead"
+    },
+    "GRTUSDT": {
+      "hourly": "1a315b89b88cd6d0ae6f65a17e8ec0ef916a29101834bd1e666d8159486c4bfd",
+      "funding": "58ce4a06a8c43de3fd9c4afa6e5e336a70dc703eaece495f57f112f382015d0a"
+    },
+    "ILVUSDT": {
+      "hourly": "0dd7563ab4ad96469ad0012aa01489176ab85848907af64e2631bf7651c09df2",
+      "funding": "26ad5af0257a93db9469346b3739465ec3b3d2c0e04d5aeb7ea4985843b9f6db"
+    },
+    "ZRXUSDT": {
+      "hourly": "08b911e32967b01a9360d4087c7d556f6e83165b41f97fafa34fe8ca20a31d0f",
+      "funding": "21adc3a85797bf2a0e2b9f0c82fc1dd9184725c4382b2550e249c6c9d57c6f05"
+    },
+    "SHIB1000USDT": {
+      "hourly": "9a434bc487b463c5ae121771db6b6e76f749e8b37ee250362e3945ce320f5fea",
+      "funding": "f071977ced251a7dcb0d286e4de7fdbf26410665390a42cdc096bc4e5ba464fe"
+    },
+    "IMXUSDT": {
+      "hourly": "89919411fd70d38cfe368969a15ce900274db740baebece7ab44bad712bd2230",
+      "funding": "d3b27a168cc9abe951e32551bd1df69a1a36f9d6e2e8c37efd7f297277581073"
+    },
+    "STXUSDT": {
+      "hourly": "fef8a38e3b162a48986a654253d5b436d403bf344cc3fe3d428cb2f9f1c2fda3",
+      "funding": "61a956e64ada3dbdd3eb01e56b9d92524d1867e843c4e0b3be109e8ebcd19501"
+    },
+    "LUNA2USDT": {
+      "hourly": "d4d595b1747ee927b4a44e5b7d981b991ae6008cb2a85792153d073d8aa07e8e",
+      "funding": "550b8112a2f3a3f9d4f88c912071436e116ceb01ec8e5f2ca16e189773924435"
+    },
+    "FILUSDT": {
+      "hourly": "2c7c2bad4e2a3c31601632982ee3fdc4c48d35a1c8335dbc769d73ffb148f6d2",
+      "funding": "f74057ae7ba5962ddea2dc0e7963709285e63faefa4046f9c8e106f77b674a29"
+    },
+    "EGLDUSDT": {
+      "hourly": "8cf9e13469942ad95e1313fbf5da672f6435e589df8f3e71a0d6a587959a7ed4",
+      "funding": "e3923eae3d30c0f96f753b03f3c159688b875ae8d80af57498f9e9fe85a8b33a"
+    }
+  },
+  "selection_audit_sha256": "54f2a42d1fbdc1dff77535a9c1639fae1e15ffc66494ea51d65ad70b11426d72",
+  "selection_note": "Seven-day MEDIAN daily USDT turnover, descending, symbol tie-break. Eligibility based on 120 complete pre-origin daily bars; hourly coverage is audited after selection and never used to silently replace selected symbols. Candidate histories consist of daily caches plus cached delisted hourly-derived histories; not a complete historical exchange census."
+}

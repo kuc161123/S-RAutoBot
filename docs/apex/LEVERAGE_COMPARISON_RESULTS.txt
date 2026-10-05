@@ -1,0 +1,119 @@
+5X VERSUS 10X PERPETUALS — COMPLETED 2026-10-05
+
+Decision
+Keep exchange execution disabled. Neither setting demonstrated a profitable
+edge in this experiment. Do not promote 10x because it lost less: the tighter
+liquidation-distance gate removed most candidates, and every filled 10x trade
+lost. More leverage is not a remedy for signal quality or timing.
+
+Primary comparison (assumed maintenance rate 1%)
+One shared 10,000 USDT account per arm; cautious 0.25% risk before unchanged
+setup reductions; both long and short; same 50 preselected historical symbols.
+
+                              5x              10x
+Final equity                  9,684.65        9,902.59 USDT
+Net after modeled costs        -315.35          -97.41 USDT
+Return                          -3.1535%         -0.9741%
+Hourly maximum drawdown          3.7556%          1.4917%
+Closed trades                   37               8
+Wins / losses                    7 / 30           0 / 8
+Win rate                        18.92%            0.00%
+Accepted / unfilled             41 / 4            9 / 1
+Open at final cutoff             0                0
+Long closed / net               22 / -100.07      5 / -61.90 USDT
+Short closed / net              15 / -215.28      3 / -35.51 USDT
+Fees                            10.30             2.80 USDT
+Estimated funding              -10.55            -2.86 USDT
+Median / longest hold            9.25 / 89.75      1.75 / 50.96 days
+Maximum reserved margin        179.54            71.63 USDT
+
+Why the leverage settings differ
+The requested risk budget is unchanged: quantity is calculated from equity and
+entry-to-stop risk, never multiplied by leverage. Leverage changes collateral
+and the existing conservative liquidation-distance guard. With the primary
+1% maintenance assumption, that rule accepts a stop at most 9.4% from entry at
+5x, versus 4.4% at 10x. It rejected 194 unique opportunities at least once in
+the 5x run and 285 in the 10x run. These are retry-aware, nonexclusive counts;
+a previously rejected opportunity can later qualify.
+
+No scenario exhausted free margin. The material difference therefore came
+from the guard's eligibility/timing effects and subsequent portfolio paths,
+not extra buying power. Seven filled opportunity IDs overlap between the
+primary arms; 30 fill only at 5x and one only at 10x. This is not a paired
+identical-fill experiment. Once histories diverge, equity-based sizing and
+available position/bucket slots can also differ.
+
+All predeclared maintenance-rate sensitivity results
+Assumption    Leverage    Return       Max DD      Closed   Wins/Losses
+0.5%          5x          -3.1530%      3.7551%     37       7/30
+0.5%          10x         -0.9702%      1.4878%      8       0/8
+1.0%          5x          -3.1535%      3.7556%     37       7/30
+1.0%          10x         -0.9741%      1.4917%      8       0/8
+2.5%          5x          -2.4318%      3.2000%     34       7/27
+2.5%          10x         -0.7023%      0.7857%      6       0/6
+All are losses, with no open holdings at the end. No simplified adverse-range
+stress flag appeared. This does NOT certify absence of actual liquidation:
+historical mark prices, exchange tiers and intrahour ordering are unavailable.
+
+What was tested
+- Entry window: 2023-11-27 to 2025-11-26 UTC exclusive (730 days).
+  No-entry runoff: another 180 days, through 2026-05-25 UTC.
+- 50 symbols ranked by median turnover over the seven completed days before
+  entry start, among 158 eligible cached histories with >=120 prior daily bars.
+  All 50 have complete entry/runoff hourly coverage; none was replaced after
+  selection. This is a cache-constrained historical liquidity proxy, not the
+  exact historical exchange census or today's dynamically rotating universe.
+- The offline monitored-zone variant: daily wave structure, closed 4H evidence,
+  up to 30 days of watching, then next-hour-open IOC proxy after an eligible
+  in-zone closed quote. Existing stops, partial targets, invalidation and
+  structure management; conservative OHLC ties and gap exits.
+- One common account per arm with current portfolio/risk caps. No hindsight
+  redistribution into only profitable symbols or directions.
+- 0.055% fee per fill, 0.01% spread, 0.03% adverse slippage each side. Funding
+  uses historical settlements on remaining ENTRY notional, an explicit
+  estimate rather than historical mark notional. Synthetic exchange lot/tick
+  rules are disclosed in the protocol; no actual account fee tier was queried.
+- No historical AI/macro veto or live order-book/tick execution is modeled.
+  These periods were previously studied and are not untouched out-of-sample.
+
+Validation and evidence
+All six scenarios completed. The protocol, selection audit, source code, all
+hourly/funding inputs and causal signal tapes passed before/after hash checks.
+Each worker's input hashes matched the parent snapshot. Repeated READY signals
+remain retryable; accepted opportunity IDs cannot duplicate.
+
+The independent reconcile_saved_fills.py imports none of the bot's accounting.
+It reconstructed fills, fees, funding, cash, equity, pending collateral,
+quantity budgets and caps from saved evidence/public caches. All six arms
+passed: 21,841 hourly snapshots and 911 daily snapshots checked per arm.
+No free-cash shortfall occurred. Original records are in:
+  leverage_comparison_evidence_20261005/report.json
+  leverage_comparison_evidence_20261005/accounting_audit.json
+  leverage_comparison_evidence_20261005/analysis.json
+  leverage_comparison_evidence_20261005/*x_mmr*.json.gz
+  leverage_comparison_evidence_20261005/*_trades.csv
+  leverage_comparison_evidence_20261005/*_daily_equity.csv
+The compressed arm files retain every accepted and rejected decision. Shared
+signal tapes and raw public archives remain regenerable local caches; the
+manifest/selection audit and source hashes identify them precisely.
+
+Relation to the preceding positive perpetual result
+The earlier five-symbol test was long-only and fully collateralized, without
+this isolated-margin eligibility guard. This test uses 50 symbols, both sides,
+and the guard. The earlier small gain cannot be generalized to this system or
+attributed to leverage. Neither result establishes future profitability.
+
+Recommended next step
+Continue cloud shadow collection, including capacity-only independent observer
+outcomes, while reviewing wave timing and trade quality. A separate predefined
+1x/2x or stop-distance-derived leverage test could quantify how much the guard
+discards, but no such result is claimed here. Do not widen live stops, relax
+loss circuits or increase risk to compensate for this negative evidence.
+Production still uses confirmed daily/4H signals; monitored-zone entries are
+offline research only. No 10x live configuration or exchange leverage was set.
+
+Reproduction
+Build tapes with apex_bot.leverage_research_tapes using the frozen manifest.
+Run apex_bot.leverage_comparison with that manifest, tapes directory and a NEW
+output directory. Run reconcile_saved_fills.py against the completed directory.
+The frozen code snapshot and protocol are included alongside the evidence.

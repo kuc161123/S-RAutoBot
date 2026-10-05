@@ -1,0 +1,3524 @@
+{
+  "protocol": "5X VERSUS 10X PERPETUAL RESEARCH \u2014 2026-10-05\n\nFixed before inspecting this experiment's outcomes. Offline research only.\nUser explicitly selected unchanged risk per trade. No live account, leverage,\nRailway, Telegram, strategy configuration, orders or ledger changes.\n\nPrimary question\nCompare 5x and 10x isolated-margin settings with the same cautious risk budget\n(0.25% of current account equity before existing setup multipliers), unchanged\nportfolio caps and identical Elliott Wave rules. Leverage must never multiply\nquantity or profit. Both long and short opportunities are evaluated. This\ndiffers from the preceding five-symbol long-only spot comparison.\n\nUniverse/data plan\nSelect 50 USDT perpetual symbols by median turnover over the seven completed\nUTC days immediately before 2023-11-27. Require at least 120 completed daily\nbars of prior hourly history. Freeze membership for this experiment, without\nlooking at future strategy performance. Record every eligibility exclusion.\nUse the existing Bybit public historical caches, hash and validate their\nchronology/OHLCV. Do not manufacture missing candles or splice exchange venues.\nRequire complete hourly entry/runoff coverage. If unavailable, document the\ncoverage problem and a pre-outcome amendment; never hide removed symbols or\nlabel a cache-constrained universe as the exact historical exchange top 50.\nThis is a fixed historical liquidity proxy, not the live rotating universe:\nhistorical order-book depth/spread and a complete historical listing universe\nare not available. Delisted/renamed instruments and cache availability can\nintroduce selection bias. Future instrument metadata is not an eligibility\nfilter or a reconstruction of historical lot sizes/risk tiers.\n\nEntry period: 2023-11-27 00:00 through 2025-11-26 00:00 UTC exclusive (730 days).\nRunoff to 2026-05-25 00:00 UTC (180 further days); no new entries during runoff.\nEach symbol retains its fixed contiguous warmup origin, with at least 120 days\nbefore the common entry start. One shared 10,000 USDT account per scenario.\n\nRules/costs\nDaily wave plans, closed 4H structure, 30-day watch, hourly closed quote and\nnext-hour-open IOC proxy with the existing 5bp cap. Existing stops, partial\nTP1, TP2, daily invalidation, structural trailing and time exits. Stops win\nOHLC ties and gap through stops uses the worse open. No credited entry-bar\ntargets. No forced end exits; open trades are not wins/losses.\nCurrent sizing/cost-aware R:R, daily/weekly/drawdown halts and exposure caps.\nSame-time candidates sorted by symbol then plan ID. Rejected unconsumed IDs\nmay retry; accepted IDs cannot duplicate. Each scenario independently sizes\nfrom its own chronological shared account, including pending reservations.\nSynthetic instrument tick/lot 0.0001 and 5 USDT minimum notional, as in the\nprior research; not a historical reconstruction of each exchange filter.\nFees 0.055% per fill, 0.01% spread and 0.03% adverse slippage each side. These\nare stated scenarios, not observed fills or the authenticated account tier.\nHistorical funding applied at settlement, remaining ENTRY notional basis,\nstrict entry/exit ties excluded, with only already-settled rates used by risk\ndecisions. Rate intervals may change: infer normalization from past intervals\nonly, and report coverage/interval validation limitations explicitly.\n\nMargin/liquidation distinction\nMirror the runtime's conservative entry rule exactly:\n  entry * (1 / leverage - maintenance_rate - 0.002) >= 2 * stop_distance.\nThe 0.002 reserve and twice-stop distance are existing bot rules. Historical\nexchange maintenance tiers and mark-price candles are not in the cache.\nUse an explicit assumed maintenance rate of 1% for the primary pair; also run\nboth leverages at 0.5% and 2.5% as predeclared sensitivity scenarios, not tuned\nparameters. Never present assumed maintenance rates as actual symbol tiers.\nReserve open entry notional / leverage plus an estimated closing fee, pending\norder margin plus fees, and report available cash conservatively. Unrealized\nprofits do not finance new isolated positions. Unrealized losses reduce equity\nand therefore risk sizing; they are covered by the allocated isolated margin\nand are not deducted a second time from free wallet cash. Funding/fees affect\nequity and cash before sizing; any free-cash shortfall must be reported.\nTrack stop distance and margin buffer, plus hourly adverse-range breaches of\nthe simplified isolated threshold. Such breaches are stress flags, not proven\nliquidations: mark-price history and intrahour ordering are unavailable. Do\nnot certify zero liquidations from last-traded hourly bars. If flags occur,\nheadline returns remain stop-model estimates and must be labeled accordingly.\n\nEvidence/report\nSave causal opportunity tapes (shared immutable market observations only),\nall decisions/accepted orders, filled trades, funding, fees, daily equity,\ncode/source/protocol hashes, universe selection/exclusion audit, side/symbol\nbreakdowns, hourly max drawdown, stop/margin rejection counts and margin usage.\nReport all six scenarios and unfinished holdings. Independently reconcile\nsaved fills, costs, funding, cash and equity. No parameter search after results.\nThis previously studied period is not untouched out-of-sample validation.\nNo historical AI/macro veto, depth, tick fills or exchange liquidation engine\nis simulated; research cannot establish expected profits or live safety.\n\nOfficial sources checked 2026-10-05:\nhttps://www.bybit.com/en/help-center/article/FAQ-Profit-Loss-Calculation\nhttps://bybit-exchange.github.io/docs/v5/market/risk-limit\nhttps://www.bybit.com/en/help-center/article/Trading-Fee-Structure\n\nCoverage resolution before results\nAll 50 selected histories have complete hourly entry/runoff coverage; none\nwas removed or replaced after selection. The 158 eligible cached histories\ninclude available delisted histories, but are not a complete exchange census.\nForty-four selected symbols have matching funding timestamps/rates in both\nlocal funding caches throughout the window; six have one funding cache only.\nBLUR, INJ, GMT, ZRX and LUNA2 contain isolated 5/6/7-hour transition intervals\nin runoff that match both caches. Allow only those explicitly audited UTC\ntimestamps as exceptions, preserve observed rates, and normalize from elapsed\npast settlement time. Other intervals must be 1/2/4/8 hours. This agreement is\nlocal consistency evidence, not an independent exchange completeness proof.\nOpen/pending closing-fee reserves use entry*(1+1/leverage)*fee as a conservative\nconvention for both directions. Reserved fees are not expenses until a fill.\nMonitored short orders reserve margin at the upper entry-zone boundary because\na favorable fill at a higher price can require more collateral. This does not\nincrease quantity; risk sizing remains at the original conservative entry cap.\n",
+  "protocol_sha256": "72a2773fca9135595f0b46bd6b226307951789abc7f0cccd2524f0b3623eaa49",
+  "code_sha256": {
+    "leverage_comparison.py": "314d989110d87915da8902d47400db48c045dca09e5b3895384abf8327856c68",
+    "leverage_research_accounting.py": "82df0f301697214c2d548aee26b7d21d0bcc5a066ada7655bddb397ee51ebfb3",
+    "leverage_research_tapes.py": "9f3312c31d3612c170ccb21d70ea1ae079ff1c280b1f5484ae924448d3417a30",
+    "leverage_research_data.py": "d79c8637154b821d31df791046f0241ba1e1750a433049893c2a24ad248f9075",
+    "spot_comparison.py": "7acfe702f89e5806d4f9eaed6072fc91ec9663d2b4242d64ebd0b4df58d5ccce",
+    "spot_research_accounting.py": "a730bea3ca680b0b8da991abe951997715bb916d2c38db3c00b7a6f9949aae53",
+    "monitored_comparison.py": "f700a488ef273829e33c72925ff9ea310a441da6fd2db669838722ab853b3aa2",
+    "replay.py": "ca955b37c747d5e89edd818eb80b74f058f325f8f2c023473780c5d3fb96e161",
+    "replay_management.py": "1c2236f7e1ddc08c6e6cbcdd8eca2981e4f21aa3dbb8f54bcf0870b72e2b2f81",
+    "models.py": "2c6a264d9714ade4b428cfe34e91afd1ccaddaf4ee245d95eab68c075fac815e",
+    "engine.py": "f226b81f2f041459a91532dc713b65633c6d72a415edc7d8940919beba15b9d2",
+    "risk.py": "96bb7b5cc1c44c37af87b91e7c5830b44061f23ce7251d05965e698d6b10a69c",
+    "simulation.py": "3b106438316a87eb3b868b3fe60734a251feb7624c7fb0a6fc745135d762a1bc",
+    "zone_orders.py": "1e53fb24be6e36ea82d36720a4d361a1d5c41d15a823a37d030bbce6db4d7daf",
+    "monitored_zones.py": "539d3a806c29bca325735aeeb98709a22b96549b6786771455cacac38248580e"
+  },
+  "manifest_sha256": "146be6fd90495a2bec874f27a9f0726f4d2be846eb0db0fd0610370aca473171",
+  "input_snapshot": {
+    "BTCUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/BTCUSDT.parquet",
+        "sha256": "1fd35d6ae4ab717d968f54745e6c6f3c0eb01f794ce0a4d06bd0ddd8a80f305d"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/BTCUSDT.parquet",
+        "sha256": "e854296c62891ba5636aecc21fd24f52edafb7ccca78ce4fa15a9b9ccaf23063"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/BTCUSDT.json.gz",
+        "sha256": "1094008142706e379ad7c5607741b89c543074a5211491b5e633a8f96c6b34ae"
+      }
+    },
+    "ETHUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ETHUSDT.parquet",
+        "sha256": "27b2e38df6bab6e6c8e1d3723656ec9da1293e592c9196decce0837e219df1fd"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/ETHUSDT.parquet",
+        "sha256": "73e78ae968c54108d9ed8b27ab476e04ffec7b1555391d2630128963cc0b20b8"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/ETHUSDT.json.gz",
+        "sha256": "34139f08ccd4d6c902f7fda4a07841eb39c81605798bb2555bd30e4c66f35628"
+      }
+    },
+    "SOLUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/SOLUSDT.parquet",
+        "sha256": "a03ec5b368ea170387f6ceadba38b6dcace32da42cb63303040566eb370973a4"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/SOLUSDT.parquet",
+        "sha256": "d710caec985f79b94509d7b7057dea4a1075d64051888e6d650fdbe2831052c9"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/SOLUSDT.json.gz",
+        "sha256": "ff5842c5c645f46ab160c10398c4b74e16f602bd75da0674a3ccfa0499c801d0"
+      }
+    },
+    "BLURUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/BLURUSDT.parquet",
+        "sha256": "ad82edb81c4385fe7c7559197490e011c3c23c56c460b8b598b2914763b85ca2"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/BLURUSDT.parquet",
+        "sha256": "6ae5ca070d22ea66ebe41a70c2ac94a7db0d87333e5be776a9cd1f18329e7af4"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/BLURUSDT.json.gz",
+        "sha256": "d0c31a0842fd183192b44aa6c037f4db4bca5c71dc7d1cefa2e766cfa0e6c8a3"
+      }
+    },
+    "XRPUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/XRPUSDT.parquet",
+        "sha256": "bbbe572a972d05cb64d670bb3f660a27320542065ad2fbd9810736dd0d70b7e8"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/XRPUSDT.parquet",
+        "sha256": "95fa7f6d09054abcd12a4023a8b4d6fc09c7c57841eb345c23c79c69999f8411"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/XRPUSDT.json.gz",
+        "sha256": "fe96dd93fb8c738def222caa4f410c368abe81b1940b460835c5b662c29af627"
+      }
+    },
+    "AVAXUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/AVAXUSDT.parquet",
+        "sha256": "a1f805ab024beb398712cb90ddef66057f7291981e00d41362704c0a59337d0d"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/AVAXUSDT.parquet",
+        "sha256": "c42f7865b8728be1155b4be3f1459df5e6a38f1e96fade9a349d519453630da8"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/AVAXUSDT.json.gz",
+        "sha256": "21832520aab17165b7d520138aa9e7434bb61fdc650009ed56a9a04e4cf37fe4"
+      }
+    },
+    "LINKUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/LINKUSDT.parquet",
+        "sha256": "b436133e8f750ac29550fa06845ee52bb59b49cf0dbb03847f282c3179aafc3b"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/LINKUSDT.parquet",
+        "sha256": "7744eacc9d605fdab44bd3c63da80b7cdd4457bcf4aa760e65d206b383667a31"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/LINKUSDT.json.gz",
+        "sha256": "91ce7f548e7b75b1898ea462d97f2ffb45842f809b8e4c167719a66a4d62ecd0"
+      }
+    },
+    "1000BONKUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/1000BONKUSDT.parquet",
+        "sha256": "338f3a036cd8e294cd427de43e54566f5b489e6150ac06ca6f0635b0a0a3fd5e"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/1000BONKUSDT.parquet",
+        "sha256": "e78bb262e00b0b811679f7a94ab8f892c65fdc23c54dde061c208e48c1244185"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/1000BONKUSDT.json.gz",
+        "sha256": "06cff6b2c1bfe4a71ceaf5593f47209a10869b53e1e88a7178914214c3504a16"
+      }
+    },
+    "GALAUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/GALAUSDT.parquet",
+        "sha256": "91fd66e84252aaaca2bda377edf0a1d8b018c3c03e5151e97d6bc4d8e7a3ca54"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/GALAUSDT.parquet",
+        "sha256": "4d30240c6aac6e1276a286ea35e9bc1b05f86c272e63b1aa9c1585ffc4d4d90b"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/GALAUSDT.json.gz",
+        "sha256": "6b94dacc02a193b550d4723c139aaffca5b6fa458e2adaabf921af1b7319c335"
+      }
+    },
+    "WLDUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/WLDUSDT.parquet",
+        "sha256": "2e72660d8353e089372d3bf090fc0b5a8b89e01deea45864c193322c87186d9f"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/WLDUSDT.parquet",
+        "sha256": "d601cd1f8dab1f87f429b7c543d00344fbf137710dcb6ee569d1e9d34f95bd6c"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/WLDUSDT.json.gz",
+        "sha256": "ac67d2977c5464bfee2a5f66ddf29def79784a2205c0b93499235016a8eed0a6"
+      }
+    },
+    "DYDXUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/DYDXUSDT.parquet",
+        "sha256": "960299d109a1aec11d55657d89161f759113c80978a78bdac386149fcfb23da5"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/DYDXUSDT.parquet",
+        "sha256": "db9fb71042535fae6d22db84355753588e215bc067857094f3dd97f0bcc9d998"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/DYDXUSDT.json.gz",
+        "sha256": "6f8ce148ae8bc51e1e6803a1a07374b6b6cc98093ef12649f805288207e2674c"
+      }
+    },
+    "DOGEUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/DOGEUSDT.parquet",
+        "sha256": "cafcdb46100f09fb532b80d4abcca6f0e0cfbcca4145dbf1398de47a7fc37def"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/DOGEUSDT.parquet",
+        "sha256": "aec92740bc93d4435d8542a39728dac5f51dd64c9bb7b2b88ecfb08222628a69"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/DOGEUSDT.json.gz",
+        "sha256": "99097f9999640777e7766fbc5b9afc6993c5bb3d45515b46e976fae6ba7f0c1b"
+      }
+    },
+    "1000PEPEUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/1000PEPEUSDT.parquet",
+        "sha256": "520764a1f8351b2f46e00aeb752bd3b6634bfaaea9a9d09b1fe87fae1466175a"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/1000PEPEUSDT.parquet",
+        "sha256": "af98a6e425ff0f05ea047428d6699129edefded4fa88e486f1144a41a22736f7"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/1000PEPEUSDT.json.gz",
+        "sha256": "4840b58dbc5707a4e0800d300e4968097d2128018ae2237e9da8e42b9cf3cf3b"
+      }
+    },
+    "BNBUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/BNBUSDT.parquet",
+        "sha256": "4fbe36f20a848d16f235a038f953621e788359cfef111d2eaf89e3444545ab57"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/BNBUSDT.parquet",
+        "sha256": "0121d99058a2977fefb71789b4e5e5d4ffc640dd49984029f5a9c00d349ab3a3"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/BNBUSDT.json.gz",
+        "sha256": "768ba0b3f543ee4d151c233875523f64ccbd7da500d8a89c6d4c249e15b9f57f"
+      }
+    },
+    "ORDIUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_data/1h/ORDIUSDT.parquet",
+        "sha256": "ad2fd90ce9a99b319b2dc4b74e9ee32be4caeb0bed661d4908766e65562a45d3"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/ORDIUSDT.parquet",
+        "sha256": "c64682bba8ee5ef689c488b76b286f2c0e127d37c2831ec1acaa9dafcd13832a"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/ORDIUSDT.json.gz",
+        "sha256": "f3a3c8f7ec46eac46e9ff6e3324cbc5a5526ef5b13b8dc4c1c3dbc1d0f4df526"
+      }
+    },
+    "SUIUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_data/1h/SUIUSDT.parquet",
+        "sha256": "1a863c27f2945124e73fb296b24116f42ce3e40bd28d9e760af872ea88cbf840"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/SUIUSDT.parquet",
+        "sha256": "b000daeb9275a20b4910451a61a14fe56b82ddc36f9d378d67e7796a29a8b5f7"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/SUIUSDT.json.gz",
+        "sha256": "84724ff06cb8cb2bc265e96c5b256ff7bc948166366aa1375d3a3e0c30eda48a"
+      }
+    },
+    "SUSHIUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/SUSHIUSDT.parquet",
+        "sha256": "32f3abffc1198edfb8d515e41bb1f3a9c28135d96a0e485f7a8a52c7085a61d7"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/SUSHIUSDT.parquet",
+        "sha256": "992ee28d45b6f4533d261d59c4a6c27ec7db50275473f0307328512243a5e1a2"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/SUSHIUSDT.json.gz",
+        "sha256": "3d04d09a8d97cbb73d6cac08cf76b77cec8746bf79e64db043b524d95575fc1c"
+      }
+    },
+    "RUNEUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/RUNEUSDT.parquet",
+        "sha256": "610eb4d3ffa01aa8b55849993bddd789cab2754000aad75d8deb644db804aec1"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/RUNEUSDT.parquet",
+        "sha256": "7bd4e43267f4af68feaa637e2f0c0c6dbe82b80ba994d7db134c5a6d860dfa7d"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/RUNEUSDT.json.gz",
+        "sha256": "83c51f767d0b63ae48de543240fc326f249ecdafe22683d8e56b69a0ad10b298"
+      }
+    },
+    "INJUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/INJUSDT.parquet",
+        "sha256": "4b86c1c8d7abe7a3769554cf33462e6b86d6e45fb6c791d3e6edcf0b4a2d0479"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/INJUSDT.parquet",
+        "sha256": "ec7d3b7f303c6dec846a3a4e953b7bc2e6f1200e7610fc39b0800f976d47b015"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/INJUSDT.json.gz",
+        "sha256": "b73459b637ccdc11c3439839f529d938a6c68af8f90deeaa060d9ad3d1f4bca5"
+      }
+    },
+    "APEUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/APEUSDT.parquet",
+        "sha256": "ae57cc0fb2194ee30d0b7215b394b701deedead7e4366fc53d55d38b57ea50df"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/APEUSDT.parquet",
+        "sha256": "8914d4fadf50b25a5cc631bef7332b6822b3f7d87b179eda258a64656ed07dce"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/APEUSDT.json.gz",
+        "sha256": "ceb398a5a0847a0919e05ea1be89e116512cc2d7ec3d087055c9e7468305e059"
+      }
+    },
+    "GMTUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/GMTUSDT.parquet",
+        "sha256": "52fb6a98b9617dcbb8f04ccbccdc4e2a4a5b6f975fbaf6bed030a5892118ad80"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/GMTUSDT.parquet",
+        "sha256": "1e96cb61a4eaafa02decdd330d3e4a7b1cead39672c62b37c0039ee25f6e7912"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/GMTUSDT.json.gz",
+        "sha256": "2935f5eeef1b1ccf731a7fda23b270eca1587331f0403618c7f937054537f362"
+      }
+    },
+    "ATOMUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ATOMUSDT.parquet",
+        "sha256": "ea3806fb6b893bc92f1e862f6e9f753b86b39477832769cf668baeec55a6d841"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/ATOMUSDT.parquet",
+        "sha256": "0ada3d1a6c15ee66dcecef5a53663c8c4bfc8ceae3f9da00f18e0d2b0fea83bf"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/ATOMUSDT.json.gz",
+        "sha256": "ea76ecc5f4a6e701891da27d3b0ce6b4f16a0c3f46bad13047d75f76bbc90239"
+      }
+    },
+    "ARBUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ARBUSDT.parquet",
+        "sha256": "9b1ef69bc648c001973e198ea3d5c4cc89bffad8dcd05511ded21e4511489335"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/ARBUSDT.parquet",
+        "sha256": "204aea72002b348a526e7d27c37697aab621f3af210c8ee5e56728dd3246561e"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/ARBUSDT.json.gz",
+        "sha256": "a6f74b0632d6862741be32608e9b5a984efe2bdf241a079d87da22c2b575f4ff"
+      }
+    },
+    "OPUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_data/1h/OPUSDT.parquet",
+        "sha256": "6901d245c081064bea03b8325ce6165c1c68e14350e072a3f30a4a45e3ece1a4"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/OPUSDT.parquet",
+        "sha256": "9a9b0bf0ae9307db974b749669bef16d0f984f5a17a7831e4d1b30036c3bb199"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/OPUSDT.json.gz",
+        "sha256": "b174aeff2ee88d0806a57638d9d0a980539995d2fd5471d701b538b4b9ad570e"
+      }
+    },
+    "TRBUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/TRBUSDT.parquet",
+        "sha256": "5e94a2f96d47836698640cacc25e6c4d7bac5e5e0c0829ae3b9da7d5eb3352c0"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/TRBUSDT.parquet",
+        "sha256": "6554c6b819720c2b57f412df0dee5caab3c6bea8f7d645316b2f33709ac86cf2"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/TRBUSDT.json.gz",
+        "sha256": "ab3bd09d04601d45d1f910e38371dca1ceae307c0ddc0a34d25806e132b40cce"
+      }
+    },
+    "ADAUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ADAUSDT.parquet",
+        "sha256": "43c16edee288bcccb3309cf60b614dcdd829f68769732fc5fec20ae0420f8dbb"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/ADAUSDT.parquet",
+        "sha256": "84e112da278760b5ff22db591172575c3efab0103930983eddc58f42105ce673"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/ADAUSDT.json.gz",
+        "sha256": "e811dc08735f2ee24f5275a9c3c91e28901b27bb8ad4bfb65118de4fd7caa8bf"
+      }
+    },
+    "APTUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/APTUSDT.parquet",
+        "sha256": "8f998ca46460339b32d6cfc4bfe8ccc686cce4bbb0ad48828a1425a040f28130"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/APTUSDT.parquet",
+        "sha256": "ad0a6995819772417001e53dcb5e2e60739c62ac4c3279da036240a83e1bcfe3"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/APTUSDT.json.gz",
+        "sha256": "b714d59bc40222b9065b43f9ac3425d91d10c1f64a2a3b84a23947058443217c"
+      }
+    },
+    "NEARUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/NEARUSDT.parquet",
+        "sha256": "39ecfc7505c5e83fa81b57f52815e253be7125757b1b7d8df865541156f33af6"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/NEARUSDT.parquet",
+        "sha256": "6738b03924de5956f33437b316eca154e3b77de2e8a4e8f93c2822e7e99eb8e9"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/NEARUSDT.json.gz",
+        "sha256": "c0f60556d9c19bb07c6238c29e3e9cec070f1cf996167bf46f3dcee9783e02da"
+      }
+    },
+    "LDOUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/LDOUSDT.parquet",
+        "sha256": "c4344f0e3fc7291a387a0917ad93b9da30b0d41a1c7b9a62c159ba5b255194e6"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/LDOUSDT.parquet",
+        "sha256": "0d41626d496806797c877318ae546b6cf04fa06881654d5c85271cc94457389f"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/LDOUSDT.json.gz",
+        "sha256": "efab99386cbe844ddfb8f9606c298e7ba4ef4f21feb15f94288bd32a0bbab5cf"
+      }
+    },
+    "LTCUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/LTCUSDT.parquet",
+        "sha256": "70dac18064c1ffb8814b659a8c7a09033c1ea2953a1865a31960a8f8febaa08e"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/LTCUSDT.parquet",
+        "sha256": "172cf365286412afa637b17276b25a86f031ddbef1a73818be85337b3121b3ba"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/LTCUSDT.json.gz",
+        "sha256": "4f45888b7894404a7e1380f01a8f2929857e21659e47b96eae13642e5c433daf"
+      }
+    },
+    "DOTUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/DOTUSDT.parquet",
+        "sha256": "622a09ce4653251d323330ecde9fc57eba1aabb6460c4525ba242ec3a88e1acd"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/DOTUSDT.parquet",
+        "sha256": "5541a864d022534e5f011edb65316f0465b720f126efa24f3aabf2bb22d6a8b7"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/DOTUSDT.json.gz",
+        "sha256": "6c09f1fa3f3cc1df2eff24b7ae9f72fd80ff872c37708b78e7ec09bb7f264558"
+      }
+    },
+    "ETCUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ETCUSDT.parquet",
+        "sha256": "325c1768954748f8301e62b3da97705edc027dbc892b140aadc6780d088a08cf"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/ETCUSDT.parquet",
+        "sha256": "5fb552496fd06949c1b30b4e4faa43d7d526d0342d62da9985f270cf34e5432f"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/ETCUSDT.json.gz",
+        "sha256": "fc6a34243b7af440d11a6d3f62b98b30deb7adfcf3827e56ececa4d070dac679"
+      }
+    },
+    "SKLUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/SKLUSDT.parquet",
+        "sha256": "8867d31348a124d64489f6059b349be7ffdd5e6c6c293fe946e0143fc1784739"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/SKLUSDT.parquet",
+        "sha256": "f6bd72d931db820678c4e215265c3a460a3d59d8d359292ff34f4f1ad91bfb0b"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/SKLUSDT.json.gz",
+        "sha256": "eace3f1dbd5b6efe259bda402996a8432f3e647959acdd749216fd0c3f5fd672"
+      }
+    },
+    "MINAUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/MINAUSDT.parquet",
+        "sha256": "3b0fde5e442360b352c236d2fed3a583e184245461ca40a20216424dd0136f63"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/MINAUSDT.parquet",
+        "sha256": "1dcf0c1659057c526958b6c2223f643e0af32cbc288d49514262523511fd665b"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/MINAUSDT.json.gz",
+        "sha256": "6d436b028852c4c3062e5bcb51731374e118d96bea4ecf486973d33284125c8f"
+      }
+    },
+    "AAVEUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/AAVEUSDT.parquet",
+        "sha256": "166c4f5b1be9ef9c074608af540489439025ef59d953c0041161d08f85877539"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/AAVEUSDT.parquet",
+        "sha256": "48e925fa5f6f71231b988e5a78284dde19c9a349e61cae0fe031c84e833ddc6e"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/AAVEUSDT.json.gz",
+        "sha256": "c5273135c4bef8350fa869c3c37ab8df7d72fc3556c03e9be2bd9975e5e1a9ac"
+      }
+    },
+    "SNXUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/SNXUSDT.parquet",
+        "sha256": "fea0b1ffb27a85f5f4a4af7891f55c81241e60332ff6c1468f90cb0b1b99fc1d"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/SNXUSDT.parquet",
+        "sha256": "f665f12b4d9fb888276a67a9917653c8d2d8256e4106f98cae6d00a03234e8a4"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/SNXUSDT.json.gz",
+        "sha256": "a3ed65d370d8f3bb21408faf3eb21e52492e1e2c0635343c199a082f6168e3e5"
+      }
+    },
+    "STORJUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/STORJUSDT.parquet",
+        "sha256": "8038fd28f87d73163dc9e44c1f7dbcae8c5a2264f3be3048df1405048cdff5a4"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/STORJUSDT.parquet",
+        "sha256": "5fe95f45f2c1365c738746f0cd2e87aa6c3347e4638101411e74a30f456ad4c1"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/STORJUSDT.json.gz",
+        "sha256": "57a97aaf952e0ef6cb67410143f78ce74944cfbea4b8bc1db75eedbbf334a0ef"
+      }
+    },
+    "AXSUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/AXSUSDT.parquet",
+        "sha256": "8397b2e69de9293a4c1d3889e7028d3c0d6cf0005bb639b90926c505bd89708d"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/AXSUSDT.parquet",
+        "sha256": "5ae13e6388546ef6172ce394282735729fee37c9801750ea6bde6fa058d5de1e"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/AXSUSDT.json.gz",
+        "sha256": "130ed19099ed1854548d316170aec4ddc915644a5ad2f4c1ae7e2279876576e1"
+      }
+    },
+    "SANDUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/SANDUSDT.parquet",
+        "sha256": "557468d2ca0208aeb8ddb0d02d64eabf46b23d89febc70f465f38d3625647618"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/SANDUSDT.parquet",
+        "sha256": "d209e4d953863aed929fa66a8566c3b02fa36ac81ec5929e84fc717ba441831f"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/SANDUSDT.json.gz",
+        "sha256": "2e174411a6b49206a2ab50e99d9408a9419a321a6f41fabffb0703d29aae2aef"
+      }
+    },
+    "BCHUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/BCHUSDT.parquet",
+        "sha256": "e4712e10430891fa4d2b71905b193e14a98eaea76728295563f668ba9aae6b98"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/BCHUSDT.parquet",
+        "sha256": "b00477315c98fdc67fa6c06f3bc095bdf4dcfeaecca5a67da0afbe4e496210fc"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/BCHUSDT.json.gz",
+        "sha256": "bf4ac97301a79e903a3b4d954b919f0c642c86f1684a21d8d997d3a22a894337"
+      }
+    },
+    "UNIUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/UNIUSDT.parquet",
+        "sha256": "e15672e459aae8882a832e5323ab5d321d94f79f644da81826b33d0bd514ba1f"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/UNIUSDT.parquet",
+        "sha256": "524f83fc67a5aa245b981dde286a5b6e5826818cbacdc14a96c832eebf40fead"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/UNIUSDT.json.gz",
+        "sha256": "670296b76d8584cd5c2add898f35a055cdde00bc90b614de23b24701d8a65858"
+      }
+    },
+    "GRTUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_data/1h/GRTUSDT.parquet",
+        "sha256": "1a315b89b88cd6d0ae6f65a17e8ec0ef916a29101834bd1e666d8159486c4bfd"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/GRTUSDT.parquet",
+        "sha256": "58ce4a06a8c43de3fd9c4afa6e5e336a70dc703eaece495f57f112f382015d0a"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/GRTUSDT.json.gz",
+        "sha256": "2b7a059cf6bf5165e5cb4271c68479a5c10c11a8fcce6ea28be736aee05ea8b7"
+      }
+    },
+    "ILVUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/ILVUSDT.parquet",
+        "sha256": "0dd7563ab4ad96469ad0012aa01489176ab85848907af64e2631bf7651c09df2"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/ILVUSDT.parquet",
+        "sha256": "26ad5af0257a93db9469346b3739465ec3b3d2c0e04d5aeb7ea4985843b9f6db"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/ILVUSDT.json.gz",
+        "sha256": "d7e3d076a9be17705379d0d160d8bf75da1e07eef33ef36af1f0448692b20001"
+      }
+    },
+    "ZRXUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/ZRXUSDT.parquet",
+        "sha256": "08b911e32967b01a9360d4087c7d556f6e83165b41f97fafa34fe8ca20a31d0f"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/ZRXUSDT.parquet",
+        "sha256": "21adc3a85797bf2a0e2b9f0c82fc1dd9184725c4382b2550e249c6c9d57c6f05"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/ZRXUSDT.json.gz",
+        "sha256": "35c0c9c7bcf22578a99ab99c6199e9bbdb52cfc2b53a8c0ed135bd6ffc855792"
+      }
+    },
+    "SHIB1000USDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/SHIB1000USDT.parquet",
+        "sha256": "9a434bc487b463c5ae121771db6b6e76f749e8b37ee250362e3945ce320f5fea"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/SHIB1000USDT.parquet",
+        "sha256": "f071977ced251a7dcb0d286e4de7fdbf26410665390a42cdc096bc4e5ba464fe"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/SHIB1000USDT.json.gz",
+        "sha256": "9b71c944f9a9c2a4c45b6fd25b7fc5ad5a407623f8fcabc4e733e5569508e8cb"
+      }
+    },
+    "IMXUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/IMXUSDT.parquet",
+        "sha256": "89919411fd70d38cfe368969a15ce900274db740baebece7ab44bad712bd2230"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/IMXUSDT.parquet",
+        "sha256": "d3b27a168cc9abe951e32551bd1df69a1a36f9d6e2e8c37efd7f297277581073"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/IMXUSDT.json.gz",
+        "sha256": "adc8d0fa3b8988cd973014dc139bfa313dc19db6e33e911e942814790702dbb5"
+      }
+    },
+    "STXUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/STXUSDT.parquet",
+        "sha256": "fef8a38e3b162a48986a654253d5b436d403bf344cc3fe3d428cb2f9f1c2fda3"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/STXUSDT.parquet",
+        "sha256": "61a956e64ada3dbdd3eb01e56b9d92524d1867e843c4e0b3be109e8ebcd19501"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/STXUSDT.json.gz",
+        "sha256": "ef2e9f82c8cada3aaea146342618139faf792ab783e6b05b86f7dac0138f50c9"
+      }
+    },
+    "LUNA2USDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/LUNA2USDT.parquet",
+        "sha256": "d4d595b1747ee927b4a44e5b7d981b991ae6008cb2a85792153d073d8aa07e8e"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/LUNA2USDT.parquet",
+        "sha256": "550b8112a2f3a3f9d4f88c912071436e116ceb01ec8e5f2ca16e189773924435"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/LUNA2USDT.json.gz",
+        "sha256": "105db57977d5c6c8ce72c0c97eb10d223a80c451193a857fe0d0765552072728"
+      }
+    },
+    "FILUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_3yr_1h/FILUSDT.parquet",
+        "sha256": "2c7c2bad4e2a3c31601632982ee3fdc4c48d35a1c8335dbc769d73ffb148f6d2"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/FILUSDT.parquet",
+        "sha256": "f74057ae7ba5962ddea2dc0e7963709285e63faefa4046f9c8e106f77b674a29"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/FILUSDT.json.gz",
+        "sha256": "30fa7d8881d3a128d602b9d4ba0dbe2f5b08b00ba872d9c7150726361930a5f7"
+      }
+    },
+    "EGLDUSDT": {
+      "hourly": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_ew_1h/EGLDUSDT.parquet",
+        "sha256": "8cf9e13469942ad95e1313fbf5da672f6435e589df8f3e71a0d6a587959a7ed4"
+      },
+      "funding": {
+        "path": "/Users/lualakol/AutoTrading Bot/research/data/funding/EGLDUSDT.parquet",
+        "sha256": "e3923eae3d30c0f96f753b03f3c159688b875ae8d80af57498f9e9fe85a8b33a"
+      },
+      "tape": {
+        "path": "/Users/lualakol/AutoTrading Bot/cache_leverage_comparison_20261005/tapes/EGLDUSDT.json.gz",
+        "sha256": "15f6d71dc5455b70cded5a830f0566017dc80b93edc99a5d51f855e781d2db54"
+      }
+    }
+  },
+  "selection_audit_sha256": "54f2a42d1fbdc1dff77535a9c1639fae1e15ffc66494ea51d65ad70b11426d72",
+  "started_at": "2026-10-05T14:48:26.114919+00:00",
+  "rows": [
+    {
+      "leverage": 10,
+      "maintenance_rate_assumption": 0.005,
+      "complete": true,
+      "initial_equity": 10000.0,
+      "start": "2023-11-27T00:00:00+00:00",
+      "entry_cutoff": "2025-11-26T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "symbols": [
+        "1000BONKUSDT",
+        "1000PEPEUSDT",
+        "AAVEUSDT",
+        "ADAUSDT",
+        "APEUSDT",
+        "APTUSDT",
+        "ARBUSDT",
+        "ATOMUSDT",
+        "AVAXUSDT",
+        "AXSUSDT",
+        "BCHUSDT",
+        "BLURUSDT",
+        "BNBUSDT",
+        "BTCUSDT",
+        "DOGEUSDT",
+        "DOTUSDT",
+        "DYDXUSDT",
+        "EGLDUSDT",
+        "ETCUSDT",
+        "ETHUSDT",
+        "FILUSDT",
+        "GALAUSDT",
+        "GMTUSDT",
+        "GRTUSDT",
+        "ILVUSDT",
+        "IMXUSDT",
+        "INJUSDT",
+        "LDOUSDT",
+        "LINKUSDT",
+        "LTCUSDT",
+        "LUNA2USDT",
+        "MINAUSDT",
+        "NEARUSDT",
+        "OPUSDT",
+        "ORDIUSDT",
+        "RUNEUSDT",
+        "SANDUSDT",
+        "SHIB1000USDT",
+        "SKLUSDT",
+        "SNXUSDT",
+        "SOLUSDT",
+        "STORJUSDT",
+        "STXUSDT",
+        "SUIUSDT",
+        "SUSHIUSDT",
+        "TRBUSDT",
+        "UNIUSDT",
+        "WLDUSDT",
+        "XRPUSDT",
+        "ZRXUSDT"
+      ],
+      "profile": "cautious",
+      "sides": [
+        "Buy",
+        "Sell"
+      ],
+      "accepted": 9,
+      "filled": 8,
+      "open": 0,
+      "expired": 1,
+      "closed": 8,
+      "wins": 0,
+      "losses": 8,
+      "net": -97.0184277647779,
+      "total_fees": 2.764959440174498,
+      "funding_estimate": -2.4836058033416464,
+      "net_equity_change": -97.01842776477861,
+      "net_return_pct": -0.9701842776477898,
+      "final_account": {
+        "equity": 9902.981572235221,
+        "wallet_balance": 9902.981572235221,
+        "cash": 9902.981572235221,
+        "available_cash": 9902.981572235221,
+        "open_margin": 0.0,
+        "initial_margin": 0.0,
+        "reserved_pending": 0.0,
+        "reserved_close_fees": 0.0,
+        "realized_net": -97.0184277647779,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "max_drawdown_pct": 1.4878310114080917,
+      "max_reserved_margin_usdt": 68.58508511462341,
+      "average_reserved_margin_usdt": 2.85893018823592,
+      "minimum_available_cash": 9861.609394379288,
+      "max_gross_notional_usdt": 746.58930864,
+      "maximum_positions_and_reservations": 2,
+      "holding_days_median": 1.75,
+      "holding_days_max": 51.291666666666664,
+      "risk_rejections": {
+        "ADVERSE_FUNDING": 1363,
+        "RR_TARGET1": 4176,
+        "RR_ROUNDED_SPLIT": 5942,
+        "RR_BLENDED": 5940,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 15468,
+        "ENTRY_OUTSIDE_ZONE": 288,
+        "BUCKET_POSITION_CAP": 62,
+        "SYMBOL_ALREADY_EXPOSED": 103
+      },
+      "unique_risk_rejections": {
+        "ADVERSE_FUNDING": 54,
+        "RR_TARGET1": 128,
+        "RR_ROUNDED_SPLIT": 150,
+        "RR_BLENDED": 150,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 285,
+        "ENTRY_OUTSIDE_ZONE": 15,
+        "BUCKET_POSITION_CAP": 7,
+        "SYMBOL_ALREADY_EXPOSED": 1
+      },
+      "liquidation_stress_flagged_trades": 0,
+      "actual_liquidations": "Not observable: no historical mark prices / risk tiers",
+      "per_side": {
+        "Buy": {
+          "closed": 5,
+          "wins": 0,
+          "losses": 5,
+          "net": -61.516135608607804
+        },
+        "Sell": {
+          "closed": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -35.502292156170085
+        }
+      },
+      "per_symbol": {
+        "1000BONKUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "1000PEPEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AAVEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ADAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ARBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ATOMUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.295160769656215
+        },
+        "AVAXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AXSUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BCHUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BLURUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BNBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BTCUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DOGEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DOTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DYDXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "EGLDUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.1491240879312
+        },
+        "ETCUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.279823172907886
+        },
+        "ETHUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.79727151157192
+        },
+        "FILUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GALAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GMTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GRTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ILVUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "IMXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "INJUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LDOUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LINKUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LTCUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LUNA2USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "MINAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "NEARUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "OPUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ORDIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "RUNEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SANDUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SHIB1000USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SKLUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SNXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SOLUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.026687216251759
+        },
+        "STORJUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.326480851987126
+        },
+        "STXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SUIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SUSHIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "TRBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "UNIUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -24.143880154471784
+        },
+        "WLDUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "XRPUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ZRXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        }
+      },
+      "calendar_equity": {
+        "2023": {
+          "start_equity": 10000.0,
+          "end_equity": 10000.0
+        },
+        "2024": {
+          "start_equity": 10000.0,
+          "end_equity": 9951.747094011338
+        },
+        "2025": {
+          "start_equity": 9951.747094011338,
+          "end_equity": 9902.981572235221
+        },
+        "2026": {
+          "start_equity": 9902.981572235221,
+          "end_equity": 9902.981572235221
+        }
+      },
+      "tape_source_unchanged": true,
+      "source_unchanged": true,
+      "funding_source_unchanged": true,
+      "elapsed_seconds": 103.42207387500001,
+      "win_rate_pct": 0.0,
+      "matches_parent_inputs": true,
+      "evidence_file": "10x_mmr0.005.json.gz",
+      "evidence_sha256": "7f74a9011d2e0a98ebf0d3e8c655c017c5058af85b0a33c7b1a3c40c54f7d428"
+    },
+    {
+      "leverage": 10,
+      "maintenance_rate_assumption": 0.01,
+      "complete": true,
+      "initial_equity": 10000.0,
+      "start": "2023-11-27T00:00:00+00:00",
+      "entry_cutoff": "2025-11-26T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "symbols": [
+        "1000BONKUSDT",
+        "1000PEPEUSDT",
+        "AAVEUSDT",
+        "ADAUSDT",
+        "APEUSDT",
+        "APTUSDT",
+        "ARBUSDT",
+        "ATOMUSDT",
+        "AVAXUSDT",
+        "AXSUSDT",
+        "BCHUSDT",
+        "BLURUSDT",
+        "BNBUSDT",
+        "BTCUSDT",
+        "DOGEUSDT",
+        "DOTUSDT",
+        "DYDXUSDT",
+        "EGLDUSDT",
+        "ETCUSDT",
+        "ETHUSDT",
+        "FILUSDT",
+        "GALAUSDT",
+        "GMTUSDT",
+        "GRTUSDT",
+        "ILVUSDT",
+        "IMXUSDT",
+        "INJUSDT",
+        "LDOUSDT",
+        "LINKUSDT",
+        "LTCUSDT",
+        "LUNA2USDT",
+        "MINAUSDT",
+        "NEARUSDT",
+        "OPUSDT",
+        "ORDIUSDT",
+        "RUNEUSDT",
+        "SANDUSDT",
+        "SHIB1000USDT",
+        "SKLUSDT",
+        "SNXUSDT",
+        "SOLUSDT",
+        "STORJUSDT",
+        "STXUSDT",
+        "SUIUSDT",
+        "SUSHIUSDT",
+        "TRBUSDT",
+        "UNIUSDT",
+        "WLDUSDT",
+        "XRPUSDT",
+        "ZRXUSDT"
+      ],
+      "profile": "cautious",
+      "sides": [
+        "Buy",
+        "Sell"
+      ],
+      "accepted": 9,
+      "filled": 8,
+      "open": 0,
+      "expired": 1,
+      "closed": 8,
+      "wins": 0,
+      "losses": 8,
+      "net": -97.41173878311733,
+      "total_fees": 2.798294335334022,
+      "funding_estimate": -2.859136248670742,
+      "net_equity_change": -97.41173878311747,
+      "net_return_pct": -0.9741173878311749,
+      "final_account": {
+        "equity": 9902.588261216883,
+        "wallet_balance": 9902.588261216883,
+        "cash": 9902.588261216883,
+        "available_cash": 9902.588261216883,
+        "open_margin": 0.0,
+        "initial_margin": 0.0,
+        "reserved_pending": 0.0,
+        "reserved_close_fees": 0.0,
+        "realized_net": -97.41173878311733,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "max_drawdown_pct": 1.4917435625141473,
+      "max_reserved_margin_usdt": 71.63236242676493,
+      "average_reserved_margin_usdt": 3.018213047317702,
+      "minimum_available_cash": 9858.49293020392,
+      "max_gross_notional_usdt": 785.8272680800001,
+      "maximum_positions_and_reservations": 2,
+      "holding_days_median": 1.75,
+      "holding_days_max": 50.958333333333336,
+      "risk_rejections": {
+        "ADVERSE_FUNDING": 1363,
+        "RR_TARGET1": 4176,
+        "RR_ROUNDED_SPLIT": 5942,
+        "RR_BLENDED": 5940,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 15501,
+        "ENTRY_OUTSIDE_ZONE": 288,
+        "BUCKET_POSITION_CAP": 62,
+        "SYMBOL_ALREADY_EXPOSED": 103
+      },
+      "unique_risk_rejections": {
+        "ADVERSE_FUNDING": 54,
+        "RR_TARGET1": 128,
+        "RR_ROUNDED_SPLIT": 150,
+        "RR_BLENDED": 150,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 285,
+        "ENTRY_OUTSIDE_ZONE": 15,
+        "BUCKET_POSITION_CAP": 7,
+        "SYMBOL_ALREADY_EXPOSED": 1
+      },
+      "liquidation_stress_flagged_trades": 0,
+      "actual_liquidations": "Not observable: no historical mark prices / risk tiers",
+      "per_side": {
+        "Buy": {
+          "closed": 5,
+          "wins": 0,
+          "losses": 5,
+          "net": -61.899023605998764
+        },
+        "Sell": {
+          "closed": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -35.512715177118565
+        }
+      },
+      "per_symbol": {
+        "1000BONKUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "1000PEPEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AAVEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ADAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ARBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ATOMUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.295160769656215
+        },
+        "AVAXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AXSUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BCHUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BLURUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BNBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BTCUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DOGEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DOTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DYDXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "EGLDUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.1491240879312
+        },
+        "ETCUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.279823172907886
+        },
+        "ETHUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.79727151157192
+        },
+        "FILUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GALAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GMTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GRTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ILVUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "IMXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "INJUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LDOUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LINKUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LTCUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LUNA2USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "MINAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "NEARUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "OPUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ORDIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "RUNEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SANDUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SHIB1000USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SKLUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SNXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SOLUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.026687216251759
+        },
+        "STORJUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.336903872935611
+        },
+        "STXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SUIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SUSHIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "TRBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "UNIUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -24.526768151862747
+        },
+        "WLDUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "XRPUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ZRXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        }
+      },
+      "calendar_equity": {
+        "2023": {
+          "start_equity": 10000.0,
+          "end_equity": 10000.0
+        },
+        "2024": {
+          "start_equity": 10000.0,
+          "end_equity": 9951.747094011338
+        },
+        "2025": {
+          "start_equity": 9951.747094011338,
+          "end_equity": 9902.588261216883
+        },
+        "2026": {
+          "start_equity": 9902.588261216883,
+          "end_equity": 9902.588261216883
+        }
+      },
+      "tape_source_unchanged": true,
+      "source_unchanged": true,
+      "funding_source_unchanged": true,
+      "elapsed_seconds": 85.25082229200001,
+      "win_rate_pct": 0.0,
+      "matches_parent_inputs": true,
+      "evidence_file": "10x_mmr0.01.json.gz",
+      "evidence_sha256": "52811d95531bc213dc2be30ccb17741828f867e95847868208d258c60774a211"
+    },
+    {
+      "leverage": 5,
+      "maintenance_rate_assumption": 0.01,
+      "complete": true,
+      "initial_equity": 10000.0,
+      "start": "2023-11-27T00:00:00+00:00",
+      "entry_cutoff": "2025-11-26T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "symbols": [
+        "1000BONKUSDT",
+        "1000PEPEUSDT",
+        "AAVEUSDT",
+        "ADAUSDT",
+        "APEUSDT",
+        "APTUSDT",
+        "ARBUSDT",
+        "ATOMUSDT",
+        "AVAXUSDT",
+        "AXSUSDT",
+        "BCHUSDT",
+        "BLURUSDT",
+        "BNBUSDT",
+        "BTCUSDT",
+        "DOGEUSDT",
+        "DOTUSDT",
+        "DYDXUSDT",
+        "EGLDUSDT",
+        "ETCUSDT",
+        "ETHUSDT",
+        "FILUSDT",
+        "GALAUSDT",
+        "GMTUSDT",
+        "GRTUSDT",
+        "ILVUSDT",
+        "IMXUSDT",
+        "INJUSDT",
+        "LDOUSDT",
+        "LINKUSDT",
+        "LTCUSDT",
+        "LUNA2USDT",
+        "MINAUSDT",
+        "NEARUSDT",
+        "OPUSDT",
+        "ORDIUSDT",
+        "RUNEUSDT",
+        "SANDUSDT",
+        "SHIB1000USDT",
+        "SKLUSDT",
+        "SNXUSDT",
+        "SOLUSDT",
+        "STORJUSDT",
+        "STXUSDT",
+        "SUIUSDT",
+        "SUSHIUSDT",
+        "TRBUSDT",
+        "UNIUSDT",
+        "WLDUSDT",
+        "XRPUSDT",
+        "ZRXUSDT"
+      ],
+      "profile": "cautious",
+      "sides": [
+        "Buy",
+        "Sell"
+      ],
+      "accepted": 41,
+      "filled": 37,
+      "open": 0,
+      "expired": 4,
+      "closed": 37,
+      "wins": 7,
+      "losses": 30,
+      "net": -315.34874572695026,
+      "total_fees": 10.301020881240936,
+      "funding_estimate": -10.547065966903755,
+      "net_equity_change": -315.34874572695117,
+      "net_return_pct": -3.1534874572695104,
+      "final_account": {
+        "equity": 9684.651254273049,
+        "wallet_balance": 9684.651254273049,
+        "cash": 9684.651254273049,
+        "available_cash": 9684.651254273049,
+        "open_margin": 0.0,
+        "initial_margin": 0.0,
+        "reserved_pending": 0.0,
+        "reserved_close_fees": 0.0,
+        "realized_net": -315.34874572695026,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "max_drawdown_pct": 3.755586594246685,
+      "max_reserved_margin_usdt": 179.53557704089772,
+      "average_reserved_margin_usdt": 31.347093310463645,
+      "minimum_available_cash": 9626.003966408714,
+      "max_gross_notional_usdt": 932.4919722,
+      "maximum_positions_and_reservations": 3,
+      "holding_days_median": 9.25,
+      "holding_days_max": 89.75,
+      "risk_rejections": {
+        "ADVERSE_FUNDING": 1363,
+        "RR_TARGET1": 4030,
+        "RR_BLENDED": 5611,
+        "RR_ROUNDED_SPLIT": 5611,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 9401,
+        "ENTRY_OUTSIDE_ZONE": 288,
+        "SYMBOL_ALREADY_EXPOSED": 869,
+        "BUCKET_POSITION_CAP": 5588
+      },
+      "unique_risk_rejections": {
+        "ADVERSE_FUNDING": 54,
+        "RR_TARGET1": 119,
+        "RR_BLENDED": 144,
+        "RR_ROUNDED_SPLIT": 144,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 194,
+        "ENTRY_OUTSIDE_ZONE": 15,
+        "SYMBOL_ALREADY_EXPOSED": 8,
+        "BUCKET_POSITION_CAP": 128
+      },
+      "liquidation_stress_flagged_trades": 0,
+      "actual_liquidations": "Not observable: no historical mark prices / risk tiers",
+      "per_side": {
+        "Buy": {
+          "closed": 22,
+          "wins": 5,
+          "losses": 17,
+          "net": -100.0680091458479
+        },
+        "Sell": {
+          "closed": 15,
+          "wins": 2,
+          "losses": 13,
+          "net": -215.28073658110233
+        }
+      },
+      "per_symbol": {
+        "1000BONKUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "1000PEPEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AAVEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ADAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ARBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ATOMUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -36.57743003943158
+        },
+        "AVAXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AXSUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -24.66047846243245
+        },
+        "BCHUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BLURUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BNBUSDT": {
+          "closed": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 116.92723160125799
+        },
+        "BTCUSDT": {
+          "closed": 6,
+          "wins": 1,
+          "losses": 5,
+          "net": -112.17729238183946
+        },
+        "DOGEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DOTUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -45.2681244702616
+        },
+        "DYDXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "EGLDUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -36.982822772886465
+        },
+        "ETCUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.586999704061082
+        },
+        "ETHUSDT": {
+          "closed": 4,
+          "wins": 1,
+          "losses": 3,
+          "net": 2.7283075490455033
+        },
+        "FILUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GALAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GMTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GRTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ILVUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -24.3982600369897
+        },
+        "IMXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "INJUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LDOUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LINKUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -37.08929917021961
+        },
+        "LTCUSDT": {
+          "closed": 5,
+          "wins": 2,
+          "losses": 3,
+          "net": -3.157334572964828
+        },
+        "LUNA2USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "MINAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "NEARUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "OPUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -14.442528320006936
+        },
+        "ORDIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "RUNEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SANDUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SHIB1000USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SKLUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SNXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SOLUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.694941110472385
+        },
+        "STORJUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "STXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SUIUSDT": {
+          "closed": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 21.243326093974833
+        },
+        "SUSHIUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.917554637660006
+        },
+        "TRBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "UNIUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -22.480171579486388
+        },
+        "WLDUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.72388291096278
+        },
+        "XRPUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -49.09049080155326
+        },
+        "ZRXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        }
+      },
+      "calendar_equity": {
+        "2023": {
+          "start_equity": 10000.0,
+          "end_equity": 10023.263447710548
+        },
+        "2024": {
+          "start_equity": 10023.263447710548,
+          "end_equity": 9928.808614124962
+        },
+        "2025": {
+          "start_equity": 9928.808614124962,
+          "end_equity": 9684.651254273049
+        },
+        "2026": {
+          "start_equity": 9684.651254273049,
+          "end_equity": 9684.651254273049
+        }
+      },
+      "tape_source_unchanged": true,
+      "source_unchanged": true,
+      "funding_source_unchanged": true,
+      "elapsed_seconds": 232.398116208,
+      "win_rate_pct": 18.91891891891892,
+      "matches_parent_inputs": true,
+      "evidence_file": "5x_mmr0.01.json.gz",
+      "evidence_sha256": "84737c36fb239f7d8b0818df76fe3f4013ba218bf62233543f57cf2cce1364c6"
+    },
+    {
+      "leverage": 5,
+      "maintenance_rate_assumption": 0.005,
+      "complete": true,
+      "initial_equity": 10000.0,
+      "start": "2023-11-27T00:00:00+00:00",
+      "entry_cutoff": "2025-11-26T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "symbols": [
+        "1000BONKUSDT",
+        "1000PEPEUSDT",
+        "AAVEUSDT",
+        "ADAUSDT",
+        "APEUSDT",
+        "APTUSDT",
+        "ARBUSDT",
+        "ATOMUSDT",
+        "AVAXUSDT",
+        "AXSUSDT",
+        "BCHUSDT",
+        "BLURUSDT",
+        "BNBUSDT",
+        "BTCUSDT",
+        "DOGEUSDT",
+        "DOTUSDT",
+        "DYDXUSDT",
+        "EGLDUSDT",
+        "ETCUSDT",
+        "ETHUSDT",
+        "FILUSDT",
+        "GALAUSDT",
+        "GMTUSDT",
+        "GRTUSDT",
+        "ILVUSDT",
+        "IMXUSDT",
+        "INJUSDT",
+        "LDOUSDT",
+        "LINKUSDT",
+        "LTCUSDT",
+        "LUNA2USDT",
+        "MINAUSDT",
+        "NEARUSDT",
+        "OPUSDT",
+        "ORDIUSDT",
+        "RUNEUSDT",
+        "SANDUSDT",
+        "SHIB1000USDT",
+        "SKLUSDT",
+        "SNXUSDT",
+        "SOLUSDT",
+        "STORJUSDT",
+        "STXUSDT",
+        "SUIUSDT",
+        "SUSHIUSDT",
+        "TRBUSDT",
+        "UNIUSDT",
+        "WLDUSDT",
+        "XRPUSDT",
+        "ZRXUSDT"
+      ],
+      "profile": "cautious",
+      "sides": [
+        "Buy",
+        "Sell"
+      ],
+      "accepted": 41,
+      "filled": 37,
+      "open": 0,
+      "expired": 4,
+      "closed": 37,
+      "wins": 7,
+      "losses": 30,
+      "net": -315.2959424311642,
+      "total_fees": 10.260190144780642,
+      "funding_estimate": -10.467943131575511,
+      "net_equity_change": -315.2959424311648,
+      "net_return_pct": -3.152959424311652,
+      "final_account": {
+        "equity": 9684.704057568835,
+        "wallet_balance": 9684.704057568835,
+        "cash": 9684.704057568835,
+        "available_cash": 9684.704057568835,
+        "open_margin": 0.0,
+        "initial_margin": 0.0,
+        "reserved_pending": 0.0,
+        "reserved_close_fees": 0.0,
+        "realized_net": -315.2959424311642,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "max_drawdown_pct": 3.7550618440935324,
+      "max_reserved_margin_usdt": 179.5359838448046,
+      "average_reserved_margin_usdt": 31.344593984825863,
+      "minimum_available_cash": 9626.067146028001,
+      "max_gross_notional_usdt": 932.4940738800001,
+      "maximum_positions_and_reservations": 3,
+      "holding_days_median": 9.25,
+      "holding_days_max": 89.75,
+      "risk_rejections": {
+        "ADVERSE_FUNDING": 1363,
+        "RR_TARGET1": 4030,
+        "RR_ROUNDED_SPLIT": 5611,
+        "RR_BLENDED": 5611,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 9366,
+        "ENTRY_OUTSIDE_ZONE": 288,
+        "SYMBOL_ALREADY_EXPOSED": 869,
+        "BUCKET_POSITION_CAP": 5607
+      },
+      "unique_risk_rejections": {
+        "ADVERSE_FUNDING": 54,
+        "RR_TARGET1": 119,
+        "RR_ROUNDED_SPLIT": 144,
+        "RR_BLENDED": 144,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 190,
+        "ENTRY_OUTSIDE_ZONE": 15,
+        "SYMBOL_ALREADY_EXPOSED": 8,
+        "BUCKET_POSITION_CAP": 129
+      },
+      "liquidation_stress_flagged_trades": 0,
+      "actual_liquidations": "Not observable: no historical mark prices / risk tiers",
+      "per_side": {
+        "Buy": {
+          "closed": 22,
+          "wins": 5,
+          "losses": 17,
+          "net": -100.04080816846525
+        },
+        "Sell": {
+          "closed": 15,
+          "wins": 2,
+          "losses": 13,
+          "net": -215.25513426269896
+        }
+      },
+      "per_symbol": {
+        "1000BONKUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "1000PEPEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AAVEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ADAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ARBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ATOMUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -36.57769482440111
+        },
+        "AVAXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AXSUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -24.66064413773238
+        },
+        "BCHUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BLURUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BNBUSDT": {
+          "closed": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 116.92723160125799
+        },
+        "BTCUSDT": {
+          "closed": 6,
+          "wins": 1,
+          "losses": 5,
+          "net": -112.17729238183946
+        },
+        "DOGEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DOTUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -45.26843675431529
+        },
+        "DYDXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "EGLDUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -36.98304939765115
+        },
+        "ETCUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.586999704061082
+        },
+        "ETHUSDT": {
+          "closed": 4,
+          "wins": 1,
+          "losses": 3,
+          "net": 2.7283075490455033
+        },
+        "FILUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GALAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GMTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GRTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ILVUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -24.3612662516006
+        },
+        "IMXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "INJUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LDOUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LINKUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -37.09999729649892
+        },
+        "LTCUSDT": {
+          "closed": 5,
+          "wins": 2,
+          "losses": 3,
+          "net": -3.167704711576821
+        },
+        "LUNA2USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "MINAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "NEARUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "OPUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -14.442621290029766
+        },
+        "ORDIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "RUNEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SANDUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SHIB1000USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SKLUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SNXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SOLUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.694941110472385
+        },
+        "STORJUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "STXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SUIUSDT": {
+          "closed": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 21.243326093974833
+        },
+        "SUSHIUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.879005269620471
+        },
+        "TRBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "UNIUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -22.48033489104645
+        },
+        "WLDUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.72397378870032
+        },
+        "XRPUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -49.09084586589631
+        },
+        "ZRXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        }
+      },
+      "calendar_equity": {
+        "2023": {
+          "start_equity": 10000.0,
+          "end_equity": 10023.263447710548
+        },
+        "2024": {
+          "start_equity": 10023.263447710548,
+          "end_equity": 9928.883506554652
+        },
+        "2025": {
+          "start_equity": 9928.883506554652,
+          "end_equity": 9684.704057568835
+        },
+        "2026": {
+          "start_equity": 9684.704057568835,
+          "end_equity": 9684.704057568835
+        }
+      },
+      "tape_source_unchanged": true,
+      "source_unchanged": true,
+      "funding_source_unchanged": true,
+      "elapsed_seconds": 233.33196416700002,
+      "win_rate_pct": 18.91891891891892,
+      "matches_parent_inputs": true,
+      "evidence_file": "5x_mmr0.005.json.gz",
+      "evidence_sha256": "beae0be62ee6facdc1c59330fd8d00344d0ddd6db085d48af85608359164edcd"
+    },
+    {
+      "leverage": 10,
+      "maintenance_rate_assumption": 0.025,
+      "complete": true,
+      "initial_equity": 10000.0,
+      "start": "2023-11-27T00:00:00+00:00",
+      "entry_cutoff": "2025-11-26T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "symbols": [
+        "1000BONKUSDT",
+        "1000PEPEUSDT",
+        "AAVEUSDT",
+        "ADAUSDT",
+        "APEUSDT",
+        "APTUSDT",
+        "ARBUSDT",
+        "ATOMUSDT",
+        "AVAXUSDT",
+        "AXSUSDT",
+        "BCHUSDT",
+        "BLURUSDT",
+        "BNBUSDT",
+        "BTCUSDT",
+        "DOGEUSDT",
+        "DOTUSDT",
+        "DYDXUSDT",
+        "EGLDUSDT",
+        "ETCUSDT",
+        "ETHUSDT",
+        "FILUSDT",
+        "GALAUSDT",
+        "GMTUSDT",
+        "GRTUSDT",
+        "ILVUSDT",
+        "IMXUSDT",
+        "INJUSDT",
+        "LDOUSDT",
+        "LINKUSDT",
+        "LTCUSDT",
+        "LUNA2USDT",
+        "MINAUSDT",
+        "NEARUSDT",
+        "OPUSDT",
+        "ORDIUSDT",
+        "RUNEUSDT",
+        "SANDUSDT",
+        "SHIB1000USDT",
+        "SKLUSDT",
+        "SNXUSDT",
+        "SOLUSDT",
+        "STORJUSDT",
+        "STXUSDT",
+        "SUIUSDT",
+        "SUSHIUSDT",
+        "TRBUSDT",
+        "UNIUSDT",
+        "WLDUSDT",
+        "XRPUSDT",
+        "ZRXUSDT"
+      ],
+      "profile": "cautious",
+      "sides": [
+        "Buy",
+        "Sell"
+      ],
+      "accepted": 6,
+      "filled": 6,
+      "open": 0,
+      "expired": 0,
+      "closed": 6,
+      "wins": 0,
+      "losses": 6,
+      "net": -70.23368519027812,
+      "total_fees": 2.4825443413800325,
+      "funding_estimate": -0.4288368345623779,
+      "net_equity_change": -70.23368519027827,
+      "net_return_pct": -0.702336851902785,
+      "final_account": {
+        "equity": 9929.766314809722,
+        "wallet_balance": 9929.766314809722,
+        "cash": 9929.766314809722,
+        "available_cash": 9929.766314809722,
+        "open_margin": 0.0,
+        "initial_margin": 0.0,
+        "reserved_pending": 0.0,
+        "reserved_close_fees": 0.0,
+        "realized_net": -70.23368519027812,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "max_drawdown_pct": 0.7856870723323195,
+      "max_reserved_margin_usdt": 73.63750416320892,
+      "average_reserved_margin_usdt": 0.661083453269002,
+      "minimum_available_cash": 9889.045221651711,
+      "max_gross_notional_usdt": 721.6374342400001,
+      "maximum_positions_and_reservations": 2,
+      "holding_days_median": 0.6666666666666666,
+      "holding_days_max": 12.75,
+      "risk_rejections": {
+        "ADVERSE_FUNDING": 1363,
+        "RR_TARGET1": 4176,
+        "RR_BLENDED": 5940,
+        "RR_ROUNDED_SPLIT": 5942,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 15800,
+        "ENTRY_OUTSIDE_ZONE": 288,
+        "BUCKET_POSITION_CAP": 2
+      },
+      "unique_risk_rejections": {
+        "ADVERSE_FUNDING": 54,
+        "RR_TARGET1": 128,
+        "RR_BLENDED": 150,
+        "RR_ROUNDED_SPLIT": 150,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 287,
+        "ENTRY_OUTSIDE_ZONE": 15,
+        "BUCKET_POSITION_CAP": 2
+      },
+      "liquidation_stress_flagged_trades": 0,
+      "actual_liquidations": "Not observable: no historical mark prices / risk tiers",
+      "per_side": {
+        "Buy": {
+          "closed": 4,
+          "wins": 0,
+          "losses": 4,
+          "net": -45.98013823266416
+        },
+        "Sell": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -24.25354695761396
+        }
+      },
+      "per_symbol": {
+        "1000BONKUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "1000PEPEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AAVEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ADAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ARBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ATOMUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.160082491045538
+        },
+        "AVAXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AXSUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BCHUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BLURUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BNBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BTCUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DOGEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DOTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DYDXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "EGLDUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.984591487745108
+        },
+        "ETCUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.279823172907886
+        },
+        "ETHUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.810107290420035
+        },
+        "FILUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GALAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GMTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GRTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ILVUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "IMXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "INJUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LDOUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LINKUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LTCUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LUNA2USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "MINAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "NEARUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "OPUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ORDIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "RUNEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SANDUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SHIB1000USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SKLUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SNXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SOLUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "STORJUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.268955469868851
+        },
+        "STXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SUIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SUSHIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "TRBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "UNIUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -8.730125278290705
+        },
+        "WLDUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "XRPUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ZRXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        }
+      },
+      "calendar_equity": {
+        "2023": {
+          "start_equity": 10000.0,
+          "end_equity": 10000.0
+        },
+        "2024": {
+          "start_equity": 10000.0,
+          "end_equity": 9962.925478048926
+        },
+        "2025": {
+          "start_equity": 9962.925478048926,
+          "end_equity": 9929.766314809722
+        },
+        "2026": {
+          "start_equity": 9929.766314809722,
+          "end_equity": 9929.766314809722
+        }
+      },
+      "tape_source_unchanged": true,
+      "source_unchanged": true,
+      "funding_source_unchanged": true,
+      "elapsed_seconds": 58.404331375,
+      "win_rate_pct": 0.0,
+      "matches_parent_inputs": true,
+      "evidence_file": "10x_mmr0.025.json.gz",
+      "evidence_sha256": "47643252f6684947cc1b560597a2b65f4663f9a2c4384e6c355e43d3e399a5b1"
+    },
+    {
+      "leverage": 5,
+      "maintenance_rate_assumption": 0.025,
+      "complete": true,
+      "initial_equity": 10000.0,
+      "start": "2023-11-27T00:00:00+00:00",
+      "entry_cutoff": "2025-11-26T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "symbols": [
+        "1000BONKUSDT",
+        "1000PEPEUSDT",
+        "AAVEUSDT",
+        "ADAUSDT",
+        "APEUSDT",
+        "APTUSDT",
+        "ARBUSDT",
+        "ATOMUSDT",
+        "AVAXUSDT",
+        "AXSUSDT",
+        "BCHUSDT",
+        "BLURUSDT",
+        "BNBUSDT",
+        "BTCUSDT",
+        "DOGEUSDT",
+        "DOTUSDT",
+        "DYDXUSDT",
+        "EGLDUSDT",
+        "ETCUSDT",
+        "ETHUSDT",
+        "FILUSDT",
+        "GALAUSDT",
+        "GMTUSDT",
+        "GRTUSDT",
+        "ILVUSDT",
+        "IMXUSDT",
+        "INJUSDT",
+        "LDOUSDT",
+        "LINKUSDT",
+        "LTCUSDT",
+        "LUNA2USDT",
+        "MINAUSDT",
+        "NEARUSDT",
+        "OPUSDT",
+        "ORDIUSDT",
+        "RUNEUSDT",
+        "SANDUSDT",
+        "SHIB1000USDT",
+        "SKLUSDT",
+        "SNXUSDT",
+        "SOLUSDT",
+        "STORJUSDT",
+        "STXUSDT",
+        "SUIUSDT",
+        "SUSHIUSDT",
+        "TRBUSDT",
+        "UNIUSDT",
+        "WLDUSDT",
+        "XRPUSDT",
+        "ZRXUSDT"
+      ],
+      "profile": "cautious",
+      "sides": [
+        "Buy",
+        "Sell"
+      ],
+      "accepted": 37,
+      "filled": 34,
+      "open": 0,
+      "expired": 3,
+      "closed": 34,
+      "wins": 7,
+      "losses": 27,
+      "net": -243.1759104794114,
+      "total_fees": 9.947292294369047,
+      "funding_estimate": -10.53935047438491,
+      "net_equity_change": -243.17591047941096,
+      "net_return_pct": -2.4317591047941067,
+      "final_account": {
+        "equity": 9756.824089520589,
+        "wallet_balance": 9756.824089520589,
+        "cash": 9756.824089520589,
+        "available_cash": 9756.824089520589,
+        "open_margin": 0.0,
+        "initial_margin": 0.0,
+        "reserved_pending": 0.0,
+        "reserved_close_fees": 0.0,
+        "realized_net": -243.1759104794114,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "max_drawdown_pct": 3.2000000655096006,
+      "max_reserved_margin_usdt": 184.0041629966105,
+      "average_reserved_margin_usdt": 30.14964659603181,
+      "minimum_available_cash": 9675.733408622908,
+      "max_gross_notional_usdt": 957.63441188,
+      "maximum_positions_and_reservations": 3,
+      "holding_days_median": 10.5625,
+      "holding_days_max": 85.08333333333333,
+      "risk_rejections": {
+        "ADVERSE_FUNDING": 1363,
+        "RR_TARGET1": 4090,
+        "RR_ROUNDED_SPLIT": 5770,
+        "RR_BLENDED": 5770,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 10355,
+        "ENTRY_OUTSIDE_ZONE": 288,
+        "SYMBOL_ALREADY_EXPOSED": 686,
+        "BUCKET_POSITION_CAP": 4517
+      },
+      "unique_risk_rejections": {
+        "ADVERSE_FUNDING": 54,
+        "RR_TARGET1": 121,
+        "RR_ROUNDED_SPLIT": 145,
+        "RR_BLENDED": 145,
+        "ESTIMATED_LIQUIDATION_BUFFER_INSUFFICIENT": 223,
+        "ENTRY_OUTSIDE_ZONE": 15,
+        "SYMBOL_ALREADY_EXPOSED": 7,
+        "BUCKET_POSITION_CAP": 109
+      },
+      "liquidation_stress_flagged_trades": 0,
+      "actual_liquidations": "Not observable: no historical mark prices / risk tiers",
+      "per_side": {
+        "Buy": {
+          "closed": 21,
+          "wins": 5,
+          "losses": 16,
+          "net": -87.65789619463426
+        },
+        "Sell": {
+          "closed": 13,
+          "wins": 2,
+          "losses": 11,
+          "net": -155.51801428477717
+        }
+      },
+      "per_symbol": {
+        "1000BONKUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "1000PEPEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AAVEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ADAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "APTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ARBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ATOMUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.245748360896854
+        },
+        "AVAXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "AXSUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -24.673359717001812
+        },
+        "BCHUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BLURUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "BNBUSDT": {
+          "closed": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 117.23307337916049
+        },
+        "BTCUSDT": {
+          "closed": 6,
+          "wins": 1,
+          "losses": 5,
+          "net": -112.17729238183946
+        },
+        "DOGEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "DOTUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -45.32682964834494
+        },
+        "DYDXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "EGLDUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.311176120611018
+        },
+        "ETCUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.57609569090262
+        },
+        "ETHUSDT": {
+          "closed": 4,
+          "wins": 1,
+          "losses": 3,
+          "net": 2.3426773425874394
+        },
+        "FILUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GALAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GMTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "GRTUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ILVUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "IMXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "INJUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LDOUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "LINKUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -36.909389119038416
+        },
+        "LTCUSDT": {
+          "closed": 6,
+          "wins": 2,
+          "losses": 4,
+          "net": -30.74519615240839
+        },
+        "LUNA2USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "MINAUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "NEARUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "OPUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "ORDIUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "RUNEUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SANDUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SHIB1000USDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SKLUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SNXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SOLUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.302740294710052
+        },
+        "STORJUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.19763425390818
+        },
+        "STXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "SUIUSDT": {
+          "closed": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 21.244162984872887
+        },
+        "SUSHIUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.932352895740634
+        },
+        "TRBUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        },
+        "UNIUSDT": {
+          "closed": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -22.7006033286699
+        },
+        "WLDUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -12.71980855906299
+        },
+        "XRPUSDT": {
+          "closed": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -25.177597662896996
+        },
+        "ZRXUSDT": {
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "net": 0
+        }
+      },
+      "calendar_equity": {
+        "2023": {
+          "start_equity": 10000.0,
+          "end_equity": 10023.263447710548
+        },
+        "2024": {
+          "start_equity": 10023.263447710548,
+          "end_equity": 9950.334032063278
+        },
+        "2025": {
+          "start_equity": 9950.334032063278,
+          "end_equity": 9756.824089520589
+        },
+        "2026": {
+          "start_equity": 9756.824089520589,
+          "end_equity": 9756.824089520589
+        }
+      },
+      "tape_source_unchanged": true,
+      "source_unchanged": true,
+      "funding_source_unchanged": true,
+      "elapsed_seconds": 143.72871391700002,
+      "win_rate_pct": 20.58823529411765,
+      "matches_parent_inputs": true,
+      "evidence_file": "5x_mmr0.025.json.gz",
+      "evidence_sha256": "b171dae39fa187b56004b16a121e3265964d9dee9b854cf2cb7e5fd9a0fda052"
+    }
+  ],
+  "errors": [],
+  "code_unchanged": true,
+  "protocol_unchanged": true,
+  "manifest_unchanged": true,
+  "all_inputs_unchanged": true,
+  "selection_audit_unchanged": true,
+  "complete": true,
+  "finished_at": "2026-10-05T14:54:03.618660+00:00"
+}

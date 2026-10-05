@@ -1,0 +1,294 @@
+{
+  "complete": true,
+  "independent_of_bot_accounting": true,
+  "arms": [
+    {
+      "leverage": 10,
+      "maintenance_rate": 0.005,
+      "complete": true,
+      "independent_final_account": {
+        "equity": 9902.981572235141,
+        "wallet_balance": 9902.981572235141,
+        "cash": 9902.981572235141,
+        "available_cash": 9902.981572235141,
+        "initial_margin": 0.0,
+        "open_margin": 0.0,
+        "reserved_close_fees": 0.0,
+        "reserved_pending": 0,
+        "realized_net": -97.01842776485864,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "per_side_cashflows": {
+        "Buy": {
+          "gross": -55.91594479937597,
+          "fees": 1.686885315189424,
+          "funding": -3.913305494042405,
+          "net": -61.516135608607804
+        },
+        "Sell": {
+          "gross": -35.853917721885765,
+          "fees": 1.0780741249850738,
+          "funding": 1.4296996907007586,
+          "net": -35.502292156170085
+        }
+      },
+      "counts": {
+        "filled": 8,
+        "open": 0,
+        "closed": 8,
+        "expired": 1
+      },
+      "daily_snapshots_checked": 911,
+      "hourly_snapshots_checked": 21841,
+      "accepted_cap_guard_checks": 9,
+      "stress_flags": 0,
+      "free_cash_shortfall": false,
+      "minimum_available_cash": 9861.609394379253,
+      "actual_liquidation_verified": false
+    },
+    {
+      "leverage": 10,
+      "maintenance_rate": 0.01,
+      "complete": true,
+      "independent_final_account": {
+        "equity": 9902.588261216857,
+        "wallet_balance": 9902.588261216857,
+        "cash": 9902.588261216857,
+        "available_cash": 9902.588261216857,
+        "initial_margin": 0.0,
+        "open_margin": 0.0,
+        "reserved_close_fees": 0.0,
+        "reserved_pending": 0,
+        "realized_net": -97.41173878314294,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "per_side_cashflows": {
+        "Buy": {
+          "gross": -55.890361725421336,
+          "fees": 1.719825941205924,
+          "funding": -4.2888359393715,
+          "net": -61.899023605998764
+        },
+        "Sell": {
+          "gross": -35.86394647369123,
+          "fees": 1.078468394128098,
+          "funding": 1.4296996907007586,
+          "net": -35.512715177118565
+        }
+      },
+      "counts": {
+        "filled": 8,
+        "open": 0,
+        "closed": 8,
+        "expired": 1
+      },
+      "daily_snapshots_checked": 911,
+      "hourly_snapshots_checked": 21841,
+      "accepted_cap_guard_checks": 9,
+      "stress_flags": 0,
+      "free_cash_shortfall": false,
+      "minimum_available_cash": 9858.49293020389,
+      "actual_liquidation_verified": false
+    },
+    {
+      "leverage": 5,
+      "maintenance_rate": 0.01,
+      "complete": true,
+      "independent_final_account": {
+        "equity": 9684.65125427301,
+        "wallet_balance": 9684.65125427301,
+        "cash": 9684.65125427301,
+        "available_cash": 9684.65125427301,
+        "initial_margin": 0.0,
+        "open_margin": 0.0,
+        "reserved_close_fees": 0.0,
+        "reserved_pending": 0,
+        "realized_net": -315.34874572698936,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "per_side_cashflows": {
+        "Buy": {
+          "gross": -76.44705737336602,
+          "fees": 6.007500930738465,
+          "funding": -17.613450841743393,
+          "net": -100.0680091458479
+        },
+        "Sell": {
+          "gross": -218.0536015054395,
+          "fees": 4.2935199505024695,
+          "funding": 7.066384874839637,
+          "net": -215.28073658110233
+        }
+      },
+      "counts": {
+        "filled": 37,
+        "open": 0,
+        "closed": 37,
+        "expired": 4
+      },
+      "daily_snapshots_checked": 911,
+      "hourly_snapshots_checked": 21841,
+      "accepted_cap_guard_checks": 41,
+      "stress_flags": 0,
+      "free_cash_shortfall": false,
+      "minimum_available_cash": 9626.00396640866,
+      "actual_liquidation_verified": false
+    },
+    {
+      "leverage": 5,
+      "maintenance_rate": 0.005,
+      "complete": true,
+      "independent_final_account": {
+        "equity": 9684.70405756857,
+        "wallet_balance": 9684.70405756857,
+        "cash": 9684.70405756857,
+        "available_cash": 9684.70405756857,
+        "initial_margin": 0.0,
+        "open_margin": 0.0,
+        "reserved_close_fees": 0.0,
+        "reserved_pending": 0,
+        "realized_net": -315.2959424314304,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "per_side_cashflows": {
+        "Buy": {
+          "gross": -76.48907898141303,
+          "fees": 5.980615145995408,
+          "funding": -17.57111404105681,
+          "net": -100.04080816846525
+        },
+        "Sell": {
+          "gross": -218.07873017339503,
+          "fees": 4.279574998785235,
+          "funding": 7.103170909481299,
+          "net": -215.25513426269896
+        }
+      },
+      "counts": {
+        "filled": 37,
+        "open": 0,
+        "closed": 37,
+        "expired": 4
+      },
+      "daily_snapshots_checked": 911,
+      "hourly_snapshots_checked": 21841,
+      "accepted_cap_guard_checks": 41,
+      "stress_flags": 0,
+      "free_cash_shortfall": false,
+      "minimum_available_cash": 9626.067146027915,
+      "actual_liquidation_verified": false
+    },
+    {
+      "leverage": 10,
+      "maintenance_rate": 0.025,
+      "complete": true,
+      "independent_final_account": {
+        "equity": 9929.766314809716,
+        "wallet_balance": 9929.766314809716,
+        "cash": 9929.766314809716,
+        "available_cash": 9929.766314809716,
+        "initial_margin": 0.0,
+        "open_margin": 0.0,
+        "reserved_close_fees": 0.0,
+        "reserved_pending": 0,
+        "realized_net": -70.23368519028372,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "per_side_cashflows": {
+        "Buy": {
+          "gross": -43.76787594704381,
+          "fees": 1.5438584110373006,
+          "funding": -0.6684038745830556,
+          "net": -45.98013823266416
+        },
+        "Sell": {
+          "gross": -23.554428067291905,
+          "fees": 0.938685930342732,
+          "funding": 0.2395670400206777,
+          "net": -24.25354695761396
+        }
+      },
+      "counts": {
+        "filled": 6,
+        "open": 0,
+        "closed": 6,
+        "expired": 0
+      },
+      "daily_snapshots_checked": 911,
+      "hourly_snapshots_checked": 21841,
+      "accepted_cap_guard_checks": 6,
+      "stress_flags": 0,
+      "free_cash_shortfall": false,
+      "minimum_available_cash": 9889.045221651706,
+      "actual_liquidation_verified": false
+    },
+    {
+      "leverage": 5,
+      "maintenance_rate": 0.025,
+      "complete": true,
+      "independent_final_account": {
+        "equity": 9756.824089520485,
+        "wallet_balance": 9756.824089520485,
+        "cash": 9756.824089520485,
+        "available_cash": 9756.824089520485,
+        "initial_margin": 0.0,
+        "open_margin": 0.0,
+        "reserved_close_fees": 0.0,
+        "reserved_pending": 0,
+        "realized_net": -243.17591047951464,
+        "unrealized": 0.0,
+        "gross_notional": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "per_side_cashflows": {
+        "Buy": {
+          "gross": -64.35596338730242,
+          "fees": 5.970401906161222,
+          "funding": -17.331530901170602,
+          "net": -87.65789619463426
+        },
+        "Sell": {
+          "gross": -158.33330432335507,
+          "fees": 3.976890388207824,
+          "funding": 6.792180426785694,
+          "net": -155.51801428477717
+        }
+      },
+      "counts": {
+        "filled": 34,
+        "open": 0,
+        "closed": 34,
+        "expired": 3
+      },
+      "daily_snapshots_checked": 911,
+      "hourly_snapshots_checked": 21841,
+      "accepted_cap_guard_checks": 37,
+      "stress_flags": 0,
+      "free_cash_shortfall": false,
+      "minimum_available_cash": 9675.73340862281,
+      "actual_liquidation_verified": false
+    }
+  ],
+  "limitations": [
+    "Checks saved executions/accounting, not strategy validity or expected profit.",
+    "Reconciles all observed funding rows; source completeness remains unverified.",
+    "Reproduces last-price stress flags; cannot establish actual liquidations."
+  ],
+  "parent_worker_inputs_verified": true
+}

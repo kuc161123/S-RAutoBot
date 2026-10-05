@@ -1,0 +1,80 @@
+{
+  "primary_maintenance_assumption": 0.01,
+  "filled_common_ids": 7,
+  "filled_5x_only": 30,
+  "filled_10x_only": 1,
+  "results": [
+    {
+      "leverage": 5,
+      "maintenance_rate_assumption": 0.005,
+      "net_return_pct": -3.152959424311652,
+      "net_equity_change": -315.2959424311648,
+      "closed": 37,
+      "wins": 7,
+      "losses": 30,
+      "max_drawdown_pct": 3.7550618440935324,
+      "max_reserved_margin_usdt": 179.5359838448046,
+      "open": 0
+    },
+    {
+      "leverage": 10,
+      "maintenance_rate_assumption": 0.005,
+      "net_return_pct": -0.9701842776477898,
+      "net_equity_change": -97.01842776477861,
+      "closed": 8,
+      "wins": 0,
+      "losses": 8,
+      "max_drawdown_pct": 1.4878310114080917,
+      "max_reserved_margin_usdt": 68.58508511462341,
+      "open": 0
+    },
+    {
+      "leverage": 5,
+      "maintenance_rate_assumption": 0.01,
+      "net_return_pct": -3.1534874572695104,
+      "net_equity_change": -315.34874572695117,
+      "closed": 37,
+      "wins": 7,
+      "losses": 30,
+      "max_drawdown_pct": 3.755586594246685,
+      "max_reserved_margin_usdt": 179.53557704089772,
+      "open": 0
+    },
+    {
+      "leverage": 10,
+      "maintenance_rate_assumption": 0.01,
+      "net_return_pct": -0.9741173878311749,
+      "net_equity_change": -97.41173878311747,
+      "closed": 8,
+      "wins": 0,
+      "losses": 8,
+      "max_drawdown_pct": 1.4917435625141473,
+      "max_reserved_margin_usdt": 71.63236242676493,
+      "open": 0
+    },
+    {
+      "leverage": 5,
+      "maintenance_rate_assumption": 0.025,
+      "net_return_pct": -2.4317591047941067,
+      "net_equity_change": -243.17591047941096,
+      "closed": 34,
+      "wins": 7,
+      "losses": 27,
+      "max_drawdown_pct": 3.2000000655096006,
+      "max_reserved_margin_usdt": 184.0041629966105,
+      "open": 0
+    },
+    {
+      "leverage": 10,
+      "maintenance_rate_assumption": 0.025,
+      "net_return_pct": -0.702336851902785,
+      "net_equity_change": -70.23368519027827,
+      "closed": 6,
+      "wins": 0,
+      "losses": 6,
+      "max_drawdown_pct": 0.7856870723323195,
+      "max_reserved_margin_usdt": 73.63750416320892,
+      "open": 0
+    }
+  ]
+}

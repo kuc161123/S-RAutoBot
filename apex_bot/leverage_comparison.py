@@ -191,7 +191,7 @@ def run_scenario(manifest, tapes_dir, leverage, maintenance_rate, *, progress=Fa
         )
         sources[symbol] = dict(meta, path=str(path), sha256=_sha(path))
 
-    trades, consumed, accepted = {}, set(), []
+    trades, consumed, accepted, rejected = {}, set(), [], []
     rejections, rejected_ids, stress = Counter(), {}, []
     equity_curve, yearly = [], {}
     peak = previous_equity = day_base = week_base = INITIAL
@@ -317,6 +317,15 @@ def run_scenario(manifest, tapes_dir, leverage, maintenance_rate, *, progress=Fa
                             reasons=["INSUFFICIENT_UNRESERVED_MARGIN"],
                         )
                 if not sizing["allowed"]:
+                    rejected.append(
+                        {
+                            "time": now,
+                            "opportunity_id": op.id,
+                            "symbol": op.symbol,
+                            "sizing": sizing,
+                            "account_before": account,
+                        }
+                    )
                     for reason in set(sizing["reasons"]):
                         rejections[reason] += 1
                         rejected_ids.setdefault(reason, set()).add(op.id)
@@ -433,6 +442,7 @@ def run_scenario(manifest, tapes_dir, leverage, maintenance_rate, *, progress=Fa
         trades=all_trades,
         daily_equity=equity_curve,
         accepted_evidence=accepted,
+        rejected_evidence=rejected,
         source=sources,
         funding_source={s: f[3] for s, f in funding.items()},
         tape_source=tape_sources,
@@ -543,6 +553,7 @@ def main():
                         "trades",
                         "daily_equity",
                         "accepted_evidence",
+                        "rejected_evidence",
                         "source",
                         "funding_source",
                         "tape_source",

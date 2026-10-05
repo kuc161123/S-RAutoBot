@@ -3,6 +3,7 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 COPY requirements-apex.txt .
 RUN pip install --no-cache-dir -r requirements-apex.txt \
+    && python -c "import aiohttp, psycopg2, redis, google.auth" \
     && useradd --create-home --uid 10001 apex \
     && mkdir -p /app/data && chown apex:apex /app/data
 COPY apex_bot ./apex_bot

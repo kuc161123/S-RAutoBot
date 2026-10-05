@@ -1,0 +1,336 @@
+APEX TELEGRAM ADAPTER — STATIC AUDIT AND SERVICE HANDOFF
+Date: 2026-10-05
+
+Scope and authority
+-------------------
+Owned files: apex_bot/telegram.py, apex_bot/service.py,
+tests/apex/test_telegram.py, tests/apex/test_service.py and this report.
+Risk, accounting, runtime, configuration and execution belong to other agents;
+they were read for integration and were not edited in this task.
+Read autobot/utils/telegram_handler.py for the legacy audit; did not modify it.
+Read local Apex models, configuration, risk policy, storage and service contracts.
+No real Telegram client, getUpdates, chat read, command publication, webhook
+change, exchange call, production database, deployment or commit was performed.
+Tests use a fake HTTP session, both fixture and real Service implementations,
+and explicitly isolated temporary SQLite databases with initialize()+lease(). The constructor/import performs no network I/O and starts no workers.
+
+Legacy handler findings (local source, not a production-access audit)
+------------------------------------------------------------------
+1. Missing inbound authority checks. Command registration at lines 69–90 uses
+   CommandHandler without owner/chat filters. The handler has no configured
+   allowed-user set, effective_chat validation, or authorization guard on its
+   read and mutation handlers. chat_id is stored at line 39 and used for outbound
+   notifications, not incoming authorization. Reading private trading information
+   is therefore not protected within this handler either. effective_user is used
+   for logging, not authorization. No external deployment-level access control
+   was inspected or assumed to supply this missing authority.
+2. /start directly sets trading_enabled=True (1629–1634). /stop sets it False
+   (1614–1627). These paths show no persistent confirmation, freshness validation,
+   or resume health/hard-halt recheck. The adapter changes /start to navigation.
+3. /risk (1781 onward) applies settings directly. It substitutes balance=1000 on
+   a balance-fetch error (1785–1788). The percentage parser at 1885–1890 treats
+   inputs below 1 as fractions: the documented /risk 0.5 becomes 50%, then fails
+   its cap check. The new adapter uses explicit percentage points throughout:
+   /risk 0.25 means 0.25%, with a 0.05–1% bound also enforced by the service.
+4. /resetstats directly destroys accumulated stats (1942 onward).
+   /resetlifetime confirm uses a reusable text argument rather than an expiring,
+   actor-bound token (1977 onward). /setbalance changes P&L/drawdown baselines
+   (2240 onward); /setregime changes risk tiers (2317 onward). These controls are
+   intentionally absent from Apex Telegram. No live-mode enable command exists.
+5. /trail changes a runtime flag that resets on restart (1636 onward);
+   /learn alerts on|off also mutates state (1314 onward). Neither has an inbound
+   authority guard here. Neither mutation is exposed by the new adapter.
+6. Existing startup invokes PTB polling and drop_pending_updates=True (93–98).
+   send_message uses Markdown and retries exceptions with a fixed delay, without
+   a durable delivery receipt or explicit retry_after result (105–151). It logs
+   exception strings. Many command handlers echo exceptions to the chat, and
+   /debug reports broker response details (2064 onward). The new boundary never
+   echoes service/network exceptions or Telegram response descriptions.
+7. The old dashboard calls sync_with_exchange (229) and performs broker reads.
+   Apex Telegram instead reads the service's committed snapshot. This adapter
+   does not reconcile, discover account authority, or invoke the old bot.
+
+Public adapter interface
+------------------------
+TelegramController(session, token, chat_id, allowed_user_ids, service,
+                   *, bot_username="AutotradingBot222_bot")
+  The caller owns aiohttp.ClientSession and supplies the credential. No files or
+  ambient credential environment are read. Numeric chat AND positive integer
+  sender IDs are required for all reads and mutations. Empty/invalid authorization
+  disables polling, sends and publication. Configuration placeholders remain
+  disabled until the owner supplies real IDs; configuration was not changed.
+  bot_username is an EXPECTED identity, not proof. Constructor performs no I/O.
+
+await initialize(*, publish_commands=True)
+  Calls getMe and verifies is_bot, ID matching the token's numeric prefix, and the
+  exact expected username. Only then accepts /command@AutotradingBot222_bot.
+  Different usernames, case variants, malformed suffixes and commands addressed
+  to another bot are ignored. Before verification, addressed commands are ignored;
+  bare commands still work under chat/sender authorization. A failed verification
+  disables reads, mutations, polling and sends until verification succeeds.
+  publish_commands=False verifies identity without setMyCommands. The default
+  publishes supported commands scoped to the configured chat after verification.
+  Neither form starts polling, deletes pending updates nor changes webhooks.
+  Tests fake both APIs; no real identity check or publication occurred here.
+
+await poll_once(offset: int) -> int
+  GET getUpdates, timeout=20, allowed_updates=[message, callback_query]. All HTTP
+  requests have total=30/connect=5/socket-read=25 second bounds and no redirects.
+  Updates are processed in ID order, duplicate/covered IDs skipped. The parent
+  durably checkpoints the returned next offset. A transport failure provides
+  TelegramError.next_offset after the last completed update; the failed update
+  remains replayable. A local lock serializes polls but is not a distributed lease.
+
+await send(text, keyboard=None) -> str
+  Plain text only: no Markdown/HTML parsing or entities, link previews disabled.
+  Lossless chunks <=3900 UTF-16 units preserve emoji/whitespace; only the final
+  chunk carries buttons. Returns the final chunk's message ID. Chunks from separate
+  sends do not interleave. Writes/edits/callback acknowledgements share a serialized
+  limiter with >=1.05 seconds between starts, plus Telegram-requested cooldowns.
+  Limits are per controller; additional group/global quotas may still return 429.
+
+TelegramError exposes retry_after, status, uncertain, sent_message_ids and
+next_offset. retry_after is a finite nonnegative delay from Telegram parameters
+or Retry-After, or None. No internal retry occurs. Underlying credential-bearing
+exceptions are not printed/chained into displayed tracebacks. Service errors are
+not echoed. A failed response never falsely claims that a change did not commit.
+Parent HTTP tracing must also avoid credential-bearing URLs.
+
+Commands and callbacks
+----------------------
+/start [payload], /dashboard     committed dashboard; never resumes
+/help                           static plain-text help
+/status, /positions              corresponding committed snapshots
+/opportunities                  stored opportunity overview
+/why [SYMBOL], /waves [SYMBOL]    symbol details/evidence without raw identifiers
+/risk, /profile                  all five profiles, cash budgets and caps
+/performance                    realized, paired and directional/setup counts
+/research                       advisory research, sanitized prose
+/system                         operational health, outbox and MTM risk gates
+/telemetry                      system/risk gates plus performance summary
+/risk NUMBER[%]                 preview risk_pct in percentage points, 0.05–1
+/profile NAME                   preview profile selection (clears custom override)
+/pause, /resume                 preview paused=True/False; explicit confirmation
+No live-mode enable, baseline adjustment, destructive reset or legacy override
+command is exposed. /risk rejects cash formats, heuristic fractions, extra
+arguments, exponents, NaN and infinities. 0.25 always means 0.25%, not 25%.
+
+Profiles: ultra_cautious, cautious, balanced, aggressive, extreme. Their rates
+and caps come directly from current risk.PROFILES/HARD_CAPS. Current cap keys are
+heat_pct, bucket_pct, max_positions, max_per_bucket, single_notional_pct and
+gross_notional_pct. Effective caps use min(profile cap, hard cap), like assess.
+The previous cap-key mismatch is resolved without editing risk.py.
+
+Every generated button has a tested, authorized and acknowledged handler:
+  v:VIEW[:SYMBOL]       read/refresh, including telemetry
+  custom_risk          instructions for /risk NUMBER
+  p:profile:NAME       persistent preview only
+  p:paused:1 / :0      persistent pause/resume preview only
+  confirm:TOKEN        service.confirm_change(token, actor)
+  cancel:TOKEN         service.cancel_change(token, actor); durable revocation
+Callbacks use callback.from + callback.message.chat, never the bot author of the
+message. Inline callbacks without chat context, bot/anonymous senders and missing
+IDs fail closed. Denied callbacks receive only a generic acknowledgement; denied
+messages get no reply. An invalid/stale Telegram callback acknowledgement (400)
+ends handling without service execution. Views edit in place where possible;
+explicit 400/403 edit failures can fall back to sending, but uncertain errors,
+429 and server failures do not trigger speculative duplicate sends.
+
+Messages that propose mutations must be <=120 seconds old, dated, not forwarded,
+and no more than 5 seconds in the future. Mutation callbacks use the source
+message's edit_date/date. Confirm/cancel also require matching buttons on the
+actual preview markup. Cancel can revoke even an old preview. Telegram provides
+no click timestamp, so the server independently enforces token expiry.
+
+Integrated service contract
+---------------------------
+Service(config, store) uses await store.read()/store.update(tx_callback). All
+mutation methods independently validate actor=telegram:<chat_id>:<sender_id>
+against the configured chat and sender set. Personal IDs, actor strings and
+configured secrets are excluded/redacted from snapshot/proposal prose. Snapshots
+use whitelisted presentation fields, not raw account/evidence/config dictionaries.
+
+snapshot(view, symbol=None) -> str
+  Reads committed local state; does not contact any external service. In live and
+  testnet, cash uses finite positive ACTUAL USDT COIN EQUITY from account.equity,
+  account.as_of aged 0–30 seconds, and currency USDT. Explicit conflicting currency
+  is rejected; absent currency follows the BybitClient.equity() USDT contract.
+  This is not account-total USD equity, cashflow, or strategy profit. Missing,
+  stale, future-dated, zero or invalid equity never falls back to simulation
+  capital, wallet balance, an old cash figure or a made-up balance. Cash is then
+  explicitly unavailable and profile/risk/resume proposals are blocked.
+
+  Shadow mode clearly labels hypothetical starting capital in USDT, not current
+  account equity. Additional arm budgets use starting capital plus that arm's
+  realized closed P&L, matching the simulation sizing basis. Known context and
+  drawdown reductions are shown separately from base budgets; tier/setup effects
+  remain opportunity-specific, never invented. Risk/profile show all profile
+  base percentages and cash, every cap, the current override and entry blockers.
+
+propose_change(key, value, actor) -> {token, summary}
+  Allows only profile/risk_pct/paused, validating them independently of Telegram.
+  Renders old -> proposed profile, override, risk %, cash, paused state and ALL
+  caps. Includes equity source/time, known effective budget reductions, current
+  blockers, and prospective effects. Profile changes clear overrides. Pause
+  blocks new simulated/exchange entries; existing simulated trades continue and
+  exchange stops/position protection remain managed. Pending entries are not
+  cancelled. Resume never enables live mode.
+  A safe pause remains possible during stale/missing account/context/MTM data;
+  unavailable values are labelled explicitly. No proposal changes settings.
+  Persists a cryptographically random URL-safe token, actor, expiry=120 seconds,
+  settings version and a digest of policy, equity, mode, loss reference/circuits,
+  closed accounting and context multipliers. A new proposal supersedes only that
+  actor's older proposals. The full summary precedes the confirmation button.
+
+confirm_change(token, actor) -> str
+  In one leased Store transaction, validates actor/expiry/version/policy/binding,
+  consumes the token, applies at most once, and emits a stable audit/outbox event.
+  Expired/unknown/replayed/wrong-actor/superseded tokens cannot change settings.
+  Economic changes require a fresh preview; timestamp-only refresh at unchanged
+  equity/circuit values is acceptable if still fresh. Pause can proceed through
+  equity outages and does not clear hard halts. Rejected owned tokens are consumed.
+
+  Resume independently rechecks, inside that same transaction:
+    * complete/fresh context (as_of/asof/timestamp <=6 hours, future dates denied,
+      expires_at/fresh_until still valid); explicit lack of policy authority or
+      live_blocked denies resume; known risk state, no blackout, valid [0,1]
+      long/short multipliers with at least one enabled direction;
+    * scanner health age <=max(120, 3*scan_seconds), and no active scan/context/
+      risk error (or reconcile error in live/testnet);
+    * fresh account equity, known positions/blockers and execution/migration
+      deployment flags for live/testnet; no exchange account required in shadow;
+    * persistent service/account/health hard halts and blockers;
+    * fresh risk_circuits[mode or arm] aged <=120 seconds with all three finite,
+      nonnegative metrics; halted/hard_halt circuits remain blocked;
+    * shared accounting.loss_metrics(state,equity,arm,now,mode), with each gate
+      conservatively using max(fresh persisted circuit, current calculation).
+  Missing or malformed valuation/circuit data blocks resume. Daily >=2%, weekly
+  >=4%, or drawdown >=12% blocks it. Shadow checks BOTH arms. Reads/confirmations
+  never clear a circuit or rewrite its fixed reference capital.
+
+cancel_change(token, actor) -> str
+  Durably deletes only that actor's token and writes an audit event; no settings
+  change or confirmation call occurs. A queued original callback cannot apply
+  after revocation, even after restart. Confirm/cancel races serialize in Store;
+  whichever transaction consumes the token first wins. If confirmation already
+  committed, cancellation accurately reports unavailable/already handled and
+  directs the user to status. Cancellation errors never claim successful revoke.
+
+change_setting(key, value, actor) -> str
+  Retains the authorized parent's immediate emergency paused=True API. Everything
+  else requires a token. TelegramController never bypasses previews through it.
+
+Shared MTM accounting and reporting
+----------------------------------
+The service imports the parent's pure accounting.loss_metrics helper; the old
+local loss calculation was removed. Reference capital uses risk_reference_equities
+keyed by arm/mode, with the helper's legacy-base fallback. Shadow OPEN records need
+fresh marks <=600 seconds; live positions need valid unrealisedPnl. Daily/weekly
+risk gates conservatively include the ENTIRE current open loss, even when opened
+in an earlier period. Labels explicitly say strategy MTM risk gates, not exact
+calendar-period returns or full-account investment performance. Stale circuits
+are shown as unavailable; threshold breaches/explicit halts are labelled HALTED.
+
+Performance consumes simulation.summary()['net_pnl'] and simulation.comparison().
+Wins/losses/breakeven and WR use valid closed outcomes only; missing/nonfinite P&L
+and data_error outcomes are excluded from directional/setup breakdowns as well.
+Unfilled expiry/open/pending, invalid outcome, incomplete management and data-gap
+counts remain explicit. The shared comparison matches original opportunity IDs,
+reports matched and unmatched candidate cohorts (including unfilled candidates),
+and computes net differences only for closed pairs. Actual AI decision latency,
+entry-window differences, sizing/levels and simulation-assumption differences,
+and incomplete funding are surfaced. No closed pairs means no measured delta.
+Missing identity/decision metadata means comparison unavailable, never invented
+timestamps. The current helper accepts finite data_error closed pairs; service
+conservatively suppresses paired results if a matched outcome is invalid rather
+than presenting those as measured uplift. No causal AI selection claim is made.
+Funding-pending/assumed-cost and exchange-before-funding labels remain explicit.
+The existing dashboard menu includes Why and its read-only callback is tested.
+No legacy ledger is read or rewritten.
+
+Parent runtime/deployment handoff — one poller, same approved bot
+--------------------------------------------------------------
+The approved production token will REPLACE the existing PTB poller. Do not create
+or run a second parallel getUpdates consumer with that token. At deployment:
+  1. Fill real owner/chat IDs; placeholders authorize nobody. Stop the existing
+     poller and preserve its required handoff/cursor state under the deployment
+     process. Resolve any webhook only as an explicit deployment action.
+  2. Initialize Store and acquire/renew its lease. The lease coordinates Apex
+     instances, not the legacy PTB process; the old process must already be off.
+  3. Await telegram.initialize(publish_commands=False) before poll workers so the
+     exact @AutotradingBot222_bot identity is verified. Publishing commands is
+     separately optional via publish_commands=True. The parent's __main__.py now
+     invokes initialize before runtime.run; this task did not edit that file.
+  4. Keep account/context/MTM marks and risk circuits refreshed WHILE PAUSED and
+     even without new opportunities. Runtime now calls refresh_risk at startup
+     and every 30 seconds, including both arms with zero positions. Missing
+     valuation invalidates circuit as_of; service checks fail closed accordingly.
+     Runtime also binds an existing execution ledger to its execution_venue,
+     rejecting mode migration with orders present. Telegram exposes no such
+     migration; use a separate ledger through the deployment process if needed.
+  5. Read telegram_offset, poll_once, and persist its returned cursor via update.
+     Checkpoint next_offset on errors if useful, retaining the failed update.
+     Keep lease renewal independent of polling, service work and backoff.
+  6. Drain pending_notifications, call send, and record notification_result with
+     the returned ID. On TelegramError schedule retry_after or bounded backoff.
+
+External delivery remains AT LEAST ONCE. A send timeout can follow acceptance;
+crashes between delivery and receipt persistence can duplicate an event. Whole
+multi-chunk retries can duplicate earlier chunks. sent_message_ids diagnoses
+partial success, not external idempotency. The outbox currently persists one
+final message ID per event. Stable event IDs can help users recognize duplicates.
+Atomic token consumption prevents replayed confirmations applying twice even
+when replies/cursor commits fail. UI responses are inline; domain notifications
+use the parent's durable outbox. Ledger access remains read-only externally.
+
+Validation
+----------
+Run only owned test files:
+  .venv/bin/python -m pytest tests/apex/test_service.py tests/apex/test_telegram.py -q
+Observed result after shared comparison integration: 80 passed on Python 3.9.
+Read-only verification of tests/apex/test_runtime.py: 32 passed.
+Accounting regressions were reported before adding tests/apex/test_accounting.py
+cases: 6 passed, 6 failed against parent-owned accounting.py. Failures demonstrate
+unchecked open shadow net_pnl/entry/remaining NaN, negative remaining, unknown side,
+and unchecked live funding NaN clearing gates instead of raising ValueError.
+The new observed-open-profit peak/deposit regression passes. Failing regressions
+are deliberately not marked xfail; the accounting owner must correct the helper.
+Python 3.9 imports use future annotations; Docker target remains Python 3.12.
+Tests cover all generated callbacks (including telemetry), all auth entrypoints,
+verified getMe and exact addressed commands, identity failures, all profiles/caps,
+old/new previews, live no-fallback/USDT equity, shadow hypothetical labels,
+shared MTM/circuit gates, stale/future context/equity, current loss rechecks,
+service/transport errors, cancellation/replay/races/restarts, no false /start,
+paired performance/direction/setup counts, redaction, GET bounds/cursors,
+chunking/rate limits/retry_after, and isolated real-Store service+Telegram flows.
+No production readiness, actual account authority, delivery health or deployment
+success is inferred from these offline tests. No external writes or live polling
+were performed, and no files were committed.
+
+Read-only parent review findings (reported before additional implementation)
+-------------------------------------------------------------------------
+P1 runtime.consider / execution reservation: a supplied READY opportunity can
+still submit after its persisted candidate becomes INVALID. Offline real-Store /
+fake-exchange reproduction submitted exactly once. Revalidate current candidate
+state, levels and evidence in the atomic intent reservation.
+
+P1 runtime.poll: a nonleader performs Telegram polling before offset persistence
+raises NotLeader. Check leadership before getUpdates and stop polling on lease
+loss/renewal failure. The lease does not coordinate the legacy PTB poller.
+
+P2 runtime.consider: now is captured before ticker/risk awaits and reused for
+create_trade, backdating decision_at / entry_eligible_at if work crosses a candle
+boundary. Refresh time and validate immediately before persisting the order.
+
+P2 accounting.loss_metrics: open shadow inputs and live funding are not all
+validated; invalid values can reverse losses or produce zero gates. Store rejects
+NaN serialization, reducing that path's reachability; negative quantities/unknown
+sides remain JSON-valid and the pure helper must fail closed independently.
+
+All parent production files (runtime.py, storage.py, accounting.py, cache.py,
+__main__.py and execution.py) remain untouched by this review. The earlier missing
+context module and lost open-profit peak issues were already fixed by their
+owners and are not current findings. Read-only bounded startup preflight before
+healthy rollout signaling is recommended, with lifecycle tests proving failed
+preflight never signals healthy and a successful standby never polls/executes
+before acquiring leadership. Parent retains ownership of startup changes/tests.

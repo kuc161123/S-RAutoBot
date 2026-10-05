@@ -1,0 +1,64 @@
+{
+  "as_of": 1791188886.4435031,
+  "scope": "Public endpoints from this host, not Railway deployment proof",
+  "instruments": {
+    "ok": false,
+    "error_type": "BybitAPIError",
+    "http_status": 403,
+    "ret_code": null
+  },
+  "BTCUSDT": {
+    "ok": false,
+    "error_type": "BybitAPIError",
+    "http_status": 403,
+    "ret_code": null
+  },
+  "ETHUSDT": {
+    "ok": false,
+    "error_type": "BybitAPIError",
+    "http_status": 403,
+    "ret_code": null
+  },
+  "SOLUSDT": {
+    "ok": false,
+    "error_type": "BybitAPIError",
+    "http_status": 403,
+    "ret_code": null
+  },
+  "context": {
+    "data_complete": false,
+    "reason": "Live entries blocked: btc_history_incomplete, access_denied",
+    "risk_state": "unknown",
+    "sources": [
+      {
+        "url": "https://www.bls.gov/schedule/news_release/bls.ics",
+        "attempted_at": 1791188889.248259,
+        "status": "unavailable",
+        "reason": "access_denied"
+      },
+      {
+        "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+        "verified_at": 1791188889.248259,
+        "sha256": "6060abda8d94d14b151710b88d0aa35a571f44644482b315c2a15baf80cc5d5e",
+        "parsed_events": 8,
+        "status": "ok"
+      }
+    ],
+    "event_coverage": {
+      "scope": "US_MACRO",
+      "included": [
+        "BLS_CPI",
+        "BLS_EMPLOYMENT_SITUATION",
+        "FOMC_DECISIONS"
+      ],
+      "excluded": [
+        "crypto_specific_events",
+        "unscheduled_policy_actions",
+        "other_economic_releases"
+      ],
+      "crypto_events_verified": false
+    },
+    "as_of": 1791188889.248259,
+    "expires_at": 1791188889.248259
+  }
+}

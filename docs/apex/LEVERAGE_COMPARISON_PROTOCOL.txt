@@ -1,0 +1,105 @@
+5X VERSUS 10X PERPETUAL RESEARCH — 2026-10-05
+
+Fixed before inspecting this experiment's outcomes. Offline research only.
+User explicitly selected unchanged risk per trade. No live account, leverage,
+Railway, Telegram, strategy configuration, orders or ledger changes.
+
+Primary question
+Compare 5x and 10x isolated-margin settings with the same cautious risk budget
+(0.25% of current account equity before existing setup multipliers), unchanged
+portfolio caps and identical Elliott Wave rules. Leverage must never multiply
+quantity or profit. Both long and short opportunities are evaluated. This
+differs from the preceding five-symbol long-only spot comparison.
+
+Universe/data plan
+Select 50 USDT perpetual symbols by median turnover over the seven completed
+UTC days immediately before 2023-11-27. Require at least 120 completed daily
+bars of prior hourly history. Freeze membership for this experiment, without
+looking at future strategy performance. Record every eligibility exclusion.
+Use the existing Bybit public historical caches, hash and validate their
+chronology/OHLCV. Do not manufacture missing candles or splice exchange venues.
+Require complete hourly entry/runoff coverage. If unavailable, document the
+coverage problem and a pre-outcome amendment; never hide removed symbols or
+label a cache-constrained universe as the exact historical exchange top 50.
+This is a fixed historical liquidity proxy, not the live rotating universe:
+historical order-book depth/spread and a complete historical listing universe
+are not available. Delisted/renamed instruments and cache availability can
+introduce selection bias. Future instrument metadata is not an eligibility
+filter or a reconstruction of historical lot sizes/risk tiers.
+
+Entry period: 2023-11-27 00:00 through 2025-11-26 00:00 UTC exclusive (730 days).
+Runoff to 2026-05-25 00:00 UTC (180 further days); no new entries during runoff.
+Each symbol retains its fixed contiguous warmup origin, with at least 120 days
+before the common entry start. One shared 10,000 USDT account per scenario.
+
+Rules/costs
+Daily wave plans, closed 4H structure, 30-day watch, hourly closed quote and
+next-hour-open IOC proxy with the existing 5bp cap. Existing stops, partial
+TP1, TP2, daily invalidation, structural trailing and time exits. Stops win
+OHLC ties and gap through stops uses the worse open. No credited entry-bar
+targets. No forced end exits; open trades are not wins/losses.
+Current sizing/cost-aware R:R, daily/weekly/drawdown halts and exposure caps.
+Same-time candidates sorted by symbol then plan ID. Rejected unconsumed IDs
+may retry; accepted IDs cannot duplicate. Each scenario independently sizes
+from its own chronological shared account, including pending reservations.
+Synthetic instrument tick/lot 0.0001 and 5 USDT minimum notional, as in the
+prior research; not a historical reconstruction of each exchange filter.
+Fees 0.055% per fill, 0.01% spread and 0.03% adverse slippage each side. These
+are stated scenarios, not observed fills or the authenticated account tier.
+Historical funding applied at settlement, remaining ENTRY notional basis,
+strict entry/exit ties excluded, with only already-settled rates used by risk
+decisions. Rate intervals may change: infer normalization from past intervals
+only, and report coverage/interval validation limitations explicitly.
+
+Margin/liquidation distinction
+Mirror the runtime's conservative entry rule exactly:
+  entry * (1 / leverage - maintenance_rate - 0.002) >= 2 * stop_distance.
+The 0.002 reserve and twice-stop distance are existing bot rules. Historical
+exchange maintenance tiers and mark-price candles are not in the cache.
+Use an explicit assumed maintenance rate of 1% for the primary pair; also run
+both leverages at 0.5% and 2.5% as predeclared sensitivity scenarios, not tuned
+parameters. Never present assumed maintenance rates as actual symbol tiers.
+Reserve open entry notional / leverage plus an estimated closing fee, pending
+order margin plus fees, and report available cash conservatively. Unrealized
+profits do not finance new isolated positions. Unrealized losses reduce equity
+and therefore risk sizing; they are covered by the allocated isolated margin
+and are not deducted a second time from free wallet cash. Funding/fees affect
+equity and cash before sizing; any free-cash shortfall must be reported.
+Track stop distance and margin buffer, plus hourly adverse-range breaches of
+the simplified isolated threshold. Such breaches are stress flags, not proven
+liquidations: mark-price history and intrahour ordering are unavailable. Do
+not certify zero liquidations from last-traded hourly bars. If flags occur,
+headline returns remain stop-model estimates and must be labeled accordingly.
+
+Evidence/report
+Save causal opportunity tapes (shared immutable market observations only),
+all decisions/accepted orders, filled trades, funding, fees, daily equity,
+code/source/protocol hashes, universe selection/exclusion audit, side/symbol
+breakdowns, hourly max drawdown, stop/margin rejection counts and margin usage.
+Report all six scenarios and unfinished holdings. Independently reconcile
+saved fills, costs, funding, cash and equity. No parameter search after results.
+This previously studied period is not untouched out-of-sample validation.
+No historical AI/macro veto, depth, tick fills or exchange liquidation engine
+is simulated; research cannot establish expected profits or live safety.
+
+Official sources checked 2026-10-05:
+https://www.bybit.com/en/help-center/article/FAQ-Profit-Loss-Calculation
+https://bybit-exchange.github.io/docs/v5/market/risk-limit
+https://www.bybit.com/en/help-center/article/Trading-Fee-Structure
+
+Coverage resolution before results
+All 50 selected histories have complete hourly entry/runoff coverage; none
+was removed or replaced after selection. The 158 eligible cached histories
+include available delisted histories, but are not a complete exchange census.
+Forty-four selected symbols have matching funding timestamps/rates in both
+local funding caches throughout the window; six have one funding cache only.
+BLUR, INJ, GMT, ZRX and LUNA2 contain isolated 5/6/7-hour transition intervals
+in runoff that match both caches. Allow only those explicitly audited UTC
+timestamps as exceptions, preserve observed rates, and normalize from elapsed
+past settlement time. Other intervals must be 1/2/4/8 hours. This agreement is
+local consistency evidence, not an independent exchange completeness proof.
+Open/pending closing-fee reserves use entry*(1+1/leverage)*fee as a conservative
+convention for both directions. Reserved fees are not expenses until a fill.
+Monitored short orders reserve margin at the upper entry-zone boundary because
+a favorable fill at a higher price can require more collateral. This does not
+increase quantity; risk sizing remains at the original conservative entry cap.

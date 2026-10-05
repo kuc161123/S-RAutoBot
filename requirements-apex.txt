@@ -1,0 +1,7 @@
+# New cloud runtime. Legacy research dependencies remain in requirements.txt.
+aiohttp==3.13.5
+psycopg2-binary==2.9.9
+redis==5.0.1
+google-auth==2.50.0
+requests==2.32.5
+tzdata==2026.5

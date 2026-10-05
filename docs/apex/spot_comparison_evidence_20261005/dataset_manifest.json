@@ -1,0 +1,3346 @@
+{
+  "venue": "Binance",
+  "markets": [
+    "spot",
+    "perpetual",
+    "funding"
+  ],
+  "history_origin": "2023-03-25T00:00:00+00:00",
+  "entry_start": "2023-11-27T00:00:00+00:00",
+  "end": "2026-05-25T00:00:00+00:00",
+  "warmup_days": 247,
+  "gaps_excluded_from_warmup": [
+    {
+      "market": "spot",
+      "symbol": "BTCUSDT",
+      "missing_from": "2023-03-24T13:00:00+00:00",
+      "resumes_at": "2023-03-24T14:00:00+00:00"
+    },
+    {
+      "market": "spot",
+      "symbol": "ETHUSDT",
+      "missing_from": "2023-03-24T13:00:00+00:00",
+      "resumes_at": "2023-03-24T14:00:00+00:00"
+    },
+    {
+      "market": "spot",
+      "symbol": "SOLUSDT",
+      "missing_from": "2023-03-24T13:00:00+00:00",
+      "resumes_at": "2023-03-24T14:00:00+00:00"
+    },
+    {
+      "market": "spot",
+      "symbol": "BNBUSDT",
+      "missing_from": "2023-03-24T13:00:00+00:00",
+      "resumes_at": "2023-03-24T14:00:00+00:00"
+    },
+    {
+      "market": "spot",
+      "symbol": "LINKUSDT",
+      "missing_from": "2023-03-24T13:00:00+00:00",
+      "resumes_at": "2023-03-24T14:00:00+00:00"
+    },
+    {
+      "market": "perpetual",
+      "symbol": "SOLUSDT",
+      "missing_from": "2022-02-26T00:00:00+00:00",
+      "resumes_at": "2022-03-01T01:00:00+00:00"
+    },
+    {
+      "market": "perpetual",
+      "symbol": "SOLUSDT",
+      "missing_from": "2022-04-01T00:00:00+00:00",
+      "resumes_at": "2022-04-03T00:00:00+00:00"
+    }
+  ],
+  "archives": [
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-01.zip",
+      "sha256": "e04068d0aee5e3571dc7e9a1d220475047f544e1cf1bad800b7cbbf190281c40"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-02.zip",
+      "sha256": "4e479b38278726cccb9257f5564c5c78477144d3ffe69df6afaf3b55ace617be"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-03.zip",
+      "sha256": "1cfb082f6bc9a2937b5b846073ddf65f71b18f2502778ac667aab3421ef80085"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-04.zip",
+      "sha256": "7157a267e70bcd9ae04a8898527fad00d7733e941df9b95a1d5e0ae6dcd61c3e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-05.zip",
+      "sha256": "ff0744eceba5e6d2f7145ecfdc9d3fac84f4576c15221dbeb71c6d6e59484300"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-06.zip",
+      "sha256": "b18f6f8edbb41960f81aec100c7836fdc0de6d640ee4309a3d0fad999ae0a2c8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-07.zip",
+      "sha256": "9f0ba9663f9fada7692b3cfe645df3832599f9e785056ddd77bd464475553e9e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-08.zip",
+      "sha256": "3cc22044f94cb303d12013293ba6db6d44abdf1490d38d00f1389e98717a3891"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-09.zip",
+      "sha256": "a65dcd73017d92ea8d86e82ea1aee3dac55881f8672594d2e85d1cf392e1e78a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-10.zip",
+      "sha256": "2591cbbe022ce9d4559aee1fa41ea0033324c2c4debc776cfedc9588167d413b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-11.zip",
+      "sha256": "5608adf8602a8ac616ee03c2c4461a37f4646631d67edf3d2f1a94e82e5c5065"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2022-12.zip",
+      "sha256": "69c5e5f01df947bfea48ab3c8e2f462b7358effa9e2700489a4ad0dbd29b24aa"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-01.zip",
+      "sha256": "ea8caf7fd56c7f7143723f56f8d12a2fc0b643badbcdae5c660db2d11454a11d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-02.zip",
+      "sha256": "53525b700548a19488fcb8754778acdf7941c9ba0b6e7eb548a51a376ef8d86b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-03.zip",
+      "sha256": "7f2afb8e0179a57ac31eab5205660298ba5eb77039ac2e21aef9b715ff3d06ce"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-04.zip",
+      "sha256": "1787dc83836deafaa77d4276cbe3b3ca1fe0083b3017079e3560605ff4f7a4ba"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-05.zip",
+      "sha256": "16b33557a4a4040fc56c711f4b1a750ebafb5a7f8dd46c060d9fc8c66cdc1982"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-06.zip",
+      "sha256": "05f87fb5f004ee0aff019adb7015afab8df0baaaf2b77154d75ae53e18d59b11"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-07.zip",
+      "sha256": "f49a738a793055a583784e78a54840a43861fd110118cbe1add14ef1afb63032"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-08.zip",
+      "sha256": "e983243d44536a06ff4707cf35df29f636fe788e6fb69c3b3feed2ef43d343d4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-09.zip",
+      "sha256": "28e12ccaf15745bfe11f570b9079793750047fde3d340fe0231858b26bc0f9d9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-10.zip",
+      "sha256": "165ec50601f914d6c41b776414096bc73974bf45fcd41aaddfedd1cf66cb6c6e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-11.zip",
+      "sha256": "4f550d182d529839dd9cfc28ef0ecca8cd8003e991067e92a2af5b9e92762f49"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2023-12.zip",
+      "sha256": "6117d93e3eb6574df6b0087a45cf12e171afe91789b523b0bfcce00d8f1b6e37"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-01.zip",
+      "sha256": "cf873a185bd5b24b8e00034e49583fcb49928e0c3a45c6fc27a632a683655417"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-02.zip",
+      "sha256": "b83aa7319ef1d4baa7b923c0fe802b88dfaf241c7456af295f1f656a24379b33"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-03.zip",
+      "sha256": "b0851daf609d6ab82fdf8f1d1c4fbd974bc1b4e6530a832067516ac1c2be63a6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-04.zip",
+      "sha256": "e266707ad2ea3cd4680bf1ac5025f0c1bfeb38e703374a91f8dc193d1ec8d48f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-05.zip",
+      "sha256": "077c71eec71a8ecf2edb6e3a3927b600b8f358fd37066ce120c19fb5302a9ab8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-06.zip",
+      "sha256": "2e1f968fa34b9feabfb19cc6eec47a146e20d64a706f4b17d0babf4d2f475c39"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-07.zip",
+      "sha256": "41fd58a70ae40bebb74682555cc5054709f8dde0f5c8193ae2103dac95274e5f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-08.zip",
+      "sha256": "88521a975ee7bfdd21f891d81f4243a01b90b977cf525d11747e27c66e3bad60"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-09.zip",
+      "sha256": "123f402c6dbf19b9b72b4af7ad4d5325c73ba4833148cc398b803d7a34ac5c5f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-10.zip",
+      "sha256": "393b18ad2634f0cd3b2fd54321c8286ea143419cf3129b4cc44e089681912b03"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-11.zip",
+      "sha256": "7a51fe8811c754ff43a2be0ba10e53a6d4218521e27ac765fbc9a1ca0fc15bac"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2024-12.zip",
+      "sha256": "dfec812f73a84257b195cbdaed34d020fa77e845625c061c13bd6a60e7ef9372"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-01.zip",
+      "sha256": "e7f2aaa5396a8062a57ab29ce9fab2d76b2c84ec58815d4ab7b3fe16f78c7118"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-02.zip",
+      "sha256": "7420f55c93f61d7e734fc9d2507c7f2fcb5eaf48112277cecd241d4e1dbf3bd5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-03.zip",
+      "sha256": "b5ae8bb57e5e526c2050c9f8229b723871a5af47d80c53453abf61847a5f3aa6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-04.zip",
+      "sha256": "bbec48ed5f7b603bbceff943ad0dccd3c29cae6d14161bcd2eabc9f762ff0a35"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-05.zip",
+      "sha256": "da6213bf4c57ea60faed3ef1f6a0ecb87f22ca7a3a67614604cf44d2d6b265fe"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-06.zip",
+      "sha256": "d0760943538f48032dd066401e53f46bbf4868e6545929678e23bcdee032a5e8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-07.zip",
+      "sha256": "487738ee596380eaad32a2a93c75d17e1ebdd165a9b544c0e44be36079f5c02e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-08.zip",
+      "sha256": "a99ec5bac64333fb521b2ab1bac5e8387eede6413cc7841656a02be95613c64f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-09.zip",
+      "sha256": "b0ad5b54097f6adb440d07204fd215dae9b224fb73569fd4309a55c9234d46b3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-10.zip",
+      "sha256": "5426b1b48905963d50e11d1243910b5fa05a89c9a2003bcd5082561d352a2123"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-11.zip",
+      "sha256": "1f28f02e33e1f19e5163cd45b67c07b3b75870e78dbbf9f861d1348ca372d942"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2025-12.zip",
+      "sha256": "d546c6e44b443e34cef5122043c5cdd3b9c76980e23cc408dafd9f6f76d65c05"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2026-01.zip",
+      "sha256": "a40e86beb4f1e6d4b19ca022c87b8b2f0e4e40874d349a5a75b27baa9634c858"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2026-02.zip",
+      "sha256": "0be4e5c92892495c5da5b371fe8755f2d508b28a58414b4171284480806ed6c4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2026-03.zip",
+      "sha256": "44f383f9423f96cdc29e03b4ba8062296763dd740ab1d93f04b62c88bac30aa6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2026-04.zip",
+      "sha256": "9f8e49b70978177414a005a6e84b1cf891f97b0196526cbd579535449c14b6f6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BTCUSDT/BTCUSDT-1h-2026-05.zip",
+      "sha256": "11b8537dc1769a7de9d6cb2e0354dd4a376018986a826c67d1078e25fbf8fb80"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-01.zip",
+      "sha256": "14a3875732b7e404be2522aec94b5f17fc43f81e77c0a68fdd72980ea644ef5a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-02.zip",
+      "sha256": "2c155824e909de8c1f91a41bbdc2356c29f3c16944db3982a7c912ff58083eb3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-03.zip",
+      "sha256": "9af5cd5120e2942f763f0a45cec35b0a98322015d52b29884655875f8bfe361d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-04.zip",
+      "sha256": "d47fd9d00967d87564a52cc7025960de98513f863a83018e9f9dd0eb5875df39"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-05.zip",
+      "sha256": "382390f47d0660bb3dc16aaedf7901002a2293ca7a375045b08d956208c95615"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-06.zip",
+      "sha256": "9fd8dabf04723354423f643b62b74ac5f1046e28f855c0e15d9eb68b5e49f559"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-07.zip",
+      "sha256": "87c81755af5e05b5b24182eed98582284b6896048d231a245581d76df669d4b4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-08.zip",
+      "sha256": "7792ffb44dbcd7a9964ea796ffc2dc2049b5437a5a317c07b64eb4be8aac1a13"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-09.zip",
+      "sha256": "e64c3e782b8421fa035843584bff1ddcdee84ee1bcb06d6e154915855d6917c4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-10.zip",
+      "sha256": "e0e1d08f8e089a0273e2ad62ad052b690d4082c82bf56da6f7b2c37795e2ab6f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-11.zip",
+      "sha256": "109c93bc5db33562650e146c9a9332ec4496dae5021cf942f5c75317c75d16eb"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2022-12.zip",
+      "sha256": "6f704c3ed1be5ce404b5ca53e733e42b005308714218ff9e21d15e7cfb128f01"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-01.zip",
+      "sha256": "6a646f674ecfa736db1e6fd0c4ebaf26594806efde851f2c7081aec533714e3d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-02.zip",
+      "sha256": "c23f2ce377caba0279a932cfea93701bd02c996879293c5c395eaba06a943039"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-03.zip",
+      "sha256": "90d268be1e0d39f7411f88ca3c0f21fe110fee7ff3c1dd054555e1fea6e22d8d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-04.zip",
+      "sha256": "36598c7b9ac93706b8c9f9e6da11bc2137f605c442dab139ac35e397efcd9473"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-05.zip",
+      "sha256": "e03f762cd90b9a4eb6bf3499a05f4df84a71fd23f18d8b1b9c2e88eb469b0f2e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-06.zip",
+      "sha256": "7ca4b8f6f6ff04f6899fe49b68df2c7b60841dfadb4a334631491af2d192bfbf"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-07.zip",
+      "sha256": "b141e7b3ec07f24756b1c5c27b562acfe06d331678a49c493a5fa2cba44eb97a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-08.zip",
+      "sha256": "25930d0ba8280ec82b879d130071582c3ee4d5a1fbe31dc34c016b2c314d3525"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-09.zip",
+      "sha256": "3453dc6570a7193ab358e5a4c592439b4073028b1ab09412610d9409cf330219"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-10.zip",
+      "sha256": "d91229dd47c4cf53b8e326b500295a4fb9f0316faca0e2149076065bc53ae049"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-11.zip",
+      "sha256": "2be46057e4a5b40b4b7c6bdf5b163aa22e353048e62907e730cd471fbf3a62b5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2023-12.zip",
+      "sha256": "89ec0d0b4f4ee72f4f1c2fad52ec1d94435d525bb107ae23d6f9716c77dbc428"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-01.zip",
+      "sha256": "1fdb3a8fa6b77ef30ef17ed4b71b184172ef1f812d83bd0f50bbd08e71a92057"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-02.zip",
+      "sha256": "f080ff288b2f7e85e78c5370a8a3258b93f85531ff96b4131c1b7889649a8ba4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-03.zip",
+      "sha256": "4eb16ab0c5db15e5e0d77827f5c19c215c7ce601a5501d9563b75bda7602f46e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-04.zip",
+      "sha256": "8b710fad720ae0bc75eaded37b3add95ca49122ae398f3f6e33e57e864da781e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-05.zip",
+      "sha256": "0307d64f0d9ae6ff4001442a014d7b02dcbc5a003dcc36ba139f1c9695996b51"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-06.zip",
+      "sha256": "59ee6920bd72d93d1130c89711c93ea192bbfd5f82b548dcb0448f66450f6a06"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-07.zip",
+      "sha256": "83181cfcc1f1e32a542e2c220cbd58acd1c550cc64ad1e2c414e47088266aa7c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-08.zip",
+      "sha256": "d908255a48978f6acb769c4b856a3307c58a8c19dbf2b3b7f10067245d5e8b89"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-09.zip",
+      "sha256": "bfbdda97d03abac469199120ec3c2f1305e2d5947e9155ff84dbeafe33cd4a67"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-10.zip",
+      "sha256": "cbb13664485b6c9a6365da7ae23299b722ab5926a6aed516add486ef501883bc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-11.zip",
+      "sha256": "29cd30419b86d5dff5467a7a81d43e492aaaeb3669db216ab8badaad5fe610ec"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2024-12.zip",
+      "sha256": "84312b7dc2b5c903853c78d94f587ef1d24b7960d7bd95f5bfe3afc3db006203"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-01.zip",
+      "sha256": "f7350a6f3b51de466a0db52ba890cf296d4faeb6e84811b9606f87ad39ccf3ec"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-02.zip",
+      "sha256": "40c2f73850422d47ca7d044959cecc39ff3416f6e3c88f30636da4a01a0b6e31"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-03.zip",
+      "sha256": "dc32ecad498d19f8663633196ec84cbd480595c89aa1ae6062c0fa0b8d9bd11d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-04.zip",
+      "sha256": "73f39799fae1ba4ef291c6785b934a6c817426ef8ef60e1bdf42078efd27893d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-05.zip",
+      "sha256": "720a319face496acff79d8e6279b9b03f31495097d555c74daa076cd66421bee"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-06.zip",
+      "sha256": "780788805b48a094886590d939ef45372db2ee053aa5d464f8e135121df2b8eb"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-07.zip",
+      "sha256": "d5c4c2482004a49b479ff5bfbdb885b25035ace24e5f95edd8057507718df366"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-08.zip",
+      "sha256": "1ebdd24f8e1df5369518b721fdb0bfaaca9892ae71499b82783194573f804cad"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-09.zip",
+      "sha256": "f83ffff284b408574a4571e83fabc5c641e20edc71818912541cc38ec7e1be43"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-10.zip",
+      "sha256": "f3668059619d772ae8f7167d82666dcc6e2f88f17e6fd66a4a8098c9cd8ba042"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-11.zip",
+      "sha256": "3c0171cdd5eef1ece36c818ace3a07cc48e331cb9d991488a8db917bc496b78d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2025-12.zip",
+      "sha256": "7a7a35ce7b9be9bafa0a00c47370acc57a48329a3289c21cb19f1185f6430fdb"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2026-01.zip",
+      "sha256": "eb060da7fb1adc65c7999f7d1f4f3b004edf2335311bb32d05a86f9577c21106"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2026-02.zip",
+      "sha256": "8c8c6e664688497711832add90349b8617caf7e8892f085e97fe4290989fe78b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2026-03.zip",
+      "sha256": "0bf4dc37f2b201a8891f63dd76164742ed7d4fa24c24065a2e7709f34488ff74"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2026-04.zip",
+      "sha256": "46d62ed100717d8195bce4c07a41dc7606f41abc491ca71f9bfe653d2b92bfc0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/ETHUSDT/ETHUSDT-1h-2026-05.zip",
+      "sha256": "8c4cef22ad7046183621f1a41155e91301780a3c9f377d7770763027b08e2462"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-01.zip",
+      "sha256": "cd070a2f7daeaa33835ca00ab10c371a0bc89c353591c65977706635b7418ca0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-02.zip",
+      "sha256": "f6eed394dcbfb8815120c328d1c1e22136e25febb9854ce6c0bbd566c92fb673"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-03.zip",
+      "sha256": "8d2e26a84944cf39f343c0b7669e7dabf03bcd7d7afc3e82f6ef2161452f6542"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-04.zip",
+      "sha256": "001350cb05168fadc8d1240ae89a37f878f986a78951232191a890f77bbb7bcc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-05.zip",
+      "sha256": "f68c41a69d18b96d72c9449662cc5c563287369f56033d873f087091db9fb817"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-06.zip",
+      "sha256": "4e111c3b8d040f832accab28b4405c6a23b90f33883fa8857ba60ec1d073bfef"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-07.zip",
+      "sha256": "10a6858a4c66cd1e0ea3e4a4265a737d3114f73062094a75bd48e9c8afd14aee"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-08.zip",
+      "sha256": "a76d0f3bca32a91f4ea923c60c6c87256a673b2a73bdcc117449fc8e4f57ebe6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-09.zip",
+      "sha256": "bcba92d96fd85adcf5894674551a3ac52334b1836fcd7b09745c6c2ec70e930a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-10.zip",
+      "sha256": "c855d5b612c4b362110007383e27c965db324f54ab091ac82cf00b827cab8f6b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-11.zip",
+      "sha256": "d61c2d3b3ba2e772d39fcc1181973359cd8b59fd1a9b8b29aa8e1dc394d889c9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2022-12.zip",
+      "sha256": "9f2df163d62154fd641ab95228e6123e378cfc972effea348721317515ddc9d6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-01.zip",
+      "sha256": "24e284cea68c9a42bd6a5bd6cdc2ce56ca00fea106728f36de3d171b215f6905"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-02.zip",
+      "sha256": "e6c07a992221248893cd519539d2937e241931e1f129206bd13d4197b1f3b6c9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-03.zip",
+      "sha256": "7345fc8807e3e73e11595b5b371bf96d414048f77d1498964fa5c5f8fe3f02e7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-04.zip",
+      "sha256": "89bb7df7673715efdaac4445bc5e7bb980e78469245f6f6baa978d4e7e2a8bc5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-05.zip",
+      "sha256": "8578fd237c61fe3cf535eea93143f094989f26af41cc2d24c813f4836daaeb44"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-06.zip",
+      "sha256": "0e2e5c23418ff24a31cbcb4fe95e73db1c7fc90abcf960b86c37b53b3b19c77d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-07.zip",
+      "sha256": "7eebf42589b01a086f3be7f2af9a39d1a5df6dbd16f062ae383717725ea008c8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-08.zip",
+      "sha256": "25cb0c865a4bf34ac55dee9cfea5a39d7d9f765c0f7654158086202ff78a9c9f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-09.zip",
+      "sha256": "47b3f1869eca8bf460a31570c38ae5ad9eb338773493cad95683cb3d933c05f5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-10.zip",
+      "sha256": "2d4fdfa1fc9b7bcf69382883e472b4ce741cd6470ead4d4bce46c6d263988837"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-11.zip",
+      "sha256": "2fb358d1f7fc162236cadb344f21dca8b270e5ef6e88964c9f49a9c3f28b714c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2023-12.zip",
+      "sha256": "8ed8a6482a5538cbcc683f861305f049c86ea09bf0f10cff19a525b55eada4b8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-01.zip",
+      "sha256": "f2a90d8c6ed9f666b95e85e048ac4f6ba424c7fe143a982f671ad0b7f0c8cbdc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-02.zip",
+      "sha256": "fd194ff79e56690fa5bb463b6c280f5c521fb39087c6f4d5fa9c683eb92ca0d8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-03.zip",
+      "sha256": "b24ea98ce4ffebb0bc831acd1de8558f49c371ff4774fa31667daa11ffc0dd6c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-04.zip",
+      "sha256": "ab98165d2c785e871a4614bcb853edbd49b0701a2b3fed1f9d0bf602d128a4fc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-05.zip",
+      "sha256": "effcd422f7171f6b8fdaec8b8a7bdf9f354e772503569ca648f5a106f82871d9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-06.zip",
+      "sha256": "578fd34d382d7663934a9556c3316a28ac504cffa9a53434b2909f241271898f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-07.zip",
+      "sha256": "828f2a8814662d3bcff915eec19fd1771ec996a4a024317fda3f2d2ba61fb310"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-08.zip",
+      "sha256": "4f9d4d80f237b67b7038f6d2fc4e131daf8ca65f679359a92ba33574014b1c2a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-09.zip",
+      "sha256": "70641e992419a4003519e06094c68b2e13971341e92559e307a38d7215d94b63"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-10.zip",
+      "sha256": "3b5d4eb1f9049f8030a01886d2d9ca346da66163fd1fa81ba145fca5fa085edd"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-11.zip",
+      "sha256": "62fd1843a47ec177849a68faf0a5c33ae11bc33b462f664657a6a68246743080"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2024-12.zip",
+      "sha256": "af4ab37dbb738e3ee0c168fe9b55366111e4ad112a905f4740a6efbd810e752d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-01.zip",
+      "sha256": "8a40f8d5eb6e28b0c57c830ccb76e49046c1bdc631ec840e32576808f62ad466"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-02.zip",
+      "sha256": "8b7af1c42f8d8ac9bff2b2c8bc8a098150364947d93b363df0ab51e280aea544"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-03.zip",
+      "sha256": "7ddd11cb34dca5c6815cce34107d1bfc4a492c65b5f1def1d80419b04cb4b838"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-04.zip",
+      "sha256": "6f5a34a5482fa8abddfa2205df55605993b4c458315f613567eadfbd2062a0c3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-05.zip",
+      "sha256": "cb07bdbbed3f21db679ea6944805a4282f121440abf0415905fe4fdc05f480f2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-06.zip",
+      "sha256": "082af5c4634055a860eb765f2b0549344ae6dfd9274eaa09b06859eb7125ad0f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-07.zip",
+      "sha256": "c2e17bfe68c0ae9ac8c12162c7a64534d91f56a9f9ec0560f300fa6414fc8f19"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-08.zip",
+      "sha256": "7ea49f6b1196a1c26473433850dfe139b775380cc4cdf03bf853fb553ee6c4e0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-09.zip",
+      "sha256": "87ad6a05fe9d7fa90d4abd08cc3e6806759e9f3dcab69869fa3566d43bc876da"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-10.zip",
+      "sha256": "3cbcc4ed883fe75c9b095cb5981c810b39196b015940bff7cdd7fb6d68cb0865"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-11.zip",
+      "sha256": "311effa24632be0dfc523980554d876d5516e6acd6c08c7aa7daa3000ba393b9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2025-12.zip",
+      "sha256": "d8259dd2f6758b7cd4166564bf8aa7219d6aa140ecf68a3667749da41d4c2560"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2026-01.zip",
+      "sha256": "949d8838cf48d6bd348762534e6307601574f82d58126dc26f0d91740622c27c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2026-02.zip",
+      "sha256": "5e219b1a7d7384327e40b27b8accb7f1ae797f3c6ee628441de3035bc1fa3964"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2026-03.zip",
+      "sha256": "5bfab930f6e73e8a486ad1281de8df114d2c6a71cc08f7a449e6c6697af369b6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2026-04.zip",
+      "sha256": "7266fae3d30b6b693bb731e7d392cdf132066b2e71a86b1695b0ab0c8a6b8507"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/SOLUSDT/SOLUSDT-1h-2026-05.zip",
+      "sha256": "bc33dc72343c662cb0614d4afe2ce7030ec7a4648d7c9a2dd1e99477e0001101"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-01.zip",
+      "sha256": "663ea08387d4c5155b2421ebeaaaba14850e4362cc9e24ee7979bfefab03f625"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-02.zip",
+      "sha256": "00b3aab119398a6ef303a9b122f7ee819eb1c62c358d3d511ceae345b74ba6db"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-03.zip",
+      "sha256": "c6c3ae3b1332fc39d92749bd126fb675571fbe80576cd95d56d0a16a0ec77afd"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-04.zip",
+      "sha256": "496c543a2aac62b3d8ab6a71c89da4db9ad4fcd9bc640905edbeda7b4487004f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-05.zip",
+      "sha256": "e183a9b786ba8c2ddcfb48cf974dcd8edad5c6816e865e3ec62d9d94eec08c7e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-06.zip",
+      "sha256": "ea7faf8f2d22c27768b868ca431c56d2cbb83d955d3debe1e6dfb70f034de32a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-07.zip",
+      "sha256": "829ef1e541a13599cba457ce963674c2f14447899c7f43b878299e5f59a2b7f5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-08.zip",
+      "sha256": "927a92e9c381729b063cbe89a4a8bca10898aca61e1a6919a016ea7eb959304f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-09.zip",
+      "sha256": "054d3296f060a815d7ad5c6485d4883430dad0fc08e78f0be10df66884620eed"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-10.zip",
+      "sha256": "dfc624a65e466abc9698c1d153843d78f1df449107bce97c5215525417fa3718"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-11.zip",
+      "sha256": "f9f9497753bd5d1df5a2a59ee5dfe07edd79f2be7aaa14a5371511a464fa2495"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2022-12.zip",
+      "sha256": "acc9f21b1ed51b5f4cc2978ee95a0e50ffea7891cd1037a01c8c88c4e71a7104"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-01.zip",
+      "sha256": "4d7ad8f2cc41682200d6e8d1ab6088219e302b3a356f9997c19395b0208497b5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-02.zip",
+      "sha256": "0e15c412a2a14f40e67c12b5546ef736f88d045815e68341f1f5a567cc428ac6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-03.zip",
+      "sha256": "55bba490654b69c26cc1989f17902737535682f70491132f66246fbea3b7017a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-04.zip",
+      "sha256": "d45f37c1f4c7bce00774074ab01c5f385ba150e28e5cb0c84a73371d2042c313"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-05.zip",
+      "sha256": "882253ca7518d2b5cebdc388b6e8cf5a1c19d180e629f848d201c5bda54c46c3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-06.zip",
+      "sha256": "27607d49c36f479d582801faa9b8eb698b79032ca4aac69d65c720eeca6cf122"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-07.zip",
+      "sha256": "7bfa51be86f9822859af309dc579134089c2e8040a9f66503be0d5cd96499060"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-08.zip",
+      "sha256": "5eebe4ec692c43e9bc8722632da94cd79187aa17b848da9361656ce0be430bd0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-09.zip",
+      "sha256": "159a99069e8826ee23aca59b5dc7864a083fe5a4d8b13f888b68dfaa4317816b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-10.zip",
+      "sha256": "65e6c269037fb53ed74b9cd03219a42d98dff1d48cffde8307e9d9c73dfce63b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-11.zip",
+      "sha256": "486035abf6083f90e53e0c49e0fa829d0380d174a65ea6e8bb9066f76b139554"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2023-12.zip",
+      "sha256": "9153d4b7bf9e5cc6c49857b65ad7a3566faf525774deb0336aad1af9b44bd639"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-01.zip",
+      "sha256": "e06554367764c662b9690e28359193fb9c8b9d5d44cd09f4b23d6d022fe9552a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-02.zip",
+      "sha256": "c79637210a9b67dcd198cdff3d75c8f275bbb0be13ff0a7703378e16fe051d52"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-03.zip",
+      "sha256": "06e124d8cdeda60dd327ad23d9f61470f874e14e6fe495cb1739b50961af48dc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-04.zip",
+      "sha256": "623fae707bcafc75e01281565626f1ea0fac03d010d630dad7f67fc76ff31e72"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-05.zip",
+      "sha256": "489692791a583ed29b26fcadfba774832820a842e8e393e41764df9221279d2e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-06.zip",
+      "sha256": "c9f4bf8e332c1a4dc3e57655f17c12a5554f8bd085ddabf70fbe464b7071ba95"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-07.zip",
+      "sha256": "6fd039df81b4a12d699b9f810cb39dfbb389edb1d508571d49432247c630fb4a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-08.zip",
+      "sha256": "4334244cd1cd0e2ed4d9a1e42d92e67418b83b9565d8eb9618f826005f1655f2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-09.zip",
+      "sha256": "2697bc4cfc775ad17de0adfabd4b94ac4d575414dd374e72a9b77339f7dd2930"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-10.zip",
+      "sha256": "36768457c4e40c9b80088d0e2559876822e18269ecb782b5f570f0b205ef9d8f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-11.zip",
+      "sha256": "133bb27dc562eafce74b7a7deaaf7742a5e7790efbd23130876b2ce41a18c77b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2024-12.zip",
+      "sha256": "9ffb3beebc21b20ac140d985050a49fa1e11b475aa9dff3f9b75e55a9b832165"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-01.zip",
+      "sha256": "c2df916221d659c4ea89daff3b7c2f14aa44e48e8163191580b8579664621ab0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-02.zip",
+      "sha256": "75effe494d7a7d29b020f73c5acb23c0a2f8731df29d95837c489c359de62db1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-03.zip",
+      "sha256": "74161c8cd3e6869d3d42a321af8590002f7666e0507220eff513a3c84751dc6d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-04.zip",
+      "sha256": "e93a57bbaddfe264cc0b697aa52486ebdf8901195d7363eefa2f0208ad7b7e45"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-05.zip",
+      "sha256": "0f77041a1e43581b7b67210e35432c997d33b2b450ff5586ee2aaaf1a7e1cceb"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-06.zip",
+      "sha256": "4738dcff9c08bdd71a98d81cb5caab2e31edde3e6e152a0d89689e41f2d3c110"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-07.zip",
+      "sha256": "8541283a264382b0d8d3cec5c563e457dae00cf97c8c0b4d3cee1781825d0246"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-08.zip",
+      "sha256": "74939c2d6afa29f927ceb4a0adacc873ba975e0f37ecd2b05c5a3f4c45673a6b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-09.zip",
+      "sha256": "edb2ba0c725e932b6adb162a38470b29a0f3888a216a4663851de202b2c7937b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-10.zip",
+      "sha256": "22b2595e7df28f89e12523fac0aaf14e742fbf7ab4ff8feb081201fe3f714edc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-11.zip",
+      "sha256": "34eebef4cf7743a1d44567b9857eddc020c3a96b4c9aac65702a4537df72ae76"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2025-12.zip",
+      "sha256": "3d0d7dd68c548d3439ba773e1556a89911fff14af7aac9ed34d16090b85cad5e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2026-01.zip",
+      "sha256": "c2524b2a5a48fa55cd6c8321118b7ad0de7ef83794344ccfd86d161e11b7c6a5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2026-02.zip",
+      "sha256": "819761ffd58e265f471c4edbe5ffd2e7abbeb747a85a6b2c0cb389f921850f29"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2026-03.zip",
+      "sha256": "b80b2124644a48ce2fbf90cd2cedadfdf79aa2de72ac14d0dcd7c487fe75196c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2026-04.zip",
+      "sha256": "4283e0a097dc65dbf0658744352086a46e0862023825f60d815da5ccd8f7f835"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/BNBUSDT/BNBUSDT-1h-2026-05.zip",
+      "sha256": "74aac29cedf0fc0b94a1bb7bb1b8ba3aebfef827da0c21be181884789dcef9ae"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-01.zip",
+      "sha256": "e175720debbde2715fadf1764ba3befee542a7aac28c03bc0a8afeaf7969263e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-02.zip",
+      "sha256": "4a56550c4c38117e5144643a598dc5178f7ba3307fe98e1b97101b126ce5e3b6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-03.zip",
+      "sha256": "451635e223e3ca61a8e69542fbfc6622bf1c3d199b7838662107a40bfe558d24"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-04.zip",
+      "sha256": "c7f9b42a7b3d0d89db2b632b35f5411b9b5679a5c2f076556bfa763a23d30af1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-05.zip",
+      "sha256": "ded10c8d5d9467288193547c75f80bb360e257539a70140769f711915d5804fc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-06.zip",
+      "sha256": "6bcbcdecf621b21f56cf89a9dd7a56d8b9571078a03ba400896d5683cec42f8d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-07.zip",
+      "sha256": "4aeb499146fd8d60e27b8e9eb7ab6091960cfeceb7008513002f6b68c3352a97"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-08.zip",
+      "sha256": "38e7cfec7db4b001b210ec08ad87029a5eece1854236adaa831c623532b87bb4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-09.zip",
+      "sha256": "55b88696abb180769f83c0ea1d41a6cc3d560d7a0cccbfd5490928b6096ce8c8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-10.zip",
+      "sha256": "6ada8dbf3efe06bce441c5586523942a02c0d0f6923ab094bdc24af0a8606765"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-11.zip",
+      "sha256": "36cdd0281fb2d2d35bca060f97e450b018fb195f93b62c1cf7edfa1e2ca81331"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2022-12.zip",
+      "sha256": "37153bc0c583e905d21a9475ecaaaa0e8456560c361eea2115f2688d62f0b657"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-01.zip",
+      "sha256": "67ab94f8ed330bceaf5281730ba18b625443231391484e06ec1c806d9572971c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-02.zip",
+      "sha256": "3e1f995c0739dd18a90898dd548e040f76e721f19720b27d30a66b0246c73a1f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-03.zip",
+      "sha256": "1402b8c7068945f51d84293ce15626b4d2721510322214d34ab6f50959a6e229"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-04.zip",
+      "sha256": "856b36e5fb904c9b352f6bc8069c20ff848df5735b84600062038e2d03ab274b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-05.zip",
+      "sha256": "df807f085376fe7ab69b746f55325f372225612007785f4b6919c5c974fb85ba"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-06.zip",
+      "sha256": "da3eead782447a5afc15991ddb5042cacc978f9a887f8c1c20f78a6567efd665"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-07.zip",
+      "sha256": "39dfc47fffcfae0ec1d8a3c2a76e4e85f4e8530eefc0c64da9a0b91ff5fee29e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-08.zip",
+      "sha256": "f09a2535d77883a170170384de91de3c8e4c9013ba7d024ecb74f61eac9f8455"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-09.zip",
+      "sha256": "394c2fd04c3da621ad28cfc089f69cb319f36170166735e3642d95ec08749f2d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-10.zip",
+      "sha256": "0ff89ccf6bca3b422f411b35490612e10e71ba8fafb60c4417b4a60b42b448f4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-11.zip",
+      "sha256": "34dd10448bf4d6ecb6bb8494ac9c2f42b1ab36305e5ed33300e52656d2ceb2c9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2023-12.zip",
+      "sha256": "f74f19c98fbd135ff3153c7411e76cea97f87035fb9c546960bacb7308ab73f2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-01.zip",
+      "sha256": "6b51a1a3515f1ed10c163301a05a67b1d6418edc1ece5126d62413bf79af2239"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-02.zip",
+      "sha256": "464d24506b15009111d3fd0b35135980d3aa5b2820d689853776420866872b23"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-03.zip",
+      "sha256": "d9b858bfdb71d4dc214b5ef7c2e7fc06c0fe7eae20f87359d0b319f699e29c97"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-04.zip",
+      "sha256": "87d33c5eda1744fe52a88de1c0c1600b9ab9e44e8654722369b9e4fa451d6546"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-05.zip",
+      "sha256": "5e855c04f61be1c705d18b11e52bd93edcea7400f5f577876525c9479fcae1bf"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-06.zip",
+      "sha256": "be103fe4dc46059d51efd8564ca444342a05f62042c530ddd4908753ffc30217"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-07.zip",
+      "sha256": "8df65ec85239a360a08742d6545ecf9088318f80e3c3bd302406071b5791542c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-08.zip",
+      "sha256": "8c7e1b50eba0c2aa86157c509830509b4e6b4cbf275fb4e0c59586265a0fb71b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-09.zip",
+      "sha256": "b911cb9ddcd47aa5eeff1ac8474565625d72f333c20c5e26e9c602963e3f22c1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-10.zip",
+      "sha256": "95a4cfbcc3a99b0772e36c9d70e1d6ad10339e5a7beaf07d46f5b87fd814913c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-11.zip",
+      "sha256": "46330477ee33935adfe21766e49ca6a23a02022ba2c7ebe38adb95827f607b68"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2024-12.zip",
+      "sha256": "ec977e8140a0c30a0df1b20917143c5005f5beacdd7a683f1d68f48aa2bf0d99"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-01.zip",
+      "sha256": "c97c6edf01bf557ba2b8ecd5a0bbd4d98dc24249fda8c7581903b707573f3fae"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-02.zip",
+      "sha256": "c992844208760f0c80d8077879fda06e63a39a909b1e252ab8b4c8b59de2bc17"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-03.zip",
+      "sha256": "562371d04ee2d58cef061e6bfc26e9af9f0e343839e5123bb76a4fe47fb8fc6e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-04.zip",
+      "sha256": "b1bde4d6ccc2309928a81bfcf1ce7a01364a6f1c6f4900792dee5be9b82c520a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-05.zip",
+      "sha256": "c6132d1a0a7c7804b652e7eee6778aac8a450d407fe9609bd2a9dfb6669c22b3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-06.zip",
+      "sha256": "a35a349d477a4a5a97408b778b856fb648cfb464fd97f7f952cdd688e44e7fce"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-07.zip",
+      "sha256": "2941b47fba2bbe3e0037c9b5d18eb533d68a8afe0bb9b8a694a2aae5b3667dbe"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-08.zip",
+      "sha256": "508f07182a223446d51ef6b0eba5a900f8994cf6b9e229ebd1448022ed12d908"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-09.zip",
+      "sha256": "a4905ef32106ced5672a57d0ac3f39a214b19cfa3cdc3b14b81f7125ae8b1fdc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-10.zip",
+      "sha256": "bdd75eafc2d8227447684808526c0a000ccdacf692b7878059989280e3a180cd"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-11.zip",
+      "sha256": "37dc85162deab1937365e23620d9e667f3e6e015293d5e5b5916fe5ba60fb51b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2025-12.zip",
+      "sha256": "6f765d386af02310046113a24b7c5d42096f8a23175fc97b41afda8cc6ce394b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2026-01.zip",
+      "sha256": "ad831a83d13ab26ea717575c826046712ac105d9468ac76c91d9e0dec74e4f4e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2026-02.zip",
+      "sha256": "1cc7ceee84ab77d025cec91704d50b5ca6df9824ad88478ec1b28426bbd12c19"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2026-03.zip",
+      "sha256": "83f9d351208b709d4d9549d0c42b6b35e94c8437b8c8e187298c6f806cd48035"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2026-04.zip",
+      "sha256": "818f16b5bbc12385752cf58d087f86ec8fc428bedbc92e27c9832642bff25c2f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/spot/LINKUSDT/LINKUSDT-1h-2026-05.zip",
+      "sha256": "0534ec30207efdb505d706f121d955d8af7da21afed9ae7d695cda7e7deea6f0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-01.zip",
+      "sha256": "5281a9c866e7d54b0a5b5e6a7dad5575ad7b96df67f05f74d614c54190ffff5f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-02.zip",
+      "sha256": "b3a199287b2a8fed2c261999205d56cfd72ef9675c4b498a399601978d666228"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-03.zip",
+      "sha256": "f61ebcacd9a38f20b0ad89c64bbeb56baf368641fbbd6e25e987db2b96ede5ff"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-04.zip",
+      "sha256": "db7f9dbcc60cf68051b755346a5be32d27b0d3565cf6c02341b050a234ef44df"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-05.zip",
+      "sha256": "b1512041ade711819be114fee30668fbdd2783b73fa55607991ae14d1d43653f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-06.zip",
+      "sha256": "1006ae5b8b4704da69f8f14fb4711d075d689fcf44cd0a98317df97953f1332d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-07.zip",
+      "sha256": "72060f8608459b04817f652cbb945be28afef0ae54ccf38113911c194630c184"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-08.zip",
+      "sha256": "a1ad9eafd3dfecccfbc60c07de33ec2f7c33eab96f8ec04f88360b73b55dad76"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-09.zip",
+      "sha256": "92753ae32ed042ab7f10b90e3b9a49ddafc695c8e60eb563713855c73e2e6e82"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-10.zip",
+      "sha256": "d85a5f4bdbe93df2babdecf3b37f866655fa23c3fb31eeca96c3e3f6a1e9b872"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-11.zip",
+      "sha256": "e9b3f3b1929e3f6f255269c2d2eb564d9d9bcacbfc16651888e95765df383888"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2022-12.zip",
+      "sha256": "d313c2cb509cba13eff6538829245aedc993f18eff4a7bd48fe0eb6c3a9fa158"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-01.zip",
+      "sha256": "b9ac60cc3ffc1e16db96ca2314120ff7531988108ebef1733ee54234f4fedf7f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-02.zip",
+      "sha256": "1ace9802f4da961db025a7b76a6171ef2c516c5307e5dee24267182f059110e0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-03.zip",
+      "sha256": "35f0068cc41887ea11960c4bb10e251a404fef5ad4cb4c88699cc2419b6bc38b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-04.zip",
+      "sha256": "ed6f0a84d1b2ed8f73fbdd4df10703e2ab49864fc4d657b0d8a9464a49dd4a29"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-05.zip",
+      "sha256": "2f278ad3ea09cc42e577ad7185de74391a1eb09b9d9836d375e2c540aef1667f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-06.zip",
+      "sha256": "19bd435cdf58b426642c24a0df3b5fa755433f52a8c39f05dc5cfdeffa453aa0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-07.zip",
+      "sha256": "ae9ebc03dff2bdeb805a1401b5cf1256b2b84283f5f9d92b1f454f33b223f499"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-08.zip",
+      "sha256": "599daa607ff593666036fe742d8272de6e0e9d284cd7d41d6585cf53baa20ca2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-09.zip",
+      "sha256": "7849f82af86aabcb9a79f64d0527480f22117656a68f98280fe8b840a6ee1339"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-10.zip",
+      "sha256": "bbf0ef273c80f696ed9eb129a257812162487486692f124b9631ec38a924f6ae"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-11.zip",
+      "sha256": "26f1a2870f57925303edcf75581f0a33ff5e145c2126e15afc5fc1b400522428"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2023-12.zip",
+      "sha256": "5377bec9e6dc04027717836cc1c2a3789da4e4122d57e8395265a0414b766b7c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-01.zip",
+      "sha256": "bf673f3d10804a951e8bac56dd2473486f113025971d43ebe5258ec40f9bfeb3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-02.zip",
+      "sha256": "655ff5ac0fc570956756944c7afef4895c9bd149342f1e437de97292cbd1fe22"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-03.zip",
+      "sha256": "8138642b757ddf5a42207130277be4569afb4c581a0a1817be9f5f35a4415498"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-04.zip",
+      "sha256": "4bf3ca3574e0075c1b79f5b22c4253e26f6260f3621943205e3a8016c4c12318"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-05.zip",
+      "sha256": "1d607e3b26e6886ba742477bc97687f0b86c4c26ac564325dc5f1667e0362d35"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-06.zip",
+      "sha256": "7dba8642e56641fca2c7f3f363050ae88bf0d6c87d28e14b747fbd3267d4d3a8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-07.zip",
+      "sha256": "920aacb84b2745ee8f31806a753cdc5b2d672e6814d9c50c0bf524ad45eb5611"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-08.zip",
+      "sha256": "8d8465eb4c8a4fd05ebc0126e4c14a217edb2039441546bf095229e975268de6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-09.zip",
+      "sha256": "0a8118b3601f18ddad04a8afcf887fdc01661f66824a0ce49e0419be1f97f907"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-10.zip",
+      "sha256": "e3dcb9fe9d70fea19dfbdc5294044da69b9061c6f7411e99468825fac1ce8d61"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-11.zip",
+      "sha256": "0675e55056748489b8750cf6088a666f65dd4fd932d7ca5bd30491f5996b5f3d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2024-12.zip",
+      "sha256": "b072f3147b3e390c81dcbf35830a12ff7d53a73236aa44a9eea78199502529cb"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-01.zip",
+      "sha256": "9ebc05c9b3d5ab3591edf65bc5c7e5dbc2f96c1efc4adc4ea198c651a99a41b1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-02.zip",
+      "sha256": "077d761098eb5f2dbde65457833b9edab41ea6475284a77fcce0d4bec1bfb5cf"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-03.zip",
+      "sha256": "08043384c3336b0fa3eeee06e113a6f1eceb6d3fbe7b2971e9b9fa83625fdfb9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-04.zip",
+      "sha256": "2adf7c1be412e43b04a128e997f4cb1e5e7f895f55b6e1bf66621807f221f274"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-05.zip",
+      "sha256": "2e736b9e792d5ae9d4607d7426e4530020762cb898d580b18d3fb0faf9d2ba8e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-06.zip",
+      "sha256": "d1d9d5dbc540c19dd882305937f864f59ffffe3f5449a6b05b3f95efe7ca4fbc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-07.zip",
+      "sha256": "3f471677b97cd3c5c21e9c1420bd7d58c1fe4041a3d2e195369277298ca01ea2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-08.zip",
+      "sha256": "a240d3f766cd5c3db4e0702cf660ae54e327ec67aba169dda55abc90cae055f2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-09.zip",
+      "sha256": "b15817c45e6ca13a907772591664a57e00b711fecbd4285f2a16ced3c7023019"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-10.zip",
+      "sha256": "b173469216acad36058ecfb0a5432471ec58b3c49032246d4d687dd3af8ae34a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-11.zip",
+      "sha256": "75c4069b8ff93aa5e4064e885077426fd60f1cf6239a728b2d4ca543c0210d5a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2025-12.zip",
+      "sha256": "41e977a06b7806ce1398aca5f9075befffd1e6303db891795f3b179c762709ec"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2026-01.zip",
+      "sha256": "6c15ac5fd895f26bf8e12b99df6ab9aff637dc94b37128e92c75c19887d0e3b3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2026-02.zip",
+      "sha256": "886fca9764139a1d71d97ca28e0a2cb30fe7d6f44df9be2539452c02e3c4e775"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2026-03.zip",
+      "sha256": "41199df2dd62c333ea306d28de331bfffbbfed03609d100c63b2de1d173f7414"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2026-04.zip",
+      "sha256": "c822801b16eb317f4672e376a73664f2e5f9180409c57b6c7517707f4f873e8c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BTCUSDT/BTCUSDT-1h-2026-05.zip",
+      "sha256": "9a367708c90de999a7a9d3114fd111ff28203b13c8daef77d154b5216fb571f7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-01.zip",
+      "sha256": "6d96a19efda6917a3912377ef8e1a5eadc8f1a273f91afa069ae70bd679301bc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-02.zip",
+      "sha256": "14f8e42d6d7696d2f622301612a8f4ba6623658732cc5840ef0582b2ee05598e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-03.zip",
+      "sha256": "1b9fcc8ead1a066017e8c40617a78d1b9ee7b7fdad5f9d5353b04a59883274ce"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-04.zip",
+      "sha256": "45bc22bd8603876174adfd1f6273021eeaf76084629030a53cca40f379b8fb0b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-05.zip",
+      "sha256": "7adea64d8d82d2017c1b7c3fcc6848f685370b524e0a1512bb443980a487f4b8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-06.zip",
+      "sha256": "582aa0b2c72641cb5e93318a92beee0bbc93e968ccd10b0d89ea755a60f9fb62"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-07.zip",
+      "sha256": "07781d1411a4b793ca5c4daaee70c9e2c1a3200fe12c954c39b3ad6c37badd42"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-08.zip",
+      "sha256": "4182681e2b2fc23bbb348411ca8bdb41894609be1f94a0d9939616bf91cc9f25"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-09.zip",
+      "sha256": "75aa0182242ac65110a1dd1737a2062ee9815032d746a57d3191c44c15eacff2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-10.zip",
+      "sha256": "04246418d55fc96753ee5b4be0718796aeb9421af40042b4e145db02e1cfaf3a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-11.zip",
+      "sha256": "e2e15ddc21d24ac6c3ca56ab77f065eda88252a37f2f778505a332e31fcc5b3c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2022-12.zip",
+      "sha256": "1ba6559930f09fb8bd68a6592c4059526901939317eea4db8fc2d59cf5688957"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-01.zip",
+      "sha256": "247b85e0a8806e139f263831445e1d7bb91f9f56e6ab32e1f285038cdd1ceff4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-02.zip",
+      "sha256": "f01571f2420b9eb6486e69b884fe1572abfa59bc226c4003c9d78735c559acc5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-03.zip",
+      "sha256": "4d5266f12a8a3394ee23516de99fc380e928dbdb79cbf083fd3ddc3242073790"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-04.zip",
+      "sha256": "4ac96035c3867e0bfeff4f2f526812ee4b73a0b87b3962bb40934e2614917395"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-05.zip",
+      "sha256": "a47a9fc2936bcadc99aadfe48858e7d3e31093a9321d9bc083b886b72924f568"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-06.zip",
+      "sha256": "fe108dc555560ded46bb0807d0c2e0bc7722900213a96e4e86bf355f84fbcafa"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-07.zip",
+      "sha256": "911d3674c71a561df5ca5085426e9c61195bf5669bc7da7488ec9548ae476ca1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-08.zip",
+      "sha256": "74210a689eb85c8908ae05cff3297b9dc6eda76a0b41a3f9d72fdde0c14e3b2f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-09.zip",
+      "sha256": "38883595a881aadfbfd8c256e5170c8b016e9927119250f5128abfba96aba9c5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-10.zip",
+      "sha256": "61d6692284b406c9f9f655aef68e151a1eeb90509ddcd7f4a97233b1a002ef9e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-11.zip",
+      "sha256": "d57c333ac46e779b2399c498cc8fedfbc8804deb688873585ded09aceec1fa16"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2023-12.zip",
+      "sha256": "8f581fcee21156d501435fc88db1d99515e6d7432fa7ae2993de3b5f95bb0069"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-01.zip",
+      "sha256": "2f3d1a6d9292f13b1d6cf86716cbda5b3f6119a310daed1dde5ee3d0d71e2fab"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-02.zip",
+      "sha256": "bde9a1b0824b212ef6cea97065543fda0fc57c33479709d34e5db995fc79af01"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-03.zip",
+      "sha256": "24af0ecf9db1953e8c83e94823f4aae368ff70ba54106ef121c204cb046f9e41"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-04.zip",
+      "sha256": "290b594fa46ef95ab9c1486e2640ce2d1894eecd4d71b79bcd30d6632ca75b9f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-05.zip",
+      "sha256": "a9b42949325fd4f236c7c88b63f35d94910109218ce2db80b8e29f7a2b2d623b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-06.zip",
+      "sha256": "479dced4a591035987e084dc8a5e5f3f1f2593704c0aeecdebc20c89b35c1d98"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-07.zip",
+      "sha256": "8cc8d8b6ef13fa0393f53690e5d569afb8a50488e4d7852e20ac22d7bcf17cf5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-08.zip",
+      "sha256": "00eddbb3297515be14426119f07468846cd04dc527dbc19834dd45294740a67c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-09.zip",
+      "sha256": "37bea2dbe4281fbcaa45a849b6eed4393713b7236c5cb35cff63876e96df5677"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-10.zip",
+      "sha256": "b4cda93568426a315e1de2fc7ca0ffb56586495680b233ffd7ce6bec11d18713"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-11.zip",
+      "sha256": "3e8286eb77062f7c1047ee32aa1ce98dbf42f8e8029acebe38cc1bdd33967c63"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2024-12.zip",
+      "sha256": "330397f0cfd0dc62253ce6cf61ec142714fe65592a9f8447e4b88ca428bb4c9c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-01.zip",
+      "sha256": "99928eb8fdc5d565d317b0e9685e07fc5f9487510a39b8675d7374cfdfcbec82"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-02.zip",
+      "sha256": "d7466620f50bb4048080ece1deab8eb0298274413a3eb2a9f4c728536ab3c647"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-03.zip",
+      "sha256": "9dbad1e542ff8344fe8610450cf71d5cb98e1af2e8f2d7a31dbe8679ef263535"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-04.zip",
+      "sha256": "238c691129962d9fe08aaca46ea367f911e62c58a820a8e5ded371bff7f4eec4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-05.zip",
+      "sha256": "201829c864a26677ad0b53df5b0491e9eab00e6f48e1a8bf5204dc7d794dd7ea"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-06.zip",
+      "sha256": "45763ee27ad110703c6f71d9ec80711de151b8211b14ad98cc978c4d5ede82ce"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-07.zip",
+      "sha256": "e9c3dcdc09de72386d465800c665169c9bb011f35d350f9ba9bc7b4d7a69876a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-08.zip",
+      "sha256": "51e3ca163e71691ebb43b55d32698fc5c25506ee2e663a195d8e5863194908c2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-09.zip",
+      "sha256": "9bab9763c1cb2514df907fe6e746405428c6b92cbba12ff987e4820b2a8726f0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-10.zip",
+      "sha256": "6c51ad0250f4174431c659a3c78f604be087e844c6357e5feb48ba66e6bb1862"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-11.zip",
+      "sha256": "4b5622c5a4021b1a0bbd2d1fa754bb9d13f16b996d79b153b423bce0ec154f26"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2025-12.zip",
+      "sha256": "80080e1303ab2c291e53103d703b5364ef7a3da36dff5eaf45044cca74e764ca"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2026-01.zip",
+      "sha256": "d710e68cf0dc90759814647dff64be482b4ddd05bf332adb73126885cb2979d7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2026-02.zip",
+      "sha256": "97a6c569361290917a525d54d5f964af1642dc2d281e162834b4685157016540"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2026-03.zip",
+      "sha256": "9ec5e28db1e0cf093d5c756b85329b43db730d6f95d6ed142a9717044b1423c2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2026-04.zip",
+      "sha256": "b72f5a102bd468d1e3d0c3b88619f1354a29e81616f9a55935d2e00837958e4b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/ETHUSDT/ETHUSDT-1h-2026-05.zip",
+      "sha256": "5353c7cd71f610eca5a58824606ba1016efe34ea62fd6e6cd4b7be4b99277915"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-01.zip",
+      "sha256": "bbe2ad04379133e2ca7b68cb5351b5ba610523c6a0d53b4ecfd628b972165cc3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-02.zip",
+      "sha256": "36b1e2ff3ffe162718e61bb23ef84a104dc2cc5591c18cd8ce4c04e96655b84c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-03.zip",
+      "sha256": "044c37d917fea58900c8ddf4086b9fc71fcadd55215a10680e1e7461ffa78265"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-04.zip",
+      "sha256": "1e4464fee6301816ff2efa7696d8cf53f34684b9b60616cf6af26e8cd75cfefc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-05.zip",
+      "sha256": "6a8888b3d3d5a856d44eff5907210c30cc81fe210364f8b611726ad24b6846ba"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-06.zip",
+      "sha256": "0a550357320ba4954437b15b85f01bf0cc0c455f07f19e27ca91ddda19f1f147"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-07.zip",
+      "sha256": "05fc6f96bc940ae0d290b1039387c3a223b5159596819998563f34508594719a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-08.zip",
+      "sha256": "971ab9bee4ad830767c285d3af6df5357af1bfa2ddb084fa49596cf9b5276036"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-09.zip",
+      "sha256": "41699bac620ac3f15318dd9238392fc5782d4321660e5c7986925eee3d172381"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-10.zip",
+      "sha256": "bc6bb18da0f2e30171cefad3d2df55a70d12e7eafed7b566225ae67e737be6cd"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-11.zip",
+      "sha256": "e156bc7231bfe31e21aaf5628260062aa9d59184ef075412ab0fa546dea1fd80"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2022-12.zip",
+      "sha256": "8f1fa76f20f0cd161f238d4e7014274969df3d3ab5e8b6c9e1dc8327e02ec2d5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-01.zip",
+      "sha256": "0d7bc47dc3b49cbadd29274b63c02af8f23af40fe241412d357903ae945aa79d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-02.zip",
+      "sha256": "1dc1a4ad1c82935fbe8b4c218f22087470b3a20cc2c1a394574ad1587ba5a828"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-03.zip",
+      "sha256": "c41bd78088a2bb8547f1b3bf5c89fcadd7606397d2a74f0961c47cf6754f8f8a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-04.zip",
+      "sha256": "34aca0062513dbb81e99b4b6e2e0e2dd29b453e33c629c8cea1beeff9faf7543"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-05.zip",
+      "sha256": "4c5b1305d4395bb122f85b60520db8995c810357a2c189158b2beae2d116b1bc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-06.zip",
+      "sha256": "023229af2e8a8900ee79ba088837b174acc52512f2e8296b02aa279cf97a82f5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-07.zip",
+      "sha256": "e45b525229f485463a33f3c59f4dc3eafa2de1f9fbca8f2126cd3c074f62b6bb"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-08.zip",
+      "sha256": "d509bcda20054981e3f738ef1a33090dc12ddaea5593932e2545a285ee4987c9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-09.zip",
+      "sha256": "99ac300173c437de0b735ca04ff7ac55512431eedd381795f2ba069edd9020c6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-10.zip",
+      "sha256": "e9046fe166dd07107386312716030e66aad44136d40712b17b976ff9dd905bef"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-11.zip",
+      "sha256": "96c7b5324c80818622477b6d3fa71b82f62ae2266ec42f763433a11eef7494bb"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2023-12.zip",
+      "sha256": "5d7fea512037fe238b6133df8bec56231cf086b73a44bdff89e5dcdfb991d62f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-01.zip",
+      "sha256": "eb8a8dc7685761609f19b403db0eb6655d757f720f71da9b8c1ab638ddfc85b9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-02.zip",
+      "sha256": "7d87e385b8befd2c3fd6090475904fb6d28ec65d1afb1f1892570178bfba54ac"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-03.zip",
+      "sha256": "b679c264fc7d70ccf70d9fb25481bfed485a01c2cd439b8b698933b9398119c1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-04.zip",
+      "sha256": "02fdeb42d8293094fab995cca7b33ef6fb18714d173e6da9e894119c734557e9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-05.zip",
+      "sha256": "b22668d0d3fc2fb430efd5cca654dcf167b5df2d8997401f49d8e3f9ba43b3c8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-06.zip",
+      "sha256": "80e770b293faa4ae6da7d149df3e1912da67bb121b58123260c7f4b755f4809d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-07.zip",
+      "sha256": "da7072219268b51067972bf51032440ba3214d63df037180bc0c9e33a77ffa8b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-08.zip",
+      "sha256": "08bc16fd25cb4b024ac2f3d187d4ed5426014e48808ea9523b9792b141dca34d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-09.zip",
+      "sha256": "c99c50b8413b34318d5aa778b890d8d06d5c333c4db101570c1c9ee7e35b6451"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-10.zip",
+      "sha256": "ae94c6ea35e4b98c5a2e41a32a9d75e18793ced7c3e55c9e524a3e0c43ae75d7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-11.zip",
+      "sha256": "620f261485e352e46458f683129cdf5141d2f70222a70b65228d6473f884ca81"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2024-12.zip",
+      "sha256": "bdb5c900670da54eac3653f7be69529dbfeb13574aa6072049ff1c419d7f5567"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-01.zip",
+      "sha256": "372c98abd2da7bbf5e3cbe39e77296efe8ef4e94790c3566da3e7313049be7b8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-02.zip",
+      "sha256": "863aeb10c3a31a5a9da82bfbcd120740c0dfad5078a579366caf166f58aa9b34"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-03.zip",
+      "sha256": "04b504d8b18dd7e1dce1783add7bf40df0132e6aeb9932a46aa950abb36534c8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-04.zip",
+      "sha256": "6d8784d0f2a936547897208aada8b57d65104bd3307cfad32fb39070fdec061c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-05.zip",
+      "sha256": "b20e5bf7b4b3b3d5c0720ab2d845e03933ef08f15d3f06570b009463ba12bad9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-06.zip",
+      "sha256": "72d6fb9cab913d98220a06a08eab70a361b5d3fe84ea9701420e5f2cc6600c7c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-07.zip",
+      "sha256": "5493328c22d7804c5d64298e8ac475786eba0810cdb31ed6e6134f5720c5a2bc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-08.zip",
+      "sha256": "ff753c960ffa6954d3ffbd9cf6f6a0f8d2b280753cf868ebe4732d0afa5a14fd"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-09.zip",
+      "sha256": "9cbc37023b21bc91802c38689466e2bb69eff22e55d6012c6feb0bb0bce56004"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-10.zip",
+      "sha256": "8d96a116ab53375ce88316e027fed319d625a35756122ed4af79d75584133b97"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-11.zip",
+      "sha256": "2a74a61262338c2cf49d65d3c2d8e5a27ccda3aadedeaeed87da0544b13fb372"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2025-12.zip",
+      "sha256": "7c25b753fd893dc697b5e7e8a1d0db904150181be7b7991cc05ba5b08f81cdf8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2026-01.zip",
+      "sha256": "cc16e807c075689a73f096b7603c34f1eb289bb2d782ca8f6147e4c42632ed0e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2026-02.zip",
+      "sha256": "fa733e5400163477fa7eb544a9a7e04b5c679656720ccb7f92787fcf33b739a3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2026-03.zip",
+      "sha256": "5e9440665d3e4209c320e2dab897b5c3cec578800e669e1c8fd3503f157e49f1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2026-04.zip",
+      "sha256": "2f466580c7e6d2e02a67a968428c0f9b987108cc1a3d2ba73061e329aacc208d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/SOLUSDT/SOLUSDT-1h-2026-05.zip",
+      "sha256": "0d1aef19746005c140421825e55e482813330b19a82cbc24c792aaa0464778c2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-01.zip",
+      "sha256": "e659a4c3ba548ea09b6f8492f123b39a6562d63192be388019a41f82f77b497c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-02.zip",
+      "sha256": "bded63853206722c18f2a04f1c368604e4f177b7a72f1cd8c2114e8936a3dcf0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-03.zip",
+      "sha256": "271e37a528fbbec73494c1856479a89c2ed65750f8fc318d5b623fd7a55ec796"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-04.zip",
+      "sha256": "149258157f4bdb64d9c27202bfdc12d31f42e2578f39a5777d1a21d26381b3b7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-05.zip",
+      "sha256": "bdf2fd323df3f8aca9c6746d7e9d5eb88345c65ac4df5aca59fc05893f95f185"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-06.zip",
+      "sha256": "1b414986908f32931aff1106cfa0fccaced99ae4cce89ab3f630346271f96cea"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-07.zip",
+      "sha256": "6304805215d13227af4fd163008331b8ddd236bb2d29be97c310be88f20dec2a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-08.zip",
+      "sha256": "8cc767047e488be62c5b0808e0a9bc114a3d5985acde00b302a619beae164a86"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-09.zip",
+      "sha256": "363b3ec374045f3d4fddf0dcd4043b4250e85598ca276bcac28385eb90f46f46"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-10.zip",
+      "sha256": "ea08498c3d9aa18afa2267fa04cc3326893cbdfd427a709b4b532995a453f441"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-11.zip",
+      "sha256": "2ee01ebc45bae69790279c3bceb1f7099f2813f4998ce8a984f37a5f8dbc477d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2022-12.zip",
+      "sha256": "ba091b6bc15c8798761165845678c72633cbbfb7bf49a10a9ab81dab9f02c0e6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-01.zip",
+      "sha256": "62f431a6864dc70689b292338ddf31992a471700eb1d161fb7714cd4c92823be"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-02.zip",
+      "sha256": "3eeaf3efe5469ccbd2e2512fe7302b6dc73389580f92d77bfb2c3a11b314ecbd"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-03.zip",
+      "sha256": "1e902bc2f554af0cd7324eae8efbec4b3f4ea49835547a730469e809c00213bf"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-04.zip",
+      "sha256": "1832e32de57de030b4e1115ebcbefa613e3554395f1a7cad2353a707fd9a00b9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-05.zip",
+      "sha256": "76447addcbb30ec2a4ad641cebd32a233c9309ff2aeaf118edb8aa33fe6efbef"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-06.zip",
+      "sha256": "dcd5768745e9e3516600e5c6029fe219c3f1e264dc463ed19574d3924fff3400"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-07.zip",
+      "sha256": "30a008f43e28e9b4b104c73a67502879c09bcdfa884cf358e83c9eb095886035"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-08.zip",
+      "sha256": "d25a7f97f870374facd7d54b61b40956eed1dac3898f2afb7773896ca2a62966"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-09.zip",
+      "sha256": "89e049b9dbb8bcf450ad82de2e6da5132c81b0075453f09a2fcc9f3f6f364b8a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-10.zip",
+      "sha256": "e0246f1dd92615d3be8bc0a127fa6c244cc5db0555e2af918d4fe24789b5df2b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-11.zip",
+      "sha256": "bfdc66685849cd63f220bef0c941f7621c4110a3c433066542197d0d108a4fab"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2023-12.zip",
+      "sha256": "488ca5812d237f7f59276ab39bbbfdd9f03d4b12394cbe9c452c375612758603"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-01.zip",
+      "sha256": "2d8e259334148bc3d3b84987b06fcb807f50f62c131d9893145ace60168b3ef4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-02.zip",
+      "sha256": "22d29ab791b77e2a3c65843900bbeb9ef3e109c882ea2db92924f14180acf824"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-03.zip",
+      "sha256": "c8f9340cba065bf5e956f66ff46aaddf7755cbd5ed2d407c5720f37402b5f564"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-04.zip",
+      "sha256": "2c6b904e0dc5b241ef71fef53a7ae79028f6d24bc1529f80507c06763876b4d0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-05.zip",
+      "sha256": "a3c8089b29604358e5ea077a8f824a2dcc17ee8c7579933ec326e6195a2b6b64"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-06.zip",
+      "sha256": "f053c2fa3755f2eb8c9291b43eeebf08756ca4d73ed0e435f1b3114f01872ebe"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-07.zip",
+      "sha256": "52ad4b9eaab5ea67b4e3c588784996e913ef859c4c553c05481f9e81a5a9550a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-08.zip",
+      "sha256": "5500e092c17531c0fe4dc3c817850e83ea954d06ff466da146152292627e100e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-09.zip",
+      "sha256": "e2f3c3093939fdf5959207c325b29404cb29ad8edb6b9510fa103da7a57a91f3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-10.zip",
+      "sha256": "a18e0817ae976c6b0859f8a5cb1fd22cf0e69c8992f9dff2bfab098ef4010849"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-11.zip",
+      "sha256": "6c1ad7c2aeaa31a5221c9eb96cf6076eb318851c5d15ff4e60921b6419405b2c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2024-12.zip",
+      "sha256": "324c97541d0395d7c5d882f5fecb0e85b74e0569265f70319b3afd3860f3a466"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-01.zip",
+      "sha256": "d7a3c3240f2214756249042ec7d914008d13457d2fdba41571607e5243a2513d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-02.zip",
+      "sha256": "3cc05e52175fbee8638a83472b29cae87ed409d3ff95391fe260f94f2a991bf1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-03.zip",
+      "sha256": "eab50e62bc9d8c8c65b9da0e34af0f80bce41624a6b385148a5c1bea05216999"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-04.zip",
+      "sha256": "0c2472f4288c96f99b3e0ad4ff705658c7d62b922a52fa1ac9d3abadcc25d9b4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-05.zip",
+      "sha256": "e9efa6d5f3980d3c5be1a9b3f45d96a1b6bc116b53149d311e506ae1280ffde8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-06.zip",
+      "sha256": "b828c5ecd697ea470abb5745a41589987198213d08a2c205ffa128258d071f84"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-07.zip",
+      "sha256": "d88f08146b11fae863886e93981ac9860f59c99924409f759eb3954993bf2e6a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-08.zip",
+      "sha256": "be006aede18c8a2e77c77a705994f0eccf0b7364850df35d27e4b2c4cc443db9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-09.zip",
+      "sha256": "2d3d4c796ea41015339f0e16142a6da13bc6d1cb5ebcd202a1164ca791cb4350"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-10.zip",
+      "sha256": "d771a6b2e109daa57db991ca7ea5c723da5f1af25d039d6f316c657a096824de"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-11.zip",
+      "sha256": "75de6507975d1d2e615a97aa4b9fb1054f89c14922910b822a0e3b1b71718dc7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2025-12.zip",
+      "sha256": "a545fd0880bb7fe0a1790897de4e5e2bd25b993832bc2d4c27176b3108832c50"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2026-01.zip",
+      "sha256": "e7e14cf37810e776f93007d3799448855bd078005c98357a6d16584022290e46"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2026-02.zip",
+      "sha256": "9beb008667ca86ea8a1fe9739f8a7e1793c2ec539ba9bde329eba93973d9f177"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2026-03.zip",
+      "sha256": "1e50c1fb04976debffed8500fc95e8418233a0a020497e813774b700b3bba6aa"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2026-04.zip",
+      "sha256": "197440860948507349cda7242530861f42c8879e551e2673a7bd144a286b3303"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/BNBUSDT/BNBUSDT-1h-2026-05.zip",
+      "sha256": "61c5e4bd190326a5de1dbb69a91716b75212573a282792b260b7cced9a335709"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-01.zip",
+      "sha256": "1f676966183d9d4cef7fe68e198a488aabb96fb6e0324fe498795feb2ac02954"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-02.zip",
+      "sha256": "7aa8c69b1c1f9ca8e72dd11c64b5c23b2714d488e54abdbed5bb927fd3db56bf"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-03.zip",
+      "sha256": "a49da5202f9c9c1195c0a878c9344e172f6dd74b71a8bad1a526be8a9e7c958b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-04.zip",
+      "sha256": "17efd4e33edea5e5d000c610c4df3c8a25778fbe64ca1bd422198d92b68e1459"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-05.zip",
+      "sha256": "65c5b1d4118d89d89f7954737200f3543179bd5fa8616c24308c18ed6e85d091"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-06.zip",
+      "sha256": "f309f66dd7663b0461810d9b89447ab6c21a18d5fb49ec047fc4451f7e9c10f0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-07.zip",
+      "sha256": "4f7651832fa1ca6537fcde6392d9adc1675be2c821976b2efb2e9e78fabee3a2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-08.zip",
+      "sha256": "8516c15c2c34b2c0582f2c50b3a0cdf6b3caab661646493d7fad9c1b923d128e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-09.zip",
+      "sha256": "f7e09e153da27059507f0408a2a726273fc8d0c4d5ce0f16f699e6fbb47839d0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-10.zip",
+      "sha256": "efdbdc6983ffab51457cb95d1aa5610b427e81a7817b9c75ed97464a77d5fb0b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-11.zip",
+      "sha256": "5941bfb3f179e63898ea013e626788b798d4f93ff396ac8b7fee46d8b7cd21c1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2022-12.zip",
+      "sha256": "e302e30c245e6b14109c864db8653e39367a11f98c85fae2737d9b764c473c94"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-01.zip",
+      "sha256": "1a95478e4b7c0fc967af0babc7703ebb3d669bdf04eaebcc675a10e156ff80a0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-02.zip",
+      "sha256": "ba265342b90b1b267e964802e61fbea9db1659192fc89c488f003a35466ca936"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-03.zip",
+      "sha256": "6b3f928f8b59585f933757c5db8ffb2a4e2d41a351307e259ffddfabb7b6958d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-04.zip",
+      "sha256": "9f1947fb0eab6409431d2b15bc779577cd36f77e0d3827007765eb6c46c28e61"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-05.zip",
+      "sha256": "29c81c5c4628b01336cb1bbcf64363e0b6b00a019efa30d80167fdb9d954485a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-06.zip",
+      "sha256": "6f767c9dcb99cf3b8c8596fe840c5a84c619b98cf68eebd8f3f6e3ad2a47c166"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-07.zip",
+      "sha256": "cd6d0f149847a7abe87c1598d5344756836c1cf255555b46595a9c3e28c109fc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-08.zip",
+      "sha256": "a18fd10feec868639b41d0614c921ab00b121b108edf16c808133ce4e0925874"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-09.zip",
+      "sha256": "ed297ed3e5c48274c338b0bcd866fa332cc4aeb2a604a8a95db9bd9f28f56450"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-10.zip",
+      "sha256": "dcbcc11484521f3e0aeeab6868e992ac13e057cb306d7218c6dcd5d702ee17ca"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-11.zip",
+      "sha256": "28cb6b7db8276a82295457c776cb7323903cce1fa555be6b217e62aab0609665"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2023-12.zip",
+      "sha256": "ce02fa6864cffe60295005960d95fdb1c90d5ce717006a3c2176864bd3e6aae2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-01.zip",
+      "sha256": "be1dc490f8c740199ff03dc02db23643e23ceb0b846bf21d56b7c10a97ddf6d4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-02.zip",
+      "sha256": "8b0f7f6ddcf7d95655dbcca8498a7b3ff30cd3e9571f391c1d6918dbf600962d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-03.zip",
+      "sha256": "700c4755469ac02e0a55031094bb1434ce44abdc7488e7f31ba5f525ed02b081"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-04.zip",
+      "sha256": "93b7799e947802d4e34fedb0ce260dac6ad0a895fd2a4f3dfd96729d2b6c538f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-05.zip",
+      "sha256": "a0db20d251b5e4e7afa0b61905440aa4b5a1f5cae819cabbf90fb8bbf11b5e14"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-06.zip",
+      "sha256": "8a05ec52167f931b1cf3fddea3c44d5b80977b07ccdeef5d647a6d937bcf484b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-07.zip",
+      "sha256": "b0f2f09d5a37dc59e7aafb34e8f8c0e561560e55cd162554f0fa50c12eee0747"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-08.zip",
+      "sha256": "ca361b3a0ba9cb0a3fa86ce829670332caf68fa1a975a4b14fcbdb80c25b2660"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-09.zip",
+      "sha256": "086a233724da625f1c0dc78ba146450a5a35df3af725dae59cf5f92da5cb47f4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-10.zip",
+      "sha256": "1f1c02e319c04a8ba3fd0d62760567f6868b781de2e9661d49f5d8da1236d01f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-11.zip",
+      "sha256": "e91669c64348377b593398eff836b64c09a149e6d80fb90cd50b5d32936586c4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2024-12.zip",
+      "sha256": "fce2aa49ee43b716abe37b235b680d4692530235ccf0c2ee4d281daaf70698d9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-01.zip",
+      "sha256": "04edde44f5fe5aa72bb935e4ce110b570e22dfd7e49832efb5755c4db5750601"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-02.zip",
+      "sha256": "6888afba85650ae4a9f8a64ba1d975cfbafd7f3bcf8ebcbbc534118afb493ed8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-03.zip",
+      "sha256": "1cbe649d0f91846bbcc1f3563f8179bf875e01b8b6b2bb074c3594234b13fc8a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-04.zip",
+      "sha256": "2998afdca7b4d9d2c328ea1261b478d011af0469b9cc00246825c44940d1ef61"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-05.zip",
+      "sha256": "ba574e76e7e394db368df3dae93028f6c1e7039c0513b3cc50d0ab82ec8c18a0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-06.zip",
+      "sha256": "e5db5f3c3586190e79f3a07d2de9128ae8f8a8b57e2fd7cf0fdd275954c89f24"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-07.zip",
+      "sha256": "cc46f354c454f6a605d6ba46e297101c3a76c0b3bd3715b9fd0baf3f09a1bef7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-08.zip",
+      "sha256": "c1fc858b4e8e66b23a44de8fc1425c011a0f7d5ea3de6ce4a353e449d151663d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-09.zip",
+      "sha256": "a2446b829ed50ee36fcc9dcb8ec7f3f13020780038fba463e4b3c4886f7a50e9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-10.zip",
+      "sha256": "14405bb15e83736a3f6dd7002d9c004e7e4ac995048c0a255a3b353ccbf15143"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-11.zip",
+      "sha256": "7f742dc542fd1a44c939c280a930a60d6cd09f80ecda663b0a4d68a6d78dbffc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2025-12.zip",
+      "sha256": "c3cce27fef03ab32877eb50b16b5f9e6c1f8cad851d3fc8b8d595acab489c6aa"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2026-01.zip",
+      "sha256": "b7265a8b978b0711cf3052c3636a3a860e4110a6f5b1e3bad860ef0867dbf8a6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2026-02.zip",
+      "sha256": "1fe8d004e6727b305ea2065b0f6e91041fcd0b23b77d7559d23bf6bf6b91eca1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2026-03.zip",
+      "sha256": "c9ea03089caab7774d455df3a85c99b14b6e11af7b280c84ca380ac48ca52c46"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2026-04.zip",
+      "sha256": "10c78e9a5dd554125dad89aeb5066a89b42d2895a107921450d5b25e2f5a53a9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/perpetual/LINKUSDT/LINKUSDT-1h-2026-05.zip",
+      "sha256": "fece4fba9d49887f6e87063cc24b5ee7bf5aab2d19b347e21b8588323c72e2a5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-01.zip",
+      "sha256": "22ee19079b620f5c6d820e7d7f8bafa7fde866d89bd664863b8bd527749c12cb"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-02.zip",
+      "sha256": "fa95088258a905c79ab79e8984d2f6f66933ec2e814dbab4ef9da89b01ab484a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-03.zip",
+      "sha256": "4cf0883bc07f4ed4cdd3b0d8c0d166b4d15d21e666ab752f9f44401af4d6172f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-04.zip",
+      "sha256": "57e2776cc68b3169fc9f8632dad67278f470cd453407a8ebe6c87963c8a31357"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-05.zip",
+      "sha256": "bced8a5013d09742b96682e6fd01ad4456213515a03d7586ec2b1f2689af5255"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-06.zip",
+      "sha256": "0cd0708f8903829eb46f98cf60f4b2516c986e1ccddf6620a5912b48e16baf93"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-07.zip",
+      "sha256": "29d58cce0cd45f74c6a112039835c6d9ee5a7e60e7c38c2503beb7930453a4fe"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-08.zip",
+      "sha256": "6f4f0c6c84c05694b4b4a5c085776730fd4059723eecd98ee6ffeb3fde4da811"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-09.zip",
+      "sha256": "d62cd4e13009de37add446dc4f63ead4c56dcc4955a1e60f6726bcadc5a68fa9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-10.zip",
+      "sha256": "ad9efed10d4ca1567b865d7a158790977cec1b925395634217069df6696c8bc9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-11.zip",
+      "sha256": "8febe5bec1a029e993bbf27490761f8c47c32849bf7dd13441b2b2f6ec1ffb51"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2022-12.zip",
+      "sha256": "4218c78331bcc4dbeb5768fa112242a880971c1f2cfd1d3f32aaa26ca34069af"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-01.zip",
+      "sha256": "05e3df32f28d0d50f4c5a280adee9368b4a66fc68c6ddca1b3277087ac0d19f5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-02.zip",
+      "sha256": "5227accd9aaa59f71f5e682abffb58be5f99573ed208ab968b1704c81ac11345"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-03.zip",
+      "sha256": "ab022adff9b853d2f33cf80154e77c770f57c3392f0bbc36564b2e2cdbd0e872"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-04.zip",
+      "sha256": "2931039d26818edc65d4faefba84945fd1ba52989dd58fb127dc3cd7a12c7fbf"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-05.zip",
+      "sha256": "5d026fece46df86293054c8c56c2c8de575d30161b82979b11831831217a246e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-06.zip",
+      "sha256": "3ffdde6f1dc9c3c065d77ae43f3ba64d19d4cb76512d4bc1d541933d4fb2e6f7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-07.zip",
+      "sha256": "0304baed9fd407293a8a8040b30a1b68bd344803b630d33530375b421733a930"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-08.zip",
+      "sha256": "516a8f50631c6ede6a9642f6d1590b6a22c33ba09935501d2ace8dc1396501fd"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-09.zip",
+      "sha256": "3fd9df6fd1eef33cf5fe625c27012359bc6d64a68c109305d7b44a0354f533c2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-10.zip",
+      "sha256": "03105cc140150bffca834bcccbddc6cfee245e079d2df1759653243bd6e92448"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-11.zip",
+      "sha256": "8015d2997f8d5e757ff3707ee87800ca30a74da0129daa747b64117f07bcc186"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2023-12.zip",
+      "sha256": "8f02fdd2a2da261bbf13ab301c74bdb57fae005f19d5088e9ece5f8824c1a2a7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-01.zip",
+      "sha256": "3e0d30870672aa8f0f937881056e3cfd55913ae5c780cd50b33f2763aa0ba58e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-02.zip",
+      "sha256": "daf1e4901e3d6436d82ad60f90d007eb5300be8047cfef121007203a7212cde6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-03.zip",
+      "sha256": "711dcaf2a341aedfd06447b4117b540f60adb0784c5e64a313c718e4cf092bc3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-04.zip",
+      "sha256": "6d220b8e2815362a11d294d35dbca28568370d8295351937eceec10f2b359b85"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-05.zip",
+      "sha256": "aef8c5fdce1493fd570b5829a72f2f17c7e459483390f25544d16c2a30be592e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-06.zip",
+      "sha256": "43fc4473820d1fb4fe340d1b1951a87555f6841aa352e684fa95d6adffce04c6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-07.zip",
+      "sha256": "acab0593c1452660ce74a6c239fb215c1192b0a9c6e8c1689e6495de40a0174b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-08.zip",
+      "sha256": "7003d29a43dd5f9357f838da8766834954939e22c1d80af682d9f33984f67b71"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-09.zip",
+      "sha256": "6ef23b02392b481ef9c3855434bf3644289fb6e228b4f7d9a0dfc6d3cdff1116"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-10.zip",
+      "sha256": "26db65ac8020d80ece35df79c254c5f7e24427529bcceeb2972748c4fe2d2707"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-11.zip",
+      "sha256": "e1b19cccfe2cdcba48b022790789b7b01edd86c075f39bc152e44c267d43bd51"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2024-12.zip",
+      "sha256": "069409f525ebf6370ee1c7defe475167de4b97284c5ac8e68768652968cd3dc9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-01.zip",
+      "sha256": "df725010d55458866eb5a47e9ee708c6796c9d7e77b14c38342cea11f381815e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-02.zip",
+      "sha256": "e918b90fb33df3a3317feea13807a892047f1ec86eeac100bdb7b3dd83285d46"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-03.zip",
+      "sha256": "a3b95cfb315641fbfddc61eb32adf2a2588afb7a3973a61f464aca007ad43e3f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-04.zip",
+      "sha256": "01dbb7bd0135f98bd63bdde6b943cde1accc1770cabf92f68a1ec0653ced3888"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-05.zip",
+      "sha256": "e7355e2775b88009c984db1783bb8ed6b5f24ede2b52bb764151b5722d6a5e42"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-06.zip",
+      "sha256": "a1f4a40953740fa83ee9ad97776ff8325d1958654a67f1325614071a983819d4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-07.zip",
+      "sha256": "b097dff828f6e43fece23db0d3cb98042a9d7bc19693b8cbfd051d88eb973b7b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-08.zip",
+      "sha256": "1180129860b6e196e8d70bb9719e81573aa6b4acb423ba5ee7f82f10c836f7ab"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-09.zip",
+      "sha256": "21dc6570fc6bffad0e7b5f9e99211b82ad07c95ab4f18c3a2daa3b95ec98344c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-10.zip",
+      "sha256": "9ecdedab6344fc4cdb154763266b8e09627a71c3cc5574cf868158b541c259c2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-11.zip",
+      "sha256": "23735400405627d610123e3a43db3e98ae7addb93459cd670e65a7659a5f081b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2025-12.zip",
+      "sha256": "35318b789f020b0e04c9043112480743855554e52e1d188437cbdaa67246d51d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2026-01.zip",
+      "sha256": "fcdc796484f395830d418588a34a26baed8849dbef0ff2b56173247e493ff51f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2026-02.zip",
+      "sha256": "80df1dd669dc1e3afc360c9da8b9a949a127fce088eedbf5bf708bd37b0a1f58"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2026-03.zip",
+      "sha256": "5c069d5e9597a44fd0e213395082e59ff223fb99c9eab3a2a5a2a5622ba7867c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2026-04.zip",
+      "sha256": "51cdeb4de7d5ef1d4eece80b6115e391bdf7a2d0803bf9ad8371ab23340b22d3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BTCUSDT/BTCUSDT-fundingRate-2026-05.zip",
+      "sha256": "445b65fd6b17bfcfb5e4d035db29fad34f729fa078f0449024db42621be84e6e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-01.zip",
+      "sha256": "9f5bd01450b05a8c5e48cdc99fa147e85c82ecf7ee7919fa543a4e6039a2b98d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-02.zip",
+      "sha256": "9c35e30327ac8915cc1333415b7d5018425781c81918e349d26b734525fcdfe5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-03.zip",
+      "sha256": "3de0714a2b2582029b32147815298b6e67e972e776ca3f68a4208823b4109404"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-04.zip",
+      "sha256": "7c306ac8b6275a857b064916080e0b6ec502b25a4501c84c3fd2c0b077425de3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-05.zip",
+      "sha256": "c458330243c9d8e048ffc7168c9e3c077c01bb82b1644097a4893fee34069b78"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-06.zip",
+      "sha256": "f6f3a69b656b91500b41501a230e663ccc3c1a65f46273595b00682d8f6fabb1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-07.zip",
+      "sha256": "17826e5591af8660a7fed74d60e24eee77c822cf0d901dd8af355a10a36699aa"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-08.zip",
+      "sha256": "a2680549de5e087566f4d323b3a812c2b9863528c6bc49b0e551cb42c381bb4d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-09.zip",
+      "sha256": "816e4de946d9f854cc457c86ca396b9cb49b46e80cf44941b59b9ad2124f2ef8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-10.zip",
+      "sha256": "e434c29eb544cc57ff574e38685535bb7d04703aee54bc5d52f53cea372810e6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-11.zip",
+      "sha256": "4f4e52f176f69e99353959d287874a4d4a135b5bb4ea85514dd5a3e65958b2d7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2022-12.zip",
+      "sha256": "8cd0e885d63b85ee602d80eaae956f9ee3e0e25db264eb5c74026a9ae0d71f4e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-01.zip",
+      "sha256": "5647d5978092d220eb14e11c7854d86815d0eb6204197e37b4808cc599e986f3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-02.zip",
+      "sha256": "7da37820c15fb08600ae668551d0b724326b8f71d761582990721059280a221b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-03.zip",
+      "sha256": "5110b60cbbc5f26048ce02575c26444ea2ed497baed9a5609e118359e1ca3b51"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-04.zip",
+      "sha256": "fa3a3cf7c3b8285687ae8c8014eed8bc58ad3ceb33ccb62ff4298048213c0e6c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-05.zip",
+      "sha256": "bf890ea68d979942ed296b058390eb98b0b495547fee2117d3b76d5e7f629b24"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-06.zip",
+      "sha256": "b3ddac1309f9a684f4e811776a6c09fb2239bb8d1ae0ff4bd342a1c32a5e171f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-07.zip",
+      "sha256": "82577976d8acd886fda84179ee38c9e7ef445732c3b6a062d6ffd2a9e3cc30bf"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-08.zip",
+      "sha256": "cf749429c366cef3302a804b3e702937e5f1a77aeddc5b628dca7da547a8935a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-09.zip",
+      "sha256": "41ac7eb67a46d14d97daec4c37e8229df5ac6b165639ad4b2c54bc7374930341"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-10.zip",
+      "sha256": "ccaf4474f0dc94adedd4330c14995f338186caa2cc9fd0d2e2c55f74cf263a5c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-11.zip",
+      "sha256": "153ec1450eb5d999ce253e2c7ca2e81b79a523ff52dd18b14faefab8212b999b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2023-12.zip",
+      "sha256": "91bdf41566cebb86c6f0e3646b0037de9c22e14ee2f592c5722c7e4a19c91119"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-01.zip",
+      "sha256": "5a71469b0b363886df904e784dddefc484dd943334b1fb7454713ce4ed715a4b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-02.zip",
+      "sha256": "915fad950c48935f3875d88992b8d78290bc8a6fada44408e3ed14aef9a56670"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-03.zip",
+      "sha256": "e9c1d0f3e7e3b493277c7f826afb223482d56bdc7611144d398ac10e47307907"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-04.zip",
+      "sha256": "b54c9f05af116ccd921b32b25960ae26954c4983992d44f2390bf1de08b2c724"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-05.zip",
+      "sha256": "8350ab4d61b12ec61539611e30809039f54814213bc4c937609360b1ff28b5e0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-06.zip",
+      "sha256": "def13f4a478c28b0111fb24c57f95fcee80e71982ed74f12e465d20d328e2275"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-07.zip",
+      "sha256": "9d236281ab6430250ad2b472cbbf03812a40aed42e73c8339fc6be55a2417a82"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-08.zip",
+      "sha256": "e17684bc761924eb5e1912c52cfa997eddeb99da303e68e28f6f37369f672b9d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-09.zip",
+      "sha256": "ffb6e7441053137cb7ca81cc83bcdd996612f7dbb15aa2e168a7ee521f8cbbca"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-10.zip",
+      "sha256": "2124978c335473a5d9c0f0e9f238193d56c21ac7e250e065a36e9d1201beb049"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-11.zip",
+      "sha256": "636a4c7c86445c2774b4eae8598c480fcbc57de7dde5d40f6937c7fac510797c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2024-12.zip",
+      "sha256": "11a0847e8aacb32eeb725611fda4fe6a8419c03eb0c16e14dfc3b9287e78ecc9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-01.zip",
+      "sha256": "88c95b99d2784a7baac529fe578563d7e05038a1b8a498b2f59bf81b216fee20"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-02.zip",
+      "sha256": "9e116dd6754484a19ecc41ced40b8dfa7f62c33d41cdc3317336b1e1f043767f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-03.zip",
+      "sha256": "62464a8bfb7ba515628acb76d3e2172d33b88805faa2e701a22537c51a17d139"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-04.zip",
+      "sha256": "7db62cb5e9f32397dacabb3d571b96397024bda3810bde0799c90f61cb773679"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-05.zip",
+      "sha256": "996aff38f046b50510301532ac5cbdca115afca971c49cb548f50e5d70e18d99"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-06.zip",
+      "sha256": "ae7ca242249ca3df06d1222a0c264fe83b18c4b2c19fe656e864f7d081d5e198"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-07.zip",
+      "sha256": "5f2d840c5669ca946529c33f6df32433c5d0cd973eb4adfd40459270c460e7f8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-08.zip",
+      "sha256": "c3fca21c71afb4962e89f8e3d84afe5832019ed8f570ee7c7c299f2436a28b62"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-09.zip",
+      "sha256": "2fa09df245aadc73cf43f837a72c3009fcd7d10c8c4e3db48b2d1021c331841a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-10.zip",
+      "sha256": "1ae86c5fb1f15d8792906b746cc7598ebe7e6e7194b74501db79c874e37d7e14"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-11.zip",
+      "sha256": "a3a8abb219373ec1e02e8d1a47015665d180d6130cfe1df71d2fa8fc9de59e59"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2025-12.zip",
+      "sha256": "ef9e84f53a5fa07702958c8700077c8be0a90ec8b3e25110f5611109c3c0090c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2026-01.zip",
+      "sha256": "830cf7797ea6ecdc554ac2d9047a141df1a6a544f4ea58e7028227930462b139"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2026-02.zip",
+      "sha256": "e445f00c81a7fa8361d99b3660f24b4f58e5d952fe301d70bbc72c319bc01a77"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2026-03.zip",
+      "sha256": "9f5625846c503a1e94fcdecd2deb37dc8852e341add353fa48c2b9a0cc70df6a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2026-04.zip",
+      "sha256": "86160f455478a8b262d96d1516f583355e6e0cec7beeb5784e69dda76f599e98"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/ETHUSDT/ETHUSDT-fundingRate-2026-05.zip",
+      "sha256": "ff926ad3fc48493c26c85af16620b19c695cc1854faa1e7f0ea2ab9fdafc2084"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-01.zip",
+      "sha256": "f3be14b01356f33f6cbde6d12ee30311ae91fc521dc78d72a0aa39db8c295053"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-02.zip",
+      "sha256": "d622a4a5cfb461e81d9cb13ebdd34b02e2d221c2ddb8d708dc4047d2f499fa96"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-03.zip",
+      "sha256": "10d3d16d74340850c2148553261dfdad7ffeb0b705f014c869fa807a1e7ddc84"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-04.zip",
+      "sha256": "f07052472753f04eb8e7fb818cf60e90e187e712f63a577741ca7ae59c63bc9e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-05.zip",
+      "sha256": "ed42b50666e40e1489f01730f85e5efe919b9a94344e043369a459c66492a940"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-06.zip",
+      "sha256": "78249fec5212753b19ce01c2fb23ffdc3deecd29bd3ab61fb7cf70ba6c395edc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-07.zip",
+      "sha256": "ce4c96d62e020d4b3c53bc31c248e5800a4a6eb3a6809c36509238122aa02a3a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-08.zip",
+      "sha256": "1604d1993d0c6a7e37e2ff81a6944d7b5c0e81475e3fe475bdbdf0deaff4d847"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-09.zip",
+      "sha256": "673b50b2daec4a34da7d8a8095995ddbafa6f66bf8c2d499ba48f8050cf68565"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-10.zip",
+      "sha256": "d0436ed57e674ae3c00eeff3aa46f6e65c596892b80e5b6e8183d487c6ef3168"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-11.zip",
+      "sha256": "73fbada102584d8e19cb9594f04471f589ff37404b0cf64c0bd7cb4ac4d4a157"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2022-12.zip",
+      "sha256": "b9b8d803d985679959d21a55d08b14db331cf961442f8446eb18d723ea154567"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-01.zip",
+      "sha256": "12a401fc459341834a0d3c2f207d55e7aced058b62838f296028885ee2e52612"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-02.zip",
+      "sha256": "1173c36ad296e152ed9f954ce49fd65b7ffd8a03f270906a1e816fdbb7929f57"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-03.zip",
+      "sha256": "6a950dfbe4e75ce7e28a174d1432fed82fe08964053c618bec2be70f83ae6b61"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-04.zip",
+      "sha256": "88d1b03da4cd68774d846d5a9b7a9ba3d165a7b03855cad84a181820a2f7b297"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-05.zip",
+      "sha256": "b644431236540c0fa4573e96b9357077755d53440427fb2419e68272ea653137"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-06.zip",
+      "sha256": "63de6ffcbab1fec0b83807efde188fdafb06d4ed0f947c4df86d757f894d88c9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-07.zip",
+      "sha256": "7323f1cf79a8dfeb78dd7bd8cd2940a7db00ee023739430435b1cc25cecadcae"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-08.zip",
+      "sha256": "87ce0395cf9d1fa9ea4849b4811d366c1867d4159f3c1a2b4a3e0656972be2a0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-09.zip",
+      "sha256": "7a8c1135aa165e9399a274acf1f330bbf6bae594266582fc1cfc91b950f73e75"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-10.zip",
+      "sha256": "a56852237de6b69483565853858901ce7e4c611d3950d485a064bf90069958ba"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-11.zip",
+      "sha256": "1cbd9c6b802cdf035ba408c03e82aab678c2a994c2c6860386a4226ba104e252"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2023-12.zip",
+      "sha256": "debe51eb20a3b7d6093baec3b609e7a9f746c64635cfa77aa761e88e84454902"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-01.zip",
+      "sha256": "6b514b6c2bb67ff04df97d747efb9c6e4bb1bb27e889f1dc51a42ab1419a3d24"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-02.zip",
+      "sha256": "7ccaf8d60ddf07e03eba0589ec4f75abfc2a842217722aaefe996ee1bc095706"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-03.zip",
+      "sha256": "ff3041b6119af926fc55fc722332240037f1aee9b3a2db25f9cb801ba8e2992c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-04.zip",
+      "sha256": "591e7c4993e59b60966213efd938f48420cd9b63db815240ffc070ec40470e53"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-05.zip",
+      "sha256": "cdd788722e8b85fd6c9d992e7c1c767be87afc91db5b8c07751f898b373cbf29"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-06.zip",
+      "sha256": "8da6c97d67718422a5df9a0d50e37849521fb54de87cbb3b3397e441439dfcc9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-07.zip",
+      "sha256": "2585a0db933c70b62c87cac509de42ac09b98d370238c0d8c68249a20bd2b9a3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-08.zip",
+      "sha256": "ef076200aab768d33f71449957f6cd9c96c0da696708a5f561b97e7a0995e8d2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-09.zip",
+      "sha256": "7666e4d3e6ea6dd28011c508cf01421007521e98e96ea551f809836441b43ca0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-10.zip",
+      "sha256": "dbece64e8c5bc69c487cc03c00f6a4d4da2cad9152c73860386fcdc7d2ec9d05"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-11.zip",
+      "sha256": "f53a9b637d695a251200e48929a573b4bf04cc2d99d5a3a09fe7bdca622918aa"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2024-12.zip",
+      "sha256": "bae83020ac2ccfa6dd8d1362d373a92b4d5a7e396cef52e78dc2e7d81e63f621"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-01.zip",
+      "sha256": "314888152c16bc2d846f9aaa9ea3ebeec7c67d235ef2671f1a5e6fe0a8b4dbf2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-02.zip",
+      "sha256": "eeade74c1ca2a6dc9d78ba0d7a1ff145c323be72cfa2c09fcef9edab88baef9f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-03.zip",
+      "sha256": "3f77a33779c946da6f3082d14fb9a5497e7e4a4e3fff4d68967e6ddf96cf99ea"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-04.zip",
+      "sha256": "6cd3fb27bae9313e15734d7214f4a83dc37a7a199cfc12c23f7777a5e27f7fd7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-05.zip",
+      "sha256": "eb03fd0d0b31eef9ee05544ea8dcce097a807d3475f67d0a5f0859c487c5f5c3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-06.zip",
+      "sha256": "4ccee0a6fd67cb775be49d124b9eb038f26acd09426fcb9aaf9d3de74cf3a24e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-07.zip",
+      "sha256": "66ce38d1a8bc4bdd53af29d8ea5c72493ed48fe9894ee5e9ff4600ccec864c4f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-08.zip",
+      "sha256": "fe9efc3abe1e4be2a2fa9a4008e6957856387f6783a06b97cac3ee271746915f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-09.zip",
+      "sha256": "f953315124d20dab98ba710d108103fb4cf054d1535787fd76d35d6b9c18e534"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-10.zip",
+      "sha256": "d80c5be7660a950ad673a0e82488877c6ca0eb81f084d4c844320f892ad2c020"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-11.zip",
+      "sha256": "5134fdf4319d629473f8cff1e66dc74180844ae2846ab41a8128466ab3682c2f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2025-12.zip",
+      "sha256": "01db13c460b0190736e1da019c7fcd7ea0abbf3b047e16d3aa8a9e9acec3101f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2026-01.zip",
+      "sha256": "c53be79aae38a1f35e94880f106df4eceab57bfa74a0b5fc5852fdfabf57ab8e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2026-02.zip",
+      "sha256": "84cb9bcf44ba1364b37db876e7c852aa1b831371556b610e2387115addec9d5f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2026-03.zip",
+      "sha256": "75cfaea075d97779a577c3744ea63e3d83704f281806fb5f76f2d3e0f089fd2c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2026-04.zip",
+      "sha256": "951a280e98b6d20fe4be25bf2b71f3cda1c07c7583a88cb874151e2b1fe941f1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/SOLUSDT/SOLUSDT-fundingRate-2026-05.zip",
+      "sha256": "c13066e5f7c5d161dbebd488cbeaab1205688c6dc7f9fafcc8f94296f2c1e47b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-01.zip",
+      "sha256": "687891d67f99c3a622c44ed34413d65918fd96ea3a59d5e376af84d6d83f743b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-02.zip",
+      "sha256": "4f7641f27333f9a55a8fdeb827387504984a8734a37ef73ab6e620db41fe0303"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-03.zip",
+      "sha256": "96888f6eb25414b7095aaedbc7ad7410c315c4fd3cf92cbc41b02e5c4a942d84"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-04.zip",
+      "sha256": "697cb449545afb1281b9fa6c03d902515f7d909d96668f345f6dd053dfed7430"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-05.zip",
+      "sha256": "b14eb3bf91a3cfaea1be24a2b9bf0d8991194f125b85f7bedc3c5ff4294845b2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-06.zip",
+      "sha256": "168a18066b384a4718ee9f6f659edb7edf713e6be5f8d798bcdf0525c42825f4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-07.zip",
+      "sha256": "7bda335d67fa74ce7d034989298137161181dd5e54f4085e13f52f677c14fce7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-08.zip",
+      "sha256": "9b5f26943c0b41dbabd37421aa7857851a7e3656646f5a1999568c1aee9a9111"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-09.zip",
+      "sha256": "a61885f7b9705d335c4fabb6d2bf1bbd35af15615adfac0d49fdac3a95cba3ba"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-10.zip",
+      "sha256": "a899a77f378d0133a5837b4d7755fb1db9b8c8ca4e51ce94bc2f97e3a5928c25"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-11.zip",
+      "sha256": "1abb39471f3908ae91f4379500cbb24f5e7a487d004979719d19abff6f2ec2a9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2022-12.zip",
+      "sha256": "3291256d57eef23bcd663a547e537e762ee54d54b8959a983e6bc4738fe7ef4b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-01.zip",
+      "sha256": "57926f802a5d97b17bb08f10539bf10e86bdb55caa1efed7b1e485ec0e4a3a27"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-02.zip",
+      "sha256": "f5e3ce986788bef656363c2741e8f515f93e409c61e9b335bc714e528f4f8609"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-03.zip",
+      "sha256": "0309e5d4202275f5657b2d5a400c77618f51090962e2945ab2305820f8fbf239"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-04.zip",
+      "sha256": "7bbc666c3748ff43b5042acc77f9b158344d6b1e11f93c7de0c36c83affd7066"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-05.zip",
+      "sha256": "bcf038a86d9f483fa4d1a9db6fa734cae54745409bcc083d3067670f76b4fb84"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-06.zip",
+      "sha256": "7a92bc9a9f03229509e2e34835c8cb4e05b8218cc82fe080443389d2ccbb1e98"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-07.zip",
+      "sha256": "38d044d00f3c81a8d201b9117f5f1f6559568db16561cf9ce8f0eccc02cddbc9"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-08.zip",
+      "sha256": "27621b8cfc274cba9882e08c61315433ea23f58d59eb83781b4e63f9ad685c13"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-09.zip",
+      "sha256": "a0b6b5a900f40ebff05d1ec293685fd644f0ac26552c25a2801490d8d7178a21"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-10.zip",
+      "sha256": "db8ae79ac84f006fdd9cd17d57f8ed28fc1a10f716c8483030693d87c830d411"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-11.zip",
+      "sha256": "65c9092766c696eddb155142379b696b78b6c48490d984b02976412380dc6df6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2023-12.zip",
+      "sha256": "3292f306a22f3190315e71780b68b88a3ac5c8dda5a05e6f3d768ac21b3d6cf5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-01.zip",
+      "sha256": "6ce71612fdc2c2d227b1431ea6c9aec07d6a46ebd7d7650aee5da1a09cd19f90"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-02.zip",
+      "sha256": "1d99928f6340abc95946545f51fadb59f2183f984b8117d5ce39456d26884250"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-03.zip",
+      "sha256": "ae596433406d0e00bf66f4430c7f51f8d03b4d2a395949ce29d8765554ad7195"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-04.zip",
+      "sha256": "97e66b580deae706cbf1b56b21a71668d5587a7db68bf69d01ef1db5045125bd"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-05.zip",
+      "sha256": "4ebe1a295be42c705739ff3717b113661513eee0560a17936697568cd2c06ae0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-06.zip",
+      "sha256": "bc5d4b47ffa9c6e6b30147dbb3c93f63a27b071428445ed6e57339a86745a9e0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-07.zip",
+      "sha256": "ba2e909430ca421202cc86b658d242bdcb03cf15f729fd5bdaf6b11bc7117243"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-08.zip",
+      "sha256": "5b1c28afa6becb9c4303fb2438c39461b199a48a0992bccb5e1e4be344b7a931"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-09.zip",
+      "sha256": "2c9e13fa39b3956ea76d29074e26e0ccc6abbd3e235d752aa63b383de29a4d80"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-10.zip",
+      "sha256": "ac53012800835002672b559455766f73eb30cce3b4b75a30e8d834f03cc3ba1c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-11.zip",
+      "sha256": "ca02937135f8d51991e96290cd527ba8cfba3e6ca6bdf08247c88bdc88fdfc09"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2024-12.zip",
+      "sha256": "9bad523573121ac9a255adac4574e4ea8545ab77807d6ccd8ac132771b6f0c7b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-01.zip",
+      "sha256": "74544eee335ba817f34c28bad187eabc9c19b730a84e875eb636499944198479"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-02.zip",
+      "sha256": "b5094d4dfe17e0b07b4a4cfeca6baef32a96711b824ea45e1c9bcf80db0d2b06"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-03.zip",
+      "sha256": "8bd05f64e15a3f1731d75ad21dea232b6ae9e93cff351a0699a4c1ab0dc0d2ea"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-04.zip",
+      "sha256": "d5b35805679bb3a410fce7ddb370ce4b6f69bc37233e4ffde4eec40f524e3ff2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-05.zip",
+      "sha256": "fc9a418d195865c4a61e0c858c56dfa62dab80c4d5f0df37cd71aed1173fd37b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-06.zip",
+      "sha256": "2ea8b6a079ab89270eeeecee1bd47128cbf585ada1bc65a1b657b76061e12c04"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-07.zip",
+      "sha256": "014c717df6ca0fbc5c8850a22741cf07b425af5aeec07de42265f7a70aa9fd39"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-08.zip",
+      "sha256": "1ca07a28c070cd092a04c4e002f5d7ae123c45a149f385c3b316ba1b9cd0a7b6"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-09.zip",
+      "sha256": "e87adf5d21d31f7c49739eb0cffb7347284bdb2d981d4ab8d2cde6cdfe94d4af"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-10.zip",
+      "sha256": "6c45db6d53c47e1413c842bffba176aa58d8fe5bef0b1326ce5a4acb5b9abaef"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-11.zip",
+      "sha256": "e1bb556f0d0b00f4615c41048dc71377b91ea43351100c90a3750efd519d7682"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2025-12.zip",
+      "sha256": "18000c78612678f3daf1b493828f2c61f0e680f2a23f6bde34a4624504f228e5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2026-01.zip",
+      "sha256": "b7fc86f2e15ed637796db819d03ec7fba66f2651ad1077cb143e2cd4bafc7e1d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2026-02.zip",
+      "sha256": "1b474640f9646c08f2dac80db4b4716303972dbf35613f5c7da948e2f858b646"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2026-03.zip",
+      "sha256": "19e6e88c1a0c318fee6b8c570ed39fbfd4e3dcbcd917e0738347c3b03fad52c3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2026-04.zip",
+      "sha256": "64ad28743203161c89a5c64582ed14a599a5d47addcffc3f7e2f07063ef9bb2b"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/BNBUSDT/BNBUSDT-fundingRate-2026-05.zip",
+      "sha256": "b62dd555a8c1ecc25644f529e4cd351a835aeabaa70258909d9f1c328f427cd8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-01.zip",
+      "sha256": "d1b20d0ee55f77437aa22d50f725b3dea884647df1177dfdd91ff1cca7e5e6d8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-02.zip",
+      "sha256": "2755f17e416b2a5d9a3adb2f8e114c6339a91be2fc98de3858d255a8bda8bfb5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-03.zip",
+      "sha256": "fbe9dd5cde9c27e729e3b95506a6e3bca8fdb719ee919a0a516c189fc08bc97c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-04.zip",
+      "sha256": "91bfda68b358bd555eb772317c00fd1677bac4769a607a565c2de95811199d84"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-05.zip",
+      "sha256": "1a73179cecaa7305759c2367a9b12fcbe9757a1573cdea1be00b20dcd1c8b820"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-06.zip",
+      "sha256": "44107ee9174a139e6f56ca33b7d5c752a8a66c645d4d02a8baa201d4e69c151d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-07.zip",
+      "sha256": "b162eec38434e0231b5a2e38759e9604dd5bbc3071d4cc33d9de5e65c7f9a6dc"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-08.zip",
+      "sha256": "726b6fd80ce065f96ffcec2acf6e524b4796cadf78d380c531c90c8b4ba04ef0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-09.zip",
+      "sha256": "997347551489ca09ae1b8f11134a30a8e212130fd41d8449ba60b9aa761e0ed2"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-10.zip",
+      "sha256": "b4c87a4f656657bfa70d93fb49ed7337b6b39b886ed5c8262e4e7f0a2f8aeb82"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-11.zip",
+      "sha256": "a3fcbc1c3811cfa1552edcf60b67c7f454a7b817805808de15d2854cacada808"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2022-12.zip",
+      "sha256": "e290f7de6dbd20f1004913b566339e942e2e5ca7f7a31880d872eab70818e6ef"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-01.zip",
+      "sha256": "ce4a65fab0992afc691a555f0d7071beff7108704c281171f0fa2543491e9484"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-02.zip",
+      "sha256": "877493f77949b9e40cceea41796155a72a1a454d15f360f25590ec3a62d7c599"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-03.zip",
+      "sha256": "79b93a5cd8f7ae4a6708efd994fe2175a5ec05c472ced564197624c868ebf637"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-04.zip",
+      "sha256": "e8acd937ee1b11f7630fff07440e1d16753da7108747d437c449a7d5068f0c64"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-05.zip",
+      "sha256": "c1164402237277860b302f7ef682175ad52f27f027aa6bb3daa93955f97c9aa3"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-06.zip",
+      "sha256": "5f5a79f4f614a5de1b2f6ad7616c6c2960fcc41b8593f303709791f7c830ee95"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-07.zip",
+      "sha256": "4d1cbfeb15f5b570b2cac0be1c7e64450b3652af3c6f3de97756d52a6ea1abff"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-08.zip",
+      "sha256": "adeb4fd43b0afec33e4d3bdce605ac500253759fa6dc796dc0fbb932cf40aa56"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-09.zip",
+      "sha256": "a1b94827a97d72bdf7eee204fba29b5b143c978ae3d0e6880906bd7131b13760"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-10.zip",
+      "sha256": "25271c41d8dabe5bd171ab2f89e7735d801eec25802c37a2ad31811b49a68b51"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-11.zip",
+      "sha256": "0387ba64231377e679af3450ca3404e0a8e78ae57aaeb32a763870c99d9a9e84"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2023-12.zip",
+      "sha256": "4fb2aab7d59f168c3bf8d62e5ebb3f518966ad84c35e9b603def870e099b491e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-01.zip",
+      "sha256": "ee7c31e4df28573cfa78bac09e112191f2ed4ca2ed6a3f2aec9d43bcb0ab34b8"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-02.zip",
+      "sha256": "cb3d81d514e464571e2b1d0d1b52965dae2f9be7361eb17e579b624aa69d1028"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-03.zip",
+      "sha256": "997ee3e66fb8778e7eed6b2f587c80d112b8a5d110f7ec59c622ee66704f4f99"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-04.zip",
+      "sha256": "fd263095594d9092e8d562762242b3d73453cd53fd967a0458c4d7d1b756ca3a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-05.zip",
+      "sha256": "57e4ff08bdd4a70e775f722f0ef8a104e937e719f6cfdd6557c9628e2ef50895"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-06.zip",
+      "sha256": "ed259e3baf5dd43e03751fdfc78b35e5978c7c7dd01a61b0dbe29d0d09b2de83"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-07.zip",
+      "sha256": "84fda29e97f5e126ab3d301d83aadd58a271b9cb7e128eae315629a43fec8040"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-08.zip",
+      "sha256": "9cb25c7b945c3e0df7f40833e46c893ab10c9e4eff1fcbbd17967fe04571332d"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-09.zip",
+      "sha256": "82f0d865cf2d02ab345c4254fe59ffeb3e5b6bae39bcb1a0d06dc67ff55a718a"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-10.zip",
+      "sha256": "a79184eb05334084cc4a294881ee74f03556ee1a48115443bd29d77d97a598c1"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-11.zip",
+      "sha256": "2d9fc1ace268513a0330a170216be245b9fbcc37ec405ba57cc11841bb8c438f"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2024-12.zip",
+      "sha256": "db162585658485f1107d4d135a8a37714b7e8b33ce99f251ab537fa7c6cf0c61"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-01.zip",
+      "sha256": "13713b66ca784964b080a68c8a944d758202e8ab454fba9bd8b42fc1c8fdb804"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-02.zip",
+      "sha256": "92d748c5583035811fa307d7f0f039d2fdcaabf59c78095ba61f24426328e77c"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-03.zip",
+      "sha256": "bb73dc71a95ee0127f66248f1912b605f8bccaaa52b318be42397b4263c42be7"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-04.zip",
+      "sha256": "17f6f5f71e62fb2478167db581286c36f298d266b5b73a18d954bfca1a61c874"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-05.zip",
+      "sha256": "7d3b60afb85860117409e2137884e2a01e45a22eb2e4d1353514244f83796002"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-06.zip",
+      "sha256": "cbdf6273e84d457b4915139e41a278629cbdfc02855e290b6d9ff34218eb36a5"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-07.zip",
+      "sha256": "56651da01247f19d5e63e6c40f8835934735e60915587068e325f2859101b7e4"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-08.zip",
+      "sha256": "3fd351cfdd3aa11d1e280740f56a0a244112862fb3a583d7600d658339060f53"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-09.zip",
+      "sha256": "5b90724992ead316299b755ec6ff59e70adb6a61dbfa93b58942470a7cf091df"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-10.zip",
+      "sha256": "b13c0df55c83c64e2a8416bd059140f2fbbea0b3b73da9461abbded358c81160"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-11.zip",
+      "sha256": "a964d712cdfecb1efeadaab133468d8658be24c420f3b91b91a51d183281fb19"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2025-12.zip",
+      "sha256": "728b6a16940b6189bb1aa97f636160e9b66b4289a8cc1296cefc802e0d0ed098"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2026-01.zip",
+      "sha256": "01e4199765b3954d6a110f498ba4dfc015b0e7f92e4b6985cbec9a56b752d66e"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2026-02.zip",
+      "sha256": "1db75bdf9189111e79c0c4e9df854bb716c14c9609462c054c8046d1e03542f0"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2026-03.zip",
+      "sha256": "f9f7bf447ea91651ae9a5f28feb1275c97445d912a958cb8f999847996411262"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2026-04.zip",
+      "sha256": "ff4c11fa47f8a0268f4194e51712a3bc4bb5672d3b1f54860e5d929114a4bf20"
+    },
+    {
+      "path": "cache_spot_comparison_20261005/raw/funding/LINKUSDT/LINKUSDT-fundingRate-2026-05.zip",
+      "sha256": "06536cdd66211e1a25629a54d489493aaab6b3613b9d2207a65af44a3826da1b"
+    }
+  ],
+  "files": [
+    {
+      "market": "spot",
+      "symbol": "BTCUSDT",
+      "path": "cache_spot_comparison_20261005/paired/spot/BTCUSDT.parquet",
+      "sha256": "e11e583c5e60cd5951d5b63bfd9b3241e487e8056d438949d8d00e20a07356b8",
+      "rows": 27768
+    },
+    {
+      "market": "spot",
+      "symbol": "ETHUSDT",
+      "path": "cache_spot_comparison_20261005/paired/spot/ETHUSDT.parquet",
+      "sha256": "1426b103264601933b14980305f7ba441d7959f242125e0da1af7d7a459c7af6",
+      "rows": 27768
+    },
+    {
+      "market": "spot",
+      "symbol": "SOLUSDT",
+      "path": "cache_spot_comparison_20261005/paired/spot/SOLUSDT.parquet",
+      "sha256": "a6bfb4434aa1971f6e3dd41c1055a0d47961368eeb271680c8013a4f2d5b5063",
+      "rows": 27768
+    },
+    {
+      "market": "spot",
+      "symbol": "BNBUSDT",
+      "path": "cache_spot_comparison_20261005/paired/spot/BNBUSDT.parquet",
+      "sha256": "3f384f1f078859a426976d2593e6a09ff44e0b590ff82e00879982fe0c2993cd",
+      "rows": 27768
+    },
+    {
+      "market": "spot",
+      "symbol": "LINKUSDT",
+      "path": "cache_spot_comparison_20261005/paired/spot/LINKUSDT.parquet",
+      "sha256": "ecf8082f4e05e41c0af233a6d1bba6d655c319d5668ec9d738850a8e61e0d252",
+      "rows": 27768
+    },
+    {
+      "market": "perpetual",
+      "symbol": "BTCUSDT",
+      "path": "cache_spot_comparison_20261005/paired/perpetual/BTCUSDT.parquet",
+      "sha256": "d0121e623f93dae45b8a555e27f61243a47e7c25a7edf5738dc353f3976d1ae0",
+      "rows": 27768
+    },
+    {
+      "market": "perpetual",
+      "symbol": "ETHUSDT",
+      "path": "cache_spot_comparison_20261005/paired/perpetual/ETHUSDT.parquet",
+      "sha256": "df99175a71e77b74281a291342c7429bce00a0b5d28653e14a52ea3059058c64",
+      "rows": 27768
+    },
+    {
+      "market": "perpetual",
+      "symbol": "SOLUSDT",
+      "path": "cache_spot_comparison_20261005/paired/perpetual/SOLUSDT.parquet",
+      "sha256": "3cff2c85565cd0165108d7c0614f0f435aacac8dc254f7affcfff43b7d5ff1e6",
+      "rows": 27768
+    },
+    {
+      "market": "perpetual",
+      "symbol": "BNBUSDT",
+      "path": "cache_spot_comparison_20261005/paired/perpetual/BNBUSDT.parquet",
+      "sha256": "c3c1c16ca88877ab9a4d692f7450948f7f2329ea975f557f7166d8333765ef13",
+      "rows": 27768
+    },
+    {
+      "market": "perpetual",
+      "symbol": "LINKUSDT",
+      "path": "cache_spot_comparison_20261005/paired/perpetual/LINKUSDT.parquet",
+      "sha256": "3205afd5bee34c02566e3ceed46b43f00c1c3e09ac3d3630533725f46cb584a1",
+      "rows": 27768
+    },
+    {
+      "market": "funding",
+      "symbol": "BTCUSDT",
+      "path": "cache_spot_comparison_20261005/paired/funding/BTCUSDT.parquet",
+      "sha256": "80c4a97527a402e6b162837c15949c3dff4952a5d0b27cf3a250d4c3d9947a9a",
+      "rows": 3472
+    },
+    {
+      "market": "funding",
+      "symbol": "ETHUSDT",
+      "path": "cache_spot_comparison_20261005/paired/funding/ETHUSDT.parquet",
+      "sha256": "cafa3c72813541ecabc9bacfcde14ec13755aa768269597bbb35b5bd9112773a",
+      "rows": 3472
+    },
+    {
+      "market": "funding",
+      "symbol": "SOLUSDT",
+      "path": "cache_spot_comparison_20261005/paired/funding/SOLUSDT.parquet",
+      "sha256": "1f162e7dcedc50638b9fa24ca3ddb6beb946107b24e11009c748b9bbbbe2c071",
+      "rows": 3472
+    },
+    {
+      "market": "funding",
+      "symbol": "BNBUSDT",
+      "path": "cache_spot_comparison_20261005/paired/funding/BNBUSDT.parquet",
+      "sha256": "cc1a285fe3c140a4bc3725733c4d97d61199ff6e201577b5e5f06142b9f557f7",
+      "rows": 3472
+    },
+    {
+      "market": "funding",
+      "symbol": "LINKUSDT",
+      "path": "cache_spot_comparison_20261005/paired/funding/LINKUSDT.parquet",
+      "sha256": "0d64970cf73390705e5340dfa9a45e487465279194de36ad5cd34ac83e27143d",
+      "rows": 3472
+    }
+  ],
+  "complete": true
+}

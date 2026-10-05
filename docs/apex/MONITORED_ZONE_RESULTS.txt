@@ -1,0 +1,139 @@
+MONITORED ZONE TEST — FINDINGS AND RECOMMENDATION
+2026-10-05
+
+Recommendation
+
+Keep the monitored-zone design as the next SHADOW candidate. It solves the
+observed entry-expiry problem, but this test does not support activating live
+trading or claiming a profitable edge. Only two trades closed; four were still
+open. Every fill was long, so short performance is not demonstrated.
+
+Test scope
+
+Five symbols: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, LINKUSDT.
+Primary: 2026-02-24 00:00 UTC to 2026-05-25 00:00 UTC.
+Later validation: 2026-06-20 00:00 UTC to 2026-09-18 00:00 UTC.
+Four predeclared arms, two 90-day windows, five symbols: all 40 runs completed.
+No missing requested window, replay price-data errors or unfinished runs.
+The May 25 missing hour separates the source segments; no gap was filled or
+position carried across it. The later period starts from its own fixed history
+origin, with 25 complete daily warmup bars, rather than borrowing pre-gap data.
+Later results are chronological validation, not a guarantee of untouched data.
+
+Rules were recorded before the experiment in MONITORED_ZONE_PROTOCOL.txt.
+The numerical Elliott engine, original stops/targets and R:R thresholds stayed
+fixed. The main monitored arm waits up to the engine's existing 30-day setup age.
+Its 48-hour control isolates the effect of allowing longer waits. Current quote
+and capped execution price must be inside the frozen zone and pass fresh risk.
+No reversal-confirmation evidence is invented. Setup invalidation remains final.
+
+Results
+
+Window   Method          Ready  Approved  Filled  Closed W/L  Still open
+Primary  Confirmation      3       0        0       0 / 0        0
+Primary  Resting 48h        9       3        0       0 / 0        0
+Primary  Monitored 48h      1       0        0       0 / 0        0
+Primary  Monitored 30d      6       3        3       1 / 0        2
+Later    Confirmation      1       0        0       0 / 0        0
+Later    Resting 48h       12       8        0       0 / 0        0
+Later    Monitored 48h      0       0        0       0 / 0        0
+Later    Monitored 30d      3       3        3       0 / 1        2
+
+All eleven approved resting orders expired unfilled. All six approved monitored
+orders filled within their price caps. There were no IOC misses in these samples.
+READY has different meanings: a resting proposal versus a currently in-zone
+quote versus a confirmed signal. Use actual fills/outcomes for comparison.
+
+Six monitored fills (historical simulations, NOT current trade recommendations)
+
+Window   Symbol  Side  Wait days  Held days   Outcome at cutoff
+Primary  BTC     LONG     2.54      54.12     Closed +51.34 before funding
+Primary  SOL     LONG    11.46      58.54     Open; mark +6.20 before funding/exit costs
+Primary  LINK    LONG    14.33       1.67     Open; mark +6.98 before funding/exit costs
+Later    LINK    LONG     2.46       6.54     Closed -22.40 before funding
+Later    BNB     LONG     3.92       8.08     Open; mark +5.39 before funding/exit costs
+Later    LINK    LONG     6.83       1.17     Open; mark +7.24 before funding/exit costs
+
+Wait runs from original plan creation to accepted entry. Held days end at actual
+exit or the window cutoff, never an invented final sale. Each symbol/arm starts
+from an independent simulated 10000 book using the cautious 0.25% risk profile.
+Dollar figures are USDT-model results, not account profit or a portfolio return.
+The four open marks include realized fees and partial cashflows where applicable;
+they do NOT turn open positions into wins and exclude future exit costs/funding.
+
+BTC reached T1, then its remainder exited at a raised trailing stop in profit.
+The LINK loss exited on daily structural invalidation. Exit type STOP does not
+necessarily mean LOSS: outcome is determined by the actual simulated cashflows.
+Closed-only arithmetic WR is 1/2 = 50%, based on just two outcomes; it has no
+useful precision for choosing a live strategy. There were zero short fills.
+
+What the test establishes
+
+1. The 48-hour expiry misses daily-wave arrivals. Successful entries waited
+   approximately 2.5–14.3 days. Monitoring for longer produced fills in both
+   windows while the 48-hour monitored control produced none.
+2. Fresh R:R matters. In the primary period, some in-zone BTC, ETH, BNB and LINK
+   observations still failed risk checks. The bot kept waiting or cancelled when
+   the plan became invalid; it did not move the stop or reduce the R:R hurdle.
+3. Entering more trades is not proof of a better edge. Four of six positions
+   remain unresolved. These results do not establish that monitored execution
+   beats a structurally managed resting order with the SAME 30-day lifetime;
+   that resting-duration comparison was not one of the predeclared arms.
+4. Position holding time is a separate issue. One winner required 54 days and
+   SOL remained open after nearly 59 days. The existing management stops timing
+   out a position once it has seen a favorable 4H close. Funding and capital
+   tied up in slow trades must be measured before judging practical returns.
+
+Next recommendation
+
+Validate this exact policy with finer execution data or a cloud shadow stream,
+recording actual bid/ask, funding and rejected entries. Keep a visible watched-
+setup state, fresh entry checks, fixed invalidation, price cap and risk limits.
+Track aging positions explicitly, and evaluate any maximum holding/decay rule
+as a separate predefined experiment, not an after-the-fact rescue of this test.
+Accumulate materially more closed trades in both directions before deciding
+whether automatic live entries are justified. Do not reduce R:R just for activity.
+
+Execution assumptions and limits
+
+Hourly close plus/minus half an assumed 0.01% spread proxies the observed quote.
+The next hour's open, half-spread and 0.03% adverse entry slippage determine fill,
+subject to the 0.05% cap from the observed quote. These are assumptions, not
+recorded historical order books. Brief intrahour zone visits can be missed.
+Full hourly bars are required to validate the replay; entry-bar targets receive
+no credit and stops win ambiguity. Exits include 0.03% slippage and fills 0.06%
+fees. R:R is checked at the worst permitted capped entry, not at an optimistic
+historical low/high. Funding is unknown and could materially alter long holds.
+No liquidity/partial-fill/outage model, AI selection, macro gate or portfolio
+loss-circuit path was replayed. These are independent symbol diagnostics.
+One accepted order attempt per plan was used; no failed IOC occurred here.
+
+Verification and preservation
+
+988 broad tests passed, one disposable-Postgres test skipped, three local
+Python 3.9/LibreSSL dependency warnings. A final conflict regression and replay
+suite passed all 31 tests. Four real-data cached/uncached comparisons matched
+all non-performance fields (ETH/SOL, both monitored lifetimes).
+Source/evidence hashes, all filled trade chronology, price caps, and zone bounds
+were checked. Formatting, compilation and credential-free shadow check passed.
+
+Final runner fix: hourly cancellation now clears an obsolete directional conflict
+without waiting for the next 4H snapshot. No CONFLICTING_DIRECTIONS observations
+occurred in any of these 40 runs, so this correction does not change their results.
+The exact replay source used for the completed benchmark is archived with the
+evidence; analysis.json records the final replay hash and this verification.
+
+Reproduction:
+  .venv/bin/python -m apex_bot.monitored_comparison --source cache_ew_1h \
+      --output /private/tmp/new-apex-monitored-comparison --workers 4
+The output must not already exist. Individual reports can be run using
+  .venv/bin/python -m apex_bot.replay <symbol.parquet> --entry-style monitored_zone \
+      --monitor-days 30 --days 90 --end 2026-05-25T00:00:00Z --output <new-file.json>
+
+Evidence: monitored_zone_evidence_20261005/report.json, analysis.json and forty
+compressed complete per-run reports, each with source hashes and assumptions.
+The protocol and code fingerprints are included. Source data/research and Apex
+Drive/ledger remain untouched. No real orders, live Telegram messages, paid AI
+calls, commit, push, deployment, or change to Railway settings were performed.
+The monitored mode is offline-only; both live and testnet submission reject it.
+LIVE_APPROVED remains False.

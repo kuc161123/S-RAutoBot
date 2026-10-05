@@ -1,0 +1,61 @@
+MONITORED ZONE EXPERIMENT — PREDEFINED RULES
+2026-10-05
+
+Question: can an unexpired, structurally valid daily-wave plan wait for a fresh
+zone arrival and enter with acceptable current R:R, without a resting order?
+This protocol is recorded before examining any results from the new entry arm.
+It is an offline experiment only. Live release and runtime settings stay intact.
+
+Paired universe: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, LINKUSDT, Tier 1.
+Primary window: 2026-02-24 00:00 UTC to 2026-05-25 00:00 UTC (same prior test).
+Later validation: 90 days ending 2026-09-18 00:00 UTC. The source has a missing
+hour on May 25, so validation uses the later contiguous segment's fresh origin;
+no gap filling or carry-over positions/plans across that gap. Warmup is reported.
+
+Arms: existing confirmation; existing 48-hour midpoint resting proposal;
+monitored zone with 48-hour lifetime (duration control); monitored zone with
+30-day lifetime (primary, matching the existing engine's maximum plan age).
+No entry/stop/target/expiry parameter search and no changing these choices after
+seeing results. Each arm starts independently flat with 10000 per symbol.
+
+Rules common to monitored arms:
+- Same causal frozen daily wave plans, anchors, zones, structural invalidation,
+  hard stops, two targets, risk sizing, costs and R:R hurdles as the other arms.
+- No 4H reversal confirmation is required or invented. The independent entry
+  evidence is a current observed quote inside the frozen zone.
+- Assess hourly with fully closed history only. Historical close is a quote
+  proxy: add half the assumed 0.01% spread for buys, subtract it for sells.
+- Set the worst acceptable IOC entry 0.05% beyond that quote, adverse to the
+  trader. Both quote and rounded cap must remain in the strict zone. Risk is
+  assessed at this worst acceptable price, including the unchanged cost budget.
+- Simulate execution once at the next fully evidenced hour's OPEN, with the same
+  spread proxy and an additional 0.03% adverse entry slippage. If this price is
+  outside the cap/zone or beyond original invalidation, cancel immediately.
+  A later low/high touching the cap never fills this immediate order. No retro-
+  active entry on the hourly bar used to make the decision. One accepted order
+  attempt per plan, as in the existing comparison; unfilled attempts are reported.
+- Closed hourly hard-stop/target passage, applicable intrabar structural breach,
+  daily-close invalidation, or age cancels the watch permanently. Price outside
+  the zone or temporarily poor R:R means keep waiting until a terminal event.
+- Conflicting valid long/short plans block entry. No moving old wave anchors or
+  widening invalidation to rescue a failed plan. New evidence creates a new plan.
+- Entry-bar stop takes precedence; no entry-bar target credit. Existing partial
+  T1, T2, structural and time management continue. Open end-of-window positions
+  stay open and are reported; no fabricated final exits.
+
+Report unique plans, zone-ready candidates, accepted orders, fills, closed/open,
+wins/losses/breakeven, WR denominator, before-funding PnL, and rejection/cancel
+reasons. Separate repeated observations from unique setups. Record source hashes,
+coverage, complete flags, code policy and assumptions. Any incomplete run is a
+labeled diagnostic, never a complete zero-trade result.
+
+Limitations: hourly data cannot establish tick fills, actual spread, queue depth,
+partial IOC fills, outages or precise intrahour ordering. Fees and slippage are
+assumed. No AI, macro filter or live account; independent symbol books do not
+validate aggregate portfolio risk or loss circuit paths. Funding is not assumed
+proven zero; reported realized PnL is BEFORE funding. The later window is a
+chronological validation, not a statistically untouched dataset guarantee.
+
+Acceptance: the test can demonstrate coherent behavior and expose failure modes.
+Few trades or one period cannot demonstrate a reliable profitable edge. Results
+inform a recommendation, not authorization to submit exchange orders or deploy.

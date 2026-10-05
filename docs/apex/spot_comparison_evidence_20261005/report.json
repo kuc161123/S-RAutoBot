@@ -1,0 +1,505 @@
+{
+  "purpose": "Offline shared-account long-only spot/perpetual comparison",
+  "protocol": "SPOT VERSUS LONG-ONLY PERPETUAL RESEARCH\nFixed 2026-10-05 before running or inspecting this experiment's outcomes.\n\nQuestion: Does cash-funded spot improve the existing monitored Elliott zone\nstrategy compared with long-only, fully collateralized perpetual exposure?\nThis is offline research, not permission to submit orders or deploy a switch.\n\nPrimary design\n- BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, LINKUSDT, fixed before results.\n- Matching official Binance spot/perpetual hourly archives if complete and\n  available. Validate archive SHA256 and candle chronology; do not manufacture\n  hourly data from daily candles. Bybit's public API currently returns 403.\n- Common history origin 2022-01-01 UTC. Entry period 2023-11-27 through\n  2025-11-25 inclusive (730 days). No new decisions/fills from 2025-11-26.\n  Follow existing holdings until 2026-05-25 00:00 UTC (180 additional days).\n- Gaps/incomplete history fail validation. Any necessary coverage amendment\n  must be recorded before replay, never chosen based on profit.\n- Each arm starts with ONE shared 10,000 USDT account across all five symbols.\n  No borrowing, external deposits, interest on idle cash, or short trades.\n  Perpetual reserves full entry principal (1x) plus fees, for matched capital.\n- Same frozen monitored-zone engine: daily wave plans, 4H structure, 30-day\n  watch, last closed hourly quote, next-hour open IOC proxy with 5bp cap.\n  Same invalidation, T1/T2 splitting, structural trail and timeout rules.\n  Opposite bearish wave conflicts still veto longs; no removal of structure.\n- Same cautious risk profile (0.25% before setup multipliers) and portfolio\n  caps. Marked account equity funds sizing; pending orders reserve cash.\n  Use original 2% daily, 4% weekly and 12% drawdown entry halts, plus the\n  original risk reduction at 8% drawdown. Existing positions remain managed.\n  Day/week reference is equity at current closed quotes on the first scan of\n  UTC day/ISO week, prior to management. Global peak uses hourly marked equity.\n- Same-time candidates are ordered alphabetically by symbol, then plan ID.\n  No ranking using future outcome. Rejected unconsumed candidates may retry.\n- Fees represent the published Bybit base VIP0 scenario: spot 0.10% per fill,\n  perpetual 0.055% per fill; not the user's authenticated account fee tier or\n  a reconstruction of historical fee schedules. Quote spread 0.01%, adverse\n  entry and exit slippage 0.03% each. Actual spreads/depth are not available.\n- Spot buy fees withheld in base: sizing represents NET owned/sellable units;\n  cash cost is net quantity / (1 - fee) times fill price. Exit fees in USDT.\n  Synthetic step/tick 0.0001, min notional 5; exchange-specific historic lot,\n  gross buy rounding and dust remain approximations.\n- Perpetual settled funding charged/credited chronologically to available\n  cash and equity, using remaining ENTRY notional as an explicit estimate\n  because historical settlement mark prices are unavailable. Strict entry/\n  exit timestamp ties excluded; partial exits at settlement reduce quantity.\n  Risk decisions use only the most recent already-settled funding rate.\n  Spot funding is zero. Rates must cover the expected settlement schedule.\n  Binance settlement timestamps can be milliseconds after their scheduled\n  eight-hour boundary. Preserve those timestamps: allow at most 60 seconds\n  offset for schedule validation, and apply each at the first subsequent\n  hourly scan, never round it backwards into an earlier decision.\n- Cost-aware R:R and sizing use entry fee equivalent + exit fee + 6bp\n  roundtrip slippage, plus spread and latest known adverse funding. No\n  post-result threshold, zone, stop or target optimization.\n\nReport\nClosed W/L/WR, open trades, realized net profit, marked equity, estimated\nliquidation equity, hourly marked max drawdown, fees, estimated funding,\nholding time, cash utilization, cap/cash rejections, per-symbol results and\ncalendar-year changes. No forced end exits and no open trade classified as\nwin/loss. Include equal-weight spot buy-and-hold as descriptive context only\n(different continuous exposure/risk), cash baseline zero. Save full trades,\ndaily equity, code/source/protocol hashes and validation evidence.\n\nInterpretation\nFive fixed surviving coins are NOT the requested rotating top-50 universe.\nArchive-venue results with a Bybit fee scenario are not Bybit fills. This\nperiod overlaps prior research and is not untouched out-of-sample validation.\nNeither a profitable small sample nor lower financing costs establishes an\nedge. Report all arms, failures and unfinished trades. No production code,\nRailway, Telegram, live account, API keys or external ledger changes.\nNo historical AI/macro veto, intrahour order book, partial entry fills or\nexchange liquidation path is simulated. Perpetual mark-to-market uses candle\nprices, not exchange mark prices. The fully collateralized comparison does\nnot establish the safety or returns of a leveraged perpetual account.\n\nSources checked 2026-10-05:\nhttps://github.com/binance/binance-public-data\nhttps://www.bybit.com/en/help-center/article/Trading-Fee-Structure\nhttps://www.bybit.com/en/help-center/article/Bybit-Spot-Fees-Explained\n\nCoverage amendment before outcomes, 2026-10-05:\nThe verified BTC spot March 2023 archive lacks 2023-03-24 13:00 UTC. Retain\nthe original January-2022 acquisition audit (it must fail contiguous validation\nfor that origin). For the paired replay, choose ONE common warmup origin at\nthe first full UTC day after the latest pre-entry gap across all ten candle\nhistories. Require at least 120 complete warmup days and zero gaps throughout\nthe unchanged entry/runoff window. Fail the experiment if those conditions\ncannot be met. Preserve missing-interval evidence and source checksums. This\ncoverage rule is fixed before any strategy returns are inspected; it does not\nauthorize selecting a favorable test period, filling missing prices, or\ndropping a symbol based on performance.\n\nCoverage audit resolved the common origin to 2023-03-25 00:00 UTC (247 days\nbefore entries). All ten candle histories contain 27,768 consecutive hourly\nbars through the fixed end. Earlier SOL perpetual gaps are also excluded.\nSOL's November 2022 funding archive contains a different funding interval;\npreserve and parse that source, then require eight-hour funding throughout\nthe retained paired history. No out-of-window rate is charged to a trade.\n",
+  "protocol_sha256": "85846fd7633e6f659dca0d4ac135390a9f69b339e9bb2b1f7ae4968e1b7bbf44",
+  "code_sha256": {
+    "engine.py": "f226b81f2f041459a91532dc713b65633c6d72a415edc7d8940919beba15b9d2",
+    "risk.py": "96bb7b5cc1c44c37af87b91e7c5830b44061f23ce7251d05965e698d6b10a69c",
+    "models.py": "2c6a264d9714ade4b428cfe34e91afd1ccaddaf4ee245d95eab68c075fac815e",
+    "simulation.py": "3b106438316a87eb3b868b3fe60734a251feb7624c7fb0a6fc745135d762a1bc",
+    "zone_orders.py": "1e53fb24be6e36ea82d36720a4d361a1d5c41d15a823a37d030bbce6db4d7daf",
+    "monitored_zones.py": "539d3a806c29bca325735aeeb98709a22b96549b6786771455cacac38248580e",
+    "replay.py": "ca955b37c747d5e89edd818eb80b74f058f325f8f2c023473780c5d3fb96e161",
+    "replay_management.py": "1c2236f7e1ddc08c6e6cbcdd8eca2981e4f21aa3dbb8f54bcf0870b72e2b2f81",
+    "spot_research_accounting.py": "a730bea3ca680b0b8da991abe951997715bb916d2c38db3c00b7a6f9949aae53",
+    "spot_comparison.py": "7acfe702f89e5806d4f9eaed6072fc91ec9663d2b4242d64ebd0b4df58d5ccce",
+    "spot_research_data.py": "509daa5fa8b3ac83ca000d9d78f94c91b2df69eff336cac67115536ac7fed52e",
+    "monitored_comparison.py": "f700a488ef273829e33c72925ff9ea310a441da6fd2db669838722ab853b3aa2",
+    "spot_research_normalize.py": "707551a0a7aa11be915e1f1aa2dd126ac4d04545182dd9009b0dfba0e4140c0c"
+  },
+  "input_paths": {
+    "spot": "/Users/lualakol/AutoTrading Bot/cache_spot_comparison_20261005/paired/spot",
+    "perpetual": "/Users/lualakol/AutoTrading Bot/cache_spot_comparison_20261005/paired/perpetual",
+    "funding": "/Users/lualakol/AutoTrading Bot/cache_spot_comparison_20261005/paired/funding",
+    "history_start": "2023-03-25T00:00:00Z"
+  },
+  "started_at": "2026-10-05T11:54:34.371534+00:00",
+  "rows": [
+    {
+      "market": "perpetual",
+      "complete": true,
+      "initial_equity": 10000.0,
+      "start": "2023-11-27T00:00:00+00:00",
+      "entry_cutoff": "2025-11-26T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "replayed_through": "2026-05-25T00:00:00+00:00",
+      "source": {
+        "BNBUSDT": {
+          "source_start": "2023-03-25T00:00:00+00:00",
+          "source_end": "2026-05-25T00:00:00+00:00",
+          "requested_start": "2023-11-27T00:00:00+00:00",
+          "requested_end": "2026-05-25T00:00:00+00:00",
+          "segment_start": "2023-03-25T00:00:00+00:00",
+          "source_gaps": [],
+          "excluded_before_segment_hours": 0,
+          "window_truncated": false,
+          "excluded_requested_hours": 0,
+          "history_policy": "All complete bars from a fixed contiguous segment origin; no rolling 500-bar truncation",
+          "path": "cache_spot_comparison_20261005/paired/perpetual/BNBUSDT.parquet",
+          "sha256": "c3c1c16ca88877ab9a4d692f7450948f7f2329ea975f557f7166d8333765ef13",
+          "initial_daily_bars": 247,
+          "initial_execution_bars": 1482
+        },
+        "BTCUSDT": {
+          "source_start": "2023-03-25T00:00:00+00:00",
+          "source_end": "2026-05-25T00:00:00+00:00",
+          "requested_start": "2023-11-27T00:00:00+00:00",
+          "requested_end": "2026-05-25T00:00:00+00:00",
+          "segment_start": "2023-03-25T00:00:00+00:00",
+          "source_gaps": [],
+          "excluded_before_segment_hours": 0,
+          "window_truncated": false,
+          "excluded_requested_hours": 0,
+          "history_policy": "All complete bars from a fixed contiguous segment origin; no rolling 500-bar truncation",
+          "path": "cache_spot_comparison_20261005/paired/perpetual/BTCUSDT.parquet",
+          "sha256": "d0121e623f93dae45b8a555e27f61243a47e7c25a7edf5738dc353f3976d1ae0",
+          "initial_daily_bars": 247,
+          "initial_execution_bars": 1482
+        },
+        "ETHUSDT": {
+          "source_start": "2023-03-25T00:00:00+00:00",
+          "source_end": "2026-05-25T00:00:00+00:00",
+          "requested_start": "2023-11-27T00:00:00+00:00",
+          "requested_end": "2026-05-25T00:00:00+00:00",
+          "segment_start": "2023-03-25T00:00:00+00:00",
+          "source_gaps": [],
+          "excluded_before_segment_hours": 0,
+          "window_truncated": false,
+          "excluded_requested_hours": 0,
+          "history_policy": "All complete bars from a fixed contiguous segment origin; no rolling 500-bar truncation",
+          "path": "cache_spot_comparison_20261005/paired/perpetual/ETHUSDT.parquet",
+          "sha256": "df99175a71e77b74281a291342c7429bce00a0b5d28653e14a52ea3059058c64",
+          "initial_daily_bars": 247,
+          "initial_execution_bars": 1482
+        },
+        "LINKUSDT": {
+          "source_start": "2023-03-25T00:00:00+00:00",
+          "source_end": "2026-05-25T00:00:00+00:00",
+          "requested_start": "2023-11-27T00:00:00+00:00",
+          "requested_end": "2026-05-25T00:00:00+00:00",
+          "segment_start": "2023-03-25T00:00:00+00:00",
+          "source_gaps": [],
+          "excluded_before_segment_hours": 0,
+          "window_truncated": false,
+          "excluded_requested_hours": 0,
+          "history_policy": "All complete bars from a fixed contiguous segment origin; no rolling 500-bar truncation",
+          "path": "cache_spot_comparison_20261005/paired/perpetual/LINKUSDT.parquet",
+          "sha256": "3205afd5bee34c02566e3ceed46b43f00c1c3e09ac3d3630533725f46cb584a1",
+          "initial_daily_bars": 247,
+          "initial_execution_bars": 1482
+        },
+        "SOLUSDT": {
+          "source_start": "2023-03-25T00:00:00+00:00",
+          "source_end": "2026-05-25T00:00:00+00:00",
+          "requested_start": "2023-11-27T00:00:00+00:00",
+          "requested_end": "2026-05-25T00:00:00+00:00",
+          "segment_start": "2023-03-25T00:00:00+00:00",
+          "source_gaps": [],
+          "excluded_before_segment_hours": 0,
+          "window_truncated": false,
+          "excluded_requested_hours": 0,
+          "history_policy": "All complete bars from a fixed contiguous segment origin; no rolling 500-bar truncation",
+          "path": "cache_spot_comparison_20261005/paired/perpetual/SOLUSDT.parquet",
+          "sha256": "3cff2c85565cd0165108d7c0614f0f435aacac8dc254f7affcfff43b7d5ff1e6",
+          "initial_daily_bars": 247,
+          "initial_execution_bars": 1482
+        }
+      },
+      "funding_source": {
+        "BNBUSDT": {
+          "path": "cache_spot_comparison_20261005/paired/funding/BNBUSDT.parquet",
+          "sha256": "cc1a285fe3c140a4bc3725733c4d97d61199ff6e201577b5e5f06142b9f557f7",
+          "expected_settlements": 2731,
+          "observed_settlements": 2731,
+          "amount_basis": "remaining entry notional, not historical settlement mark"
+        },
+        "BTCUSDT": {
+          "path": "cache_spot_comparison_20261005/paired/funding/BTCUSDT.parquet",
+          "sha256": "80c4a97527a402e6b162837c15949c3dff4952a5d0b27cf3a250d4c3d9947a9a",
+          "expected_settlements": 2731,
+          "observed_settlements": 2731,
+          "amount_basis": "remaining entry notional, not historical settlement mark"
+        },
+        "ETHUSDT": {
+          "path": "cache_spot_comparison_20261005/paired/funding/ETHUSDT.parquet",
+          "sha256": "cafa3c72813541ecabc9bacfcde14ec13755aa768269597bbb35b5bd9112773a",
+          "expected_settlements": 2731,
+          "observed_settlements": 2731,
+          "amount_basis": "remaining entry notional, not historical settlement mark"
+        },
+        "LINKUSDT": {
+          "path": "cache_spot_comparison_20261005/paired/funding/LINKUSDT.parquet",
+          "sha256": "0d64970cf73390705e5340dfa9a45e487465279194de36ad5cd34ac83e27143d",
+          "expected_settlements": 2731,
+          "observed_settlements": 2731,
+          "amount_basis": "remaining entry notional, not historical settlement mark"
+        },
+        "SOLUSDT": {
+          "path": "cache_spot_comparison_20261005/paired/funding/SOLUSDT.parquet",
+          "sha256": "1f162e7dcedc50638b9fa24ca3ddb6beb946107b24e11009c748b9bbbbe2c071",
+          "expected_settlements": 2731,
+          "observed_settlements": 2731,
+          "amount_basis": "remaining entry notional, not historical settlement mark"
+        }
+      },
+      "fee_rate": 0.00055,
+      "profile": "cautious",
+      "symbols": [
+        "BNBUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "LINKUSDT",
+        "SOLUSDT"
+      ],
+      "ready_longs": 22,
+      "excluded_ready_shorts": 14,
+      "accepted": 19,
+      "filled": 18,
+      "closed": 18,
+      "open": 0,
+      "expired": 1,
+      "wins": 6,
+      "losses": 12,
+      "breakeven": 0,
+      "win_rate_pct": 33.333333333333336,
+      "closed_net": 110.24681070627744,
+      "total_fees": 4.651236763346159,
+      "funding_estimate": -21.601343914274153,
+      "net_equity_change": 110.24681070627776,
+      "net_return_pct": 1.1024681070627818,
+      "final_account": {
+        "equity": 10110.246810706278,
+        "cash": 10110.246810706278,
+        "reserved_pending": 0.0,
+        "available_cash": 10110.246810706278,
+        "unrealized": 0.0,
+        "realized_net": 110.24681070627744,
+        "invested_value": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "estimated_liquidation_equity": 10110.246810706278,
+      "max_drawdown_pct": 1.663065345649617,
+      "minimum_available_cash": 9414.364693050407,
+      "maximum_positions_and_reservations": 4,
+      "average_cash_utilization_pct": 1.0986697668660435,
+      "max_cash_utilization_pct": 7.567217328632808,
+      "holding_days_median": 24.729166666666664,
+      "holding_days_max": 68.125,
+      "per_symbol": {
+        "BNBUSDT": {
+          "closed": 3,
+          "wins": 3,
+          "net": 178.7908903114445,
+          "open": 0
+        },
+        "BTCUSDT": {
+          "closed": 3,
+          "wins": 0,
+          "net": -79.9921598809112,
+          "open": 0
+        },
+        "ETHUSDT": {
+          "closed": 5,
+          "wins": 1,
+          "net": -25.412205783747364,
+          "open": 0
+        },
+        "LINKUSDT": {
+          "closed": 5,
+          "wins": 1,
+          "net": -42.27780707808513,
+          "open": 0
+        },
+        "SOLUSDT": {
+          "closed": 2,
+          "wins": 1,
+          "net": 79.1380931375766,
+          "open": 0
+        }
+      },
+      "calendar_equity": {
+        "2023": {
+          "start_equity": 10000.0,
+          "end_equity": 10090.726336415608
+        },
+        "2024": {
+          "start_equity": 10090.726336415608,
+          "end_equity": 10149.44719287357
+        },
+        "2025": {
+          "start_equity": 10149.44719287357,
+          "end_equity": 10110.246810706278
+        },
+        "2026": {
+          "start_equity": 10110.246810706278,
+          "end_equity": 10110.246810706278
+        }
+      },
+      "risk_rejections": {
+        "RR_BLENDED": 16,
+        "RR_ROUNDED_SPLIT": 16,
+        "SYMBOL_ALREADY_EXPOSED": 261,
+        "RR_TARGET1": 3
+      },
+      "unique_risk_rejections": {
+        "RR_BLENDED": 5,
+        "RR_ROUNDED_SPLIT": 5,
+        "SYMBOL_ALREADY_EXPOSED": 2,
+        "RR_TARGET1": 2
+      },
+      "plan_reason_observations": {
+        "TARGET_ALREADY_PASSED": 979654,
+        "HARD_STOP_BREACHED": 327431,
+        "QUOTE_OUTSIDE_ZONE": 27835,
+        "EXPIRED": 166344,
+        "ZONE_ARRIVAL": 2704,
+        "QUOTE_LIMIT_OUTSIDE_ZONE": 47,
+        "STRUCTURE_INVALIDATED": 34697,
+        "CONFLICTING_DIRECTIONS": 336
+      },
+      "source_unchanged": true,
+      "funding_source_unchanged": true,
+      "passive_equal_weight_spot": null,
+      "elapsed_seconds": 808.0692517079999,
+      "evidence_file": "perpetual.json.gz",
+      "evidence_sha256": "6398dced0b081875024c46668954858e98a6bb5696b4f908c1aa15546f66ef24"
+    },
+    {
+      "market": "spot",
+      "complete": true,
+      "initial_equity": 10000.0,
+      "start": "2023-11-27T00:00:00+00:00",
+      "entry_cutoff": "2025-11-26T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "replayed_through": "2026-05-25T00:00:00+00:00",
+      "source": {
+        "BNBUSDT": {
+          "source_start": "2023-03-25T00:00:00+00:00",
+          "source_end": "2026-05-25T00:00:00+00:00",
+          "requested_start": "2023-11-27T00:00:00+00:00",
+          "requested_end": "2026-05-25T00:00:00+00:00",
+          "segment_start": "2023-03-25T00:00:00+00:00",
+          "source_gaps": [],
+          "excluded_before_segment_hours": 0,
+          "window_truncated": false,
+          "excluded_requested_hours": 0,
+          "history_policy": "All complete bars from a fixed contiguous segment origin; no rolling 500-bar truncation",
+          "path": "cache_spot_comparison_20261005/paired/spot/BNBUSDT.parquet",
+          "sha256": "3f384f1f078859a426976d2593e6a09ff44e0b590ff82e00879982fe0c2993cd",
+          "initial_daily_bars": 247,
+          "initial_execution_bars": 1482
+        },
+        "BTCUSDT": {
+          "source_start": "2023-03-25T00:00:00+00:00",
+          "source_end": "2026-05-25T00:00:00+00:00",
+          "requested_start": "2023-11-27T00:00:00+00:00",
+          "requested_end": "2026-05-25T00:00:00+00:00",
+          "segment_start": "2023-03-25T00:00:00+00:00",
+          "source_gaps": [],
+          "excluded_before_segment_hours": 0,
+          "window_truncated": false,
+          "excluded_requested_hours": 0,
+          "history_policy": "All complete bars from a fixed contiguous segment origin; no rolling 500-bar truncation",
+          "path": "cache_spot_comparison_20261005/paired/spot/BTCUSDT.parquet",
+          "sha256": "e11e583c5e60cd5951d5b63bfd9b3241e487e8056d438949d8d00e20a07356b8",
+          "initial_daily_bars": 247,
+          "initial_execution_bars": 1482
+        },
+        "ETHUSDT": {
+          "source_start": "2023-03-25T00:00:00+00:00",
+          "source_end": "2026-05-25T00:00:00+00:00",
+          "requested_start": "2023-11-27T00:00:00+00:00",
+          "requested_end": "2026-05-25T00:00:00+00:00",
+          "segment_start": "2023-03-25T00:00:00+00:00",
+          "source_gaps": [],
+          "excluded_before_segment_hours": 0,
+          "window_truncated": false,
+          "excluded_requested_hours": 0,
+          "history_policy": "All complete bars from a fixed contiguous segment origin; no rolling 500-bar truncation",
+          "path": "cache_spot_comparison_20261005/paired/spot/ETHUSDT.parquet",
+          "sha256": "1426b103264601933b14980305f7ba441d7959f242125e0da1af7d7a459c7af6",
+          "initial_daily_bars": 247,
+          "initial_execution_bars": 1482
+        },
+        "LINKUSDT": {
+          "source_start": "2023-03-25T00:00:00+00:00",
+          "source_end": "2026-05-25T00:00:00+00:00",
+          "requested_start": "2023-11-27T00:00:00+00:00",
+          "requested_end": "2026-05-25T00:00:00+00:00",
+          "segment_start": "2023-03-25T00:00:00+00:00",
+          "source_gaps": [],
+          "excluded_before_segment_hours": 0,
+          "window_truncated": false,
+          "excluded_requested_hours": 0,
+          "history_policy": "All complete bars from a fixed contiguous segment origin; no rolling 500-bar truncation",
+          "path": "cache_spot_comparison_20261005/paired/spot/LINKUSDT.parquet",
+          "sha256": "ecf8082f4e05e41c0af233a6d1bba6d655c319d5668ec9d738850a8e61e0d252",
+          "initial_daily_bars": 247,
+          "initial_execution_bars": 1482
+        },
+        "SOLUSDT": {
+          "source_start": "2023-03-25T00:00:00+00:00",
+          "source_end": "2026-05-25T00:00:00+00:00",
+          "requested_start": "2023-11-27T00:00:00+00:00",
+          "requested_end": "2026-05-25T00:00:00+00:00",
+          "segment_start": "2023-03-25T00:00:00+00:00",
+          "source_gaps": [],
+          "excluded_before_segment_hours": 0,
+          "window_truncated": false,
+          "excluded_requested_hours": 0,
+          "history_policy": "All complete bars from a fixed contiguous segment origin; no rolling 500-bar truncation",
+          "path": "cache_spot_comparison_20261005/paired/spot/SOLUSDT.parquet",
+          "sha256": "a6bfb4434aa1971f6e3dd41c1055a0d47961368eeb271680c8013a4f2d5b5063",
+          "initial_daily_bars": 247,
+          "initial_execution_bars": 1482
+        }
+      },
+      "funding_source": {},
+      "fee_rate": 0.001,
+      "profile": "cautious",
+      "symbols": [
+        "BNBUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "LINKUSDT",
+        "SOLUSDT"
+      ],
+      "ready_longs": 22,
+      "excluded_ready_shorts": 14,
+      "accepted": 19,
+      "filled": 19,
+      "closed": 19,
+      "open": 0,
+      "expired": 0,
+      "wins": 5,
+      "losses": 14,
+      "breakeven": 0,
+      "win_rate_pct": 26.31578947368421,
+      "closed_net": 18.051815662953135,
+      "total_fees": 8.47949681207347,
+      "funding_estimate": 0.0,
+      "net_equity_change": 18.05181566295323,
+      "net_return_pct": 0.18051815662953885,
+      "final_account": {
+        "equity": 10018.051815662953,
+        "cash": 10018.051815662953,
+        "reserved_pending": 0.0,
+        "available_cash": 10018.051815662953,
+        "unrealized": 0.0,
+        "realized_net": 18.051815662953135,
+        "invested_value": 0.0,
+        "open_count": 0,
+        "pending_count": 0
+      },
+      "estimated_liquidation_equity": 10018.051815662953,
+      "max_drawdown_pct": 2.158293712466619,
+      "minimum_available_cash": 9363.901684005494,
+      "maximum_positions_and_reservations": 4,
+      "average_cash_utilization_pct": 1.21474012715429,
+      "max_cash_utilization_pct": 7.562997519942936,
+      "holding_days_median": 23.416666666666668,
+      "holding_days_max": 139.20833333333334,
+      "per_symbol": {
+        "BNBUSDT": {
+          "closed": 3,
+          "wins": 2,
+          "net": 100.52950366724491,
+          "open": 0
+        },
+        "BTCUSDT": {
+          "closed": 3,
+          "wins": 0,
+          "net": -74.61986765031918,
+          "open": 0
+        },
+        "ETHUSDT": {
+          "closed": 4,
+          "wins": 1,
+          "net": -8.38485648549305,
+          "open": 0
+        },
+        "LINKUSDT": {
+          "closed": 7,
+          "wins": 1,
+          "net": -79.20648024960299,
+          "open": 0
+        },
+        "SOLUSDT": {
+          "closed": 2,
+          "wins": 1,
+          "net": 79.73351638112345,
+          "open": 0
+        }
+      },
+      "calendar_equity": {
+        "2023": {
+          "start_equity": 10000.0,
+          "end_equity": 10093.062432538085
+        },
+        "2024": {
+          "start_equity": 10093.062432538085,
+          "end_equity": 10117.282651602698
+        },
+        "2025": {
+          "start_equity": 10117.282651602698,
+          "end_equity": 10018.051815662953
+        },
+        "2026": {
+          "start_equity": 10018.051815662953,
+          "end_equity": 10018.051815662953
+        }
+      },
+      "risk_rejections": {
+        "SYMBOL_ALREADY_EXPOSED": 541,
+        "RR_ROUNDED_SPLIT": 15,
+        "RR_BLENDED": 15,
+        "RR_TARGET1": 10
+      },
+      "unique_risk_rejections": {
+        "SYMBOL_ALREADY_EXPOSED": 3,
+        "RR_ROUNDED_SPLIT": 4,
+        "RR_BLENDED": 4,
+        "RR_TARGET1": 2
+      },
+      "plan_reason_observations": {
+        "TARGET_ALREADY_PASSED": 990999,
+        "HARD_STOP_BREACHED": 313545,
+        "EXPIRED": 200568,
+        "QUOTE_OUTSIDE_ZONE": 28071,
+        "ZONE_ARRIVAL": 3315,
+        "QUOTE_LIMIT_OUTSIDE_ZONE": 50,
+        "STRUCTURE_INVALIDATED": 27916,
+        "DAILY_INVALIDATION": 5064,
+        "CONFLICTING_DIRECTIONS": 96
+      },
+      "source_unchanged": true,
+      "funding_source_unchanged": true,
+      "passive_equal_weight_spot": {
+        "marked_final_equity": 16035.106672098793,
+        "liquidation_final_equity": 16014.265843957066,
+        "max_marked_drawdown_pct": 58.89463728610438,
+        "note": "Fully invested without strategy stops; descriptive, not exposure/risk matched"
+      },
+      "elapsed_seconds": 811.325215875,
+      "evidence_file": "spot.json.gz",
+      "evidence_sha256": "4b6d30c3992293054c0a826907b111af2b2ffb129c2b8aa980f1c16a8c95de57"
+    }
+  ],
+  "errors": [],
+  "dataset_manifest_sha256": "1b1a6d2dbc6863f97f2fb02f7047899c1e1bea666792d1be36ee28c3871dab2f",
+  "code_unchanged": true,
+  "protocol_unchanged": true,
+  "complete": true,
+  "finished_at": "2026-10-05T12:08:05.988171+00:00"
+}

@@ -1,0 +1,81 @@
+RAILWAY CAPABILITY AUDIT — 2026-10-05
+
+Scope
+Use the existing S-RAutoBot service, PostgreSQL and Redis for an always-on,
+shadow-only Apex deployment. This audit does not authorize live 10x leverage.
+The separate 5x/10x comparison keeps risk per trade unchanged.
+
+Verified in Railway
+- Existing production service follows kuc161123/S-RAutoBot main; one EU-West
+  replica; serverless off; On Failure restart policy with ten retries.
+- Postgres and Redis services have persistent volumes. Redis PING succeeded
+  from the old app container. PostgreSQL import in that container's console
+  failed because libz.so.1 was unavailable; this was not a completed DB query.
+- Old service used deprecated Nixpacks, had no deployment healthcheck and had
+  Wait for CI disabled. Dockerfile.apex uses pinned runtime dependencies and
+  Python 3.12; CI builds and checks that same image.
+- PostgreSQL had no scheduled volume backups. Enabled daily (six-day retention)
+  and weekly (27-day retention) schedules. Created a pre-migration backup:
+  Railway displayed 2026-10-05 17:28, 1.31 GB. Restore was not performed/tested.
+  Point-in-time recovery remains off; enabling it redeploys the DB and should
+  be treated as a separate operational change if sub-day recovery is needed.
+- Volume usage alerts were already enabled at 80%, 95% and 100%.
+- Bybit's authenticated position read returned 33004 (expired derivatives key).
+  No positions/orders could be verified with that key. The user explicitly
+  confirmed no open positions or pending entries before the shadow handoff.
+
+Staged deployment settings (verify applied after source push)
+  RAILWAY_DOCKERFILE_PATH=Dockerfile.apex
+  APEX_MODE=shadow
+  APEX_LIVE_ENABLED=false
+  Healthcheck path=/healthz
+  Wait for CI=enabled
+Existing masked Bybit/Telegram/DB/Redis credentials were not revealed or changed.
+The earlier OpenAI key/model and numeric Telegram authorization changes remain
+part of the staged service configuration. The actual model/key connection must
+be verified after deployment; local tests do not certify account access.
+
+Data collection added
+- Baseline and AI-approved simulated portfolios retain their actual risk caps.
+- A dedicated apex_shadow_observer_v1 SQL table captures confirmed opportunities
+  rejected solely for existing portfolio capacity, after an independent risk
+  reassessment with no existing exposures. Invalid structure, reward/risk,
+  liquidity/funding/data checks and loss circuits are not bypassed.
+- Distinct overlapping candidates can be tracked for the same symbol. Repeated
+  scans/restarts deduplicate the original opportunity ID within this experiment.
+- Frozen opportunity evidence, instrument constraints, original risk denominator,
+  rejection reasons and sizing policy support subsequent research. Batched
+  updates use actual subsequent candles and settled funding history.
+- /observer and the dashboard Observer button report waiting/open/closed/unfilled,
+  W/L/flat, WR, mean net R and incomplete outcomes. Only fully reconciled closes
+  enter outcome statistics. These correlated observations are not a jointly
+  fundable portfolio or evidence of causal AI improvement.
+- This is evidence collection, not automatic model retraining, policy tuning,
+  live promotion or autonomous source-code changes. The monitored-zone entry
+  experiments remain offline; the cloud signal engine still requires confirmed
+  daily structure and closed 4H confirmation.
+
+Recovery improvements
+- One symbol's simulation or funding outage no longer prevents processing other
+  symbols. Partial failures remain visible and recovery resumes from persisted
+  cursors. Missing evidence is not converted into fabricated wins/losses.
+- Lost worker lease shuts down with a nonzero exit status for Railway recovery.
+  Intentional shutdown still drains cleanly. PostgreSQL ownership fencing keeps
+  replacement workers from writing concurrently.
+- /healthz gates startup dependencies; /readyz adds leadership and a fresh scan.
+  Railway healthchecks gate deployments, not continuous runtime supervision.
+  The bot's own supervised loops and durable Telegram outbox report faults.
+
+Features used selectively
+PostgreSQL is the durable ledger; Redis is a disposable cache. A public web
+domain, extra trading replicas, GPUs, cron execution for the always-on worker,
+additional databases and storage services do not currently solve a demonstrated
+need. Optional cloud Drive references require a read-only service account and
+explicit file allowlist; desktop Google Drive access is not a Railway credential.
+No Apex/Drive ledger content was deleted or rewritten.
+
+Official references
+https://docs.railway.com/builds/dockerfiles
+https://docs.railway.com/deployments/healthchecks
+https://docs.railway.com/deployments/github-autodeploys
+https://bybit-exchange.github.io/docs/v5/error

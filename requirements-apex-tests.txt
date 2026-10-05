@@ -1,0 +1,7 @@
+# CI/offline research only. Keep these out of the production Docker image.
+-r requirements-apex.txt
+pytest==8.4.2
+# Match the numerical stack used for the recorded comparison runs.
+numpy==1.26.4
+pandas==2.2.2
+pyarrow==21.0.0

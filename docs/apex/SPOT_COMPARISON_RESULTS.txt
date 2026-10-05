@@ -1,0 +1,157 @@
+SPOT VERSUS LONG-ONLY PERPETUAL: COMPLETED RESEARCH
+2026-10-05
+
+Verdict
+
+Spot did not improve this version of the Elliott strategy in the tested
+sample. Both arms made a small net profit, but spot returned only 0.18% and
+had the larger drawdown. Do not switch live execution or increase risk on
+these results. The low trade count, profit concentration and previously seen
+period do not establish a dependable edge for either market type.
+
+Fixed comparison
+
+BTC, ETH, SOL, BNB and LINK against USDT. Each arm shares ONE 10,000 USDT
+account across all five coins. Long-only; no borrowing or leverage advantage.
+Cautious 0.25% risk before setup reductions; existing account/bucket caps,
+daily/weekly loss gates and drawdown rules. Pending orders reserve cash and
+fees. Same daily-wave/4H structure rules, 30-day zone watches, hourly next-open
+IOC proxy, stops, target splitting, invalidation and structural management.
+
+Entries: [2023-11-27 00:00, 2025-11-26 00:00) UTC, 730 days.
+Manage holdings through 2026-05-25 00:00 UTC, another 180 days.
+Common warmup: 247 days from 2023-03-25. No price gaps in either test arm.
+Both full runs finished; no truncation, forced end exits or source changes.
+All trades actually closed before the entry cutoff. The additional six
+months produced no new exits. Last spot exit: September 25, 2025; last
+perpetual exit: September 22, 2025.
+
+Results                         Spot                 Long-only perpetual
+Starting account                10,000.00            10,000.00 USDT
+Final account                   10,018.05            10,110.25 USDT
+Net profit                      +18.05               +110.25 USDT*
+Account return                  +0.18%               +1.10%*
+Filled / closed                 19 / 19              18 / 18
+Wins / losses                   5 / 14               6 / 12
+Win rate                        26.3%                33.3%
+Still open / pending            0 / 0                0 / 0
+Unfilled IOC attempts           0                    1
+Hourly marked max drawdown      2.16%                1.66%
+Fill fees                       8.48                 4.65 USDT
+Estimated funding cashflow      0.00                 -21.60 USDT
+Median holding time             23.42 days           24.73 days
+Longest holding time            139.21 days          68.13 days
+Average cash utilized**         1.21%                1.10%
+Maximum cash utilized           7.56%                7.57%
+Max holdings + reservations     4                    4
+
+* Perpetual net results include estimated historical funding amounts.
+** Average over the whole 910-day window, including the empty follow-up.
+USDT cash is valued at one USD here. These are simulated account returns,
+not executed trades, forecasts or annualized returns. Slippage is included.
+Wins/losses use net P&L; a trailed stop can close a profitable trade.
+
+Per-symbol closed net (USDT)
+                      Spot           Perpetual including estimated funding
+BNB                   +100.53        +178.79
+BTC                    -74.62         -79.99
+ETH                     -8.38         -25.41
+LINK                   -79.21         -42.28
+SOL                    +79.73         +79.14
+
+What drove the difference
+
+Spot avoided funding, but its higher fee scenario and different market prices
+changed eligible wave setups, entry times and subsequent management. Those
+trade-path differences outweighed the financing saving. This is a comparison
+of complete market-specific strategies, not identical fills with fees removed.
+BNB supplied the largest per-symbol difference. Both arms lost money in BTC,
+ETH and LINK, with profits concentrated in BNB and SOL. Selecting only the
+winners after viewing this table would be another unvalidated hypothesis.
+
+The system barely deployed its cash and found only 18-19 filled opportunities
+over two entry years. It needs stronger evidence on entry quality and broader
+opportunity coverage before more capital or leverage. A larger symbol list is
+not itself proof of better results. A future validation should freeze the rules
+and evaluate unseen data or forward paper trades, with actual Bybit spot
+instrument rules and a point-in-time liquidity universe.
+
+For context only, a fully invested equal-weight spot buy-and-hold basket ended
+at approximately 16,014.27 USDT after modeled liquidation costs, with 58.89%
+maximum marked drawdown. Its continuous exposure and lack of stops are very
+different; it is not a risk-matched benchmark or a recommendation to buy it.
+
+Data, costs and limitations
+
+Bybit public candle access returned HTTP 403 from this environment. Both
+arms therefore use the SAME alternative venue: official Binance hourly spot
+and USDT perpetual archives, plus Binance historical funding rates. This is
+not a replay of Bybit fills. Fee assumptions are the published Bybit base VIP0
+scenario: 0.10% spot and 0.055% perpetual per execution, not verified account
+fees or reconstructed historical fee tiers. Spread assumed 0.01%; entry and
+exit slippage 0.03% each. No order-book depth or partial entry-fill model.
+
+Spot buys deduct their fee in coins. The simulation sizes net owned quantity,
+reserves the corresponding gross purchase cash, and never sells fee coins it
+does not own. Net quantity uses a synthetic 0.0001 lot/tick convention; actual
+gross purchase rounding, dust and historical exchange instrument rules are
+not reconstructed. Perpetuals reserve full principal plus fees for a matched
+1x cash budget. This does not validate exchange liquidation or leverage use.
+
+Funding records retain their actual millisecond settlement timestamps. The
+replay uses only rates already settled at each decision. Charges/credits use
+remaining ENTRY notional, not historical settlement mark prices, so their
+amounts remain estimates. They affect cash and sizing chronologically.
+
+795 ZIP archives passed their official SHA256 checks. The normalized data
+contains 27,768 consecutive hourly candles for each of ten price histories
+and 3,472 funding records per symbol. A missing March 2023 spot hour and
+earlier SOL perpetual gaps were excluded only from warmup using a predefined
+common-origin rule. No candles were interpolated. The initial acquisition
+audit also preserves a rejected older SOL funding-interval case; the retained
+paired history passed its eight-hour coverage check.
+
+Five fixed surviving assets are not a rotating historical top-50 universe.
+The period overlaps earlier research and is not untouched out-of-sample data.
+No historical AI/macro veto, tick execution, full exchange account behavior
+or live Railway/Telegram run is claimed. These shared-account returns are
+not directly comparable with earlier sums across separate 10,000-per-symbol
+accounts, which also used a different venue/history origin and cost model.
+
+Verification and reproducibility
+
+Full Apex suite: 1,438 passed, one disposable-Postgres test skipped, three
+local Python 3.9/LibreSSL dependency warnings. After coverage normalization
+changes, all 14 source/coverage tests and 52 portfolio tests passed. The
+accounting module has 101 tests covering base fees, cash conservation, partial
+exits, missing data, reservations and model isolation.
+
+An independent reconstruction from saved fills verified coin inventory,
+fees, funding chronology, cash, final equity, W/L counts, entry cutoff and
+source hashes for both arms. Full source, protocol and dataset checksums
+remain unchanged through the experiment. Frozen code copies are retained.
+
+Evidence: docs/apex/spot_comparison_evidence_20261005/
+- report.json, manifest.json, dataset_manifest.json, protocol.txt
+- spot.json.gz, perpetual.json.gz (full decisions, trades and equity)
+- spot_trades.csv, perpetual_trades.csv
+- spot_daily_equity.csv, perpetual_daily_equity.csv
+- accounting_audit.json, analysis.json, reconcile_saved_fills.py, code/
+
+Research-only modules: apex_bot/spot_comparison.py,
+spot_research_accounting.py, spot_research_data.py, spot_research_normalize.py.
+The regenerable archive cache is ignored by Git and excluded by the existing
+Docker rules. No live trading code/settings, exchange account, Telegram chat,
+Railway deployment or external ledger was changed. No commit/push performed.
+
+Replay command, from the repository root after public-data normalization:
+.venv/bin/python -m apex_bot.spot_comparison \
+  --spot-source cache_spot_comparison_20261005/paired/spot \
+  --perpetual-source cache_spot_comparison_20261005/paired/perpetual \
+  --funding-source cache_spot_comparison_20261005/paired/funding \
+  --history-start 2023-03-25T00:00:00Z --output NEW_EVIDENCE_DIRECTORY
+
+Primary references checked 2026-10-05:
+https://github.com/binance/binance-public-data
+https://www.bybit.com/en/help-center/article/Trading-Fee-Structure
+https://www.bybit.com/en/help-center/article/Bybit-Spot-Fees-Explained

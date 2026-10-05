@@ -1,0 +1,180 @@
+APEX KAPITAL OVERHAUL — PRELIMINARY DISCOVERY
+2026-10-05 · Analysis only; not a production-readiness or profitability verdict
+
+Historical checkpoint: the statements below describe the initial analysis-only
+phase. The user subsequently authorized implementation in this repository and
+staging Railway variable placeholders. See OPERATIONS.txt and LEDGER_AUDIT.txt
+for the later implementation/source review. The existing Apex ledger remains
+read-only. References to main.py below refer to its preserved legacy version.
+
+Outcome
+
+The requested master prompt is in ANALYSIS_PROMPT.txt. It covers source discovery,
+the current bot, Apex's actual two-sided Elliott Wave method, OpenAI analysis,
+Railway operation, Telegram reporting, validation and migration. No trading code,
+configuration, existing research, ledger, Drive document, chart, or exchange
+setting was changed. No commit, push, deployment, message, or trade was performed.
+Only these new local analysis documents were created.
+
+What was inspected
+
+1. Current repository source at HEAD d0fc9e23, main branch, plus configuration and
+   relevant research. Existing modified/deleted files and extensive untracked
+   research were present before this review and were left intact.
+2. The local Elliot Wave project and its later September chart-review workspace,
+   as historical background. These are not established as current Apex authority.
+3. The signed-in browser's Apex Kapital — Trading Desk Google Drive folder and
+   its nine top-level subfolders.
+4. Full exported text of EW_Firm_Charter v1.7 and the A-022 document, including
+   its later A-023 / EW Clean 21.0 amendment. Both received independent review.
+5. The actual ledger's sheet inventory, not its full cell contents or all current
+   settings. The browser shows 31 sheets; the charter lists 27.
+6. The visible opening sections of Daily Brief 2026-10-03, the latest brief
+   listed in the inspected daily folder. Historical observations in it were not
+   refreshed or treated as current prices, balances, orders or positions.
+7. Official OpenAI, Bybit, Railway and Google Drive documentation for the design.
+
+Accessible source links
+
+Drive office:
+https://drive.google.com/drive/u/0/folders/1U2BnRdnCbDhugkOQr5_mI611BUKT8aSQ
+Charter v1.7:
+https://docs.google.com/document/d/1PoybJ3KpkjU1BtjmpnDnMAXZMApN5G51LFA8lLBjDng/edit
+Amendment A-022/A-023:
+https://docs.google.com/document/d/1zBcUSFZEUg_92WthQFnK8YAvqa3q2Z5xMbdGHzLa_3g/edit
+Ledger:
+https://docs.google.com/spreadsheets/d/1ElUn1Ga4kkjdqx9pO9l9ihBQL4TfPjnCJLJyGzIcJrg/edit
+Daily brief:
+https://docs.google.com/document/d/1_8FId96wHV2s_c5zEfhsWs4oCMTT8A6iFBYE9ZxT94A/edit
+
+Current bot — verified source behavior, not verified deployment state
+
+main.py starts a Flask dashboard and autobot.core.bot.Bot4H. Despite the class
+name, the observed production strategy uses 1H RSI divergences, an EMA gate and
+break-of-structure confirmation. Configuration contains 277 enabled symbols,
+728 configurations, RR=10 and initial stops at 3 ATR. Base risk is 0.75% before
+taper/regime/other adjustments; net and gross risk caps are both 10%.
+
+The bot submits Bybit orders through an asynchronous REST adapter, attaches
+TP/SL, manages trailing stops, reconciles positions, records Postgres state and
+exposes Telegram controls. Its automatic shadow halt currently uses a 21-day
+window. This differs from both the old three-strategy discussion and Apex.
+
+Relevant locations:
+• main.py:117 — startup; main.py:51 — process-name killing.
+• autobot/core/bot.py:1820 — execution and gates.
+• autobot/core/bot.py:1993 — sizing; :2153 — order-result handling.
+• autobot/core/bot.py:2945 — restart adoption; :3100 — main loop.
+• autobot/brokers/bybit.py:166 — generic retries; :757 — market orders.
+• autobot/core/storage.py:80 — database; :277 — fallback writes.
+• autobot/utils/telegram_handler.py:68 — command registration.
+• config.yaml:60 — risk; :142 — shadow halt; :215 — trailing settings.
+
+Static review identified hardening requirements: sender authorization on Telegram
+mutations, persistent halt state, idempotent order submission, confirmed fills,
+entry-risk recovery after restart, cloud process coordination, and explicit
+failure behavior for database outages. Reuse candidates are infrastructure
+primitives, not the entire current orchestration loop unchanged.
+
+Apex — documented operating method
+
+The charter describes research, wave analysis, trading, quant/systems and an
+independent control function. Independent initial counts are compared; agreed
+structure enters a reviewed plan. The system distinguishes Core, Active and
+Screen universes, primary/alternate counts, long/short levels, structure verdicts,
+triggers, risk checks, tickets and reconciliation.
+
+Its strategy includes completed-impulse pullbacks, early wave-3 opportunities,
+wave-4 entries after extension and B-wave setups after a completed five, with
+short mirrors. Confirmed entries use closed 4H structure; resting ladders are a
+separate configured style. Risk uses structural invalidation and buffered hard
+stops, partial targets, funding filters, events and portfolio caps. This is not
+the repository's fixed 10R divergence strategy or its four-pattern EW experiment.
+
+The charter's historical limits include tier risk 1%/0.5%/0%, 4% heat, 2% bucket
+heat, six positions overall, two per bucket, 25% single-position notional, 100%
+gross notional, and up to 5x isolated leverage. These are source rules to audit,
+not new recommendations or verified current Settings values.
+
+A-022 removes Firm chart-pattern drawing/alerts and describes reconciled counts.
+Its A-023 addendum simplifies the display in EW Clean 21.0. It does not eliminate
+the analytical momentum/confluence checks or alternate-count records. Claims of
+chart coverage and version installation were read, not independently reverified.
+
+Critical differences the replacement must address
+
+• Existing Apex makes recommendations for manual order placement. The requested
+  replacement would own routine trading decisions through explicit software
+  policy. That is a deliberate operating-model change, not a direct copy.
+• Apex's documented cloud environment had market-data restrictions; chart sync,
+  some funding reads and reconciliation depended on a signed-in desktop. The
+  October 3 brief reports this blocking decisions. Test Railway connectivity
+  directly; those historical restrictions are not facts about Railway.
+• The current Sheet is Apex's authoritative record. A proposed new bot ledger
+  must be separate. Nothing in this review authorizes modifying the existing one.
+• Current ticket status, OWN positions, transitional short permissions, approved
+  count revisions and risk settings need reconciliation before any live migration.
+• Telegram must expose actual decision state, execution evidence and delivery
+  health. A signal, accepted order, fill and protected position are distinct.
+
+Concrete ambiguities to resolve before implementation
+
+The charter specifies most trade arithmetic but leaves important machine rules
+unfinished: adjusting a zone to internal wave 4; confirming the latest swing;
+freezing the moving impulse/B endpoints; retest tolerance; selecting trailing
+pivots; resolving overlapping regime-score bands; stacking risk reductions; and
+reconciling fixed Type 2 targets with radar's next-unreached extension targets.
+
+The Type 5S worked R:R example should not become a hardcoded formula: a percentage
+stop buffer depends on the absolute invalidation price, not only A's length.
+Short-radar verification and dated short-side evidence deadlines are not proof
+that the required implementation or review was completed. The prompt requires
+current evidence for both.
+
+Research evidence and its limits
+
+elliott/REPORT.md reports that the September 18 mechanical EW primary
+specification failed, with pooled holdout expectancy -0.208R/trade. That result
+applies to that experiment, not to Apex's full discretionary process.
+
+The review also reproduced an early-history causality problem: detect() requires
+six major pivots across the full supplied history, although some candidate
+patterns use five. An early BTC daily signal appears only once later history is
+available. The existing sampled audit misses this startup case. The economic
+impact of this defect has not been measured. Do not rely on the report's blanket
+causality claim; use exhaustive prefix/streaming tests before reuse.
+
+Recommended design direction — proposal, not implemented
+
+Cloud data -> frozen evidence packet -> numeric wave candidates -> independent
+AI count/critique -> semantic validation -> opportunity state -> deterministic
+risk policy -> durable execution state -> reconciled accounting -> Telegram.
+
+Separate research and explanatory AI from the service holding trading authority.
+Use structured model outputs plus numeric validation; keep histories and prompts
+versioned. OpenAI's Agents SDK can run in the Railway application; the managed
+Agents API is another architecture option. Either requires an explicit runtime,
+authorized API access and cost controls. Desktop agents and connected Drive
+access do not transfer automatically into production.
+
+Use Postgres for new operational state, cloud-scheduled/resumable work and a
+durable Telegram outbox. Drive supplies scoped, versioned reference material.
+Chart rendering should be automated from data; TradingView remains optional for
+viewing. Missing evidence causes a visible WAIT or halt, while existing position
+protection and reconciliation continue.
+
+Measure whether the AI improves prospective decisions after costs against a
+deterministic baseline. Agreement and polished chart labels are not performance
+evidence. Historical recounts cannot be traded retrospectively.
+
+Still unverified / not yet reviewed
+
+• Full current ledger cell contents, approved Settings and operational history.
+• Canonical Claude project files and every current amendment/playbook.
+• Current radar/Pine source and installed TradingView versions.
+• Railway deployment, region, credentials, account/API permissions and live state.
+• Full current quant evidence and any claimed edge of Apex's actual rules.
+• Whether current model/billing access is provisioned for an unattended service.
+
+These gaps do not prevent a useful analysis prompt. They do prevent an honest
+claim that the overhaul has been specified completely, implemented or validated.

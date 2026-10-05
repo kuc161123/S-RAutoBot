@@ -1,0 +1,378 @@
+APEX NUMERIC ENGINE / RISK POLICY — apex-numeric-1.2
+
+Scope and authority
+
+These are executable, conservative interpretations of the supplied charter
+v1.7 sections 7.1–7.3, 7.6 and 7.11, plus the user's current implementation
+instructions. ANALYSIS_PROMPT.txt and DISCOVERY_NOTES.txt identify ambiguities;
+they are source material, not instructions to run the old manual workflow.
+No old elliott detector, ledger, exchange client or storage implementation is
+used. This is a deterministic candidate/risk subsystem, not a claim of a
+profitable strategy, complete Elliott count, or production execution readiness.
+
+Public contracts
+
+analyze(symbol, daily, execution, now, tier=1, bucket='crypto') -> list[Opportunity]
+assess(op, instrument, equity, profile='cautious', risk_pct=None, exposures=None,
+       daily_loss_pct=0, weekly_loss_pct=0, drawdown_pct=0,
+       funding_rate_8h=None, spread_pct=None, now=None,
+       regime_multiplier=1.0) -> dict
+
+Models are the shared Candle, Opportunity and Instrument, unchanged. Candle
+open_time is an integer UNIX millisecond timestamp. All other public times,
+including Pivot.available_at, created_at, expires_at and now, are UNIX seconds.
+Daily and 4H bars must be aligned to UTC boundaries, ascending and contiguous.
+Only bars with open_time/1000 + timeframe <= now are visible. Future/in-progress
+OHLCV is ignored. Closed prices must be finite, positive and internally
+consistent, volume nonnegative; duplicates, gaps and out-of-order data fail
+closed (analyze returns []). This is not a data repair service. Missing 4H data
+can leave valid daily candidates WAIT. Staleness is one complete timeframe plus
+300 seconds of ingest grace; stale nonterminal candidates become WAIT.
+
+Risk results contain allowed, reasons (stable machine codes), qty, qty_step,
+risk_cash, risk_pct, notional, entry, stop, target1, target2. Rejections always
+return qty/risk_cash/notional = zero. Prices can contain the rejected rounded
+proposal for diagnostics. risk_pct is percentage points; risk_cash includes the
+cost allowance. A positive risk_pct on a rejection is not an authorization.
+qty_step is zero when the instrument contract cannot be validated.
+
+Pivot algorithm and causality
+
+The public confirmed_zigzag helper uses Wilder ATR(14): first 14 true ranges
+seed the mean, later values use the Wilder recurrence. Daily reversals require
+2 times the PRIOR closed bar's ATR; execution reversals use 1 times that ATR.
+Only a close reversing from a previously occurring extreme confirms a pivot.
+An extremum cannot be confirmed on the bar that first makes it. Equal extrema
+keep the earliest occurrence. Zero ATR cannot confirm a pivot. The initial
+direction is unknown until exactly one reversal test holds; an ambiguous
+initial outside range confirms neither direction. Warmup extrema are not
+retroactively labeled. Each pivot has occurrence time and a later available_at,
+as well as price, kind, ATR, index and an evidence ID.
+
+Confirmed pivots never move. New extrema remain private until confirmation.
+Version 1.2 retains the next leg's observed opposite extreme during the previous
+pivot's confirmation lag. Seeding from only the confirmation bar had discarded
+real intervening highs/lows and could invent shallower waves. The pivot's own
+bar is excluded from that next leg because its intrabar high/low order is unknown.
+The implementation replays a fixed history origin, not a rolling last-N window.
+Appending bars cannot change earlier pivots/availability. Different warmup
+origins or corrected historical candles are DIFFERENT input evidence and can
+change IDs; the runtime must persist/version history corrections and consumed
+opportunity IDs. This stateless API cannot remember a signal discarded by a
+caller, reconstruct omitted history, or guarantee order deduplication itself.
+
+Structure and setup arithmetic
+
+Direction-normalized prices make the standard impulse logic symmetric. The
+validator requires alternating, positive-length 0-1-2-3-4-5 legs; ordered
+occurrence/availability times; W2 strictly above origin; W3 beyond W1; W4
+strictly above W1 (touch counts as overlap); W5 beyond W3; and W3 not strictly
+shorter than BOTH W1 and W5. Equal motive lengths are allowed. Short impulses
+reverse these comparisons. Prefixes 0..2/3/4 check only rules already testable:
+a partial wave-3 candidate cannot prove the future wave-3/5 length relation.
+
+Consecutive confirmed daily pivots define candidate windows, not a discretionary
+degree assignment. Multiple windows are retained with separate IDs. Setup names
+are '1', '1S', '2', '2S', '2X', '2XS', '5S', '5L' (charter's 2XS spelling).
+
+Type 1 / 1S:
+  Six pivots must pass the completed standard impulse test. Zone is .382–.5 of
+  the complete impulse. When W4 is inside that interval, it becomes the deep
+  boundary (narrowing only). Invalidation is the farther of .618 and W4.
+  T1 is the completed impulse extreme. T2 is zone midpoint plus/minus the full
+  impulse length. Anchors and levels freeze at W5's confirmation, not W5's
+  occurrence. This represents a putative completed (1), without asserting its
+  position in a weekly or higher-degree trend.
+
+Type 2 / 2S:
+  A valid 0-1-2 prefix is required. Wait for the first DAILY close beyond W1
+  known at/after W2 confirmation. Freeze 'move off W2' from W2 to that breakout
+  bar's favorable extreme. The add zone is .5–.618 of that frozen move;
+  invalidation is W2; confirmation is W1. T1 = W2 +/- 1.0*W1 length,
+  T2 = W2 +/- 1.618*W1 length. A daily close through W2 before that breakout
+  cancels formation. Use charter 7.1 fixed targets, not the radar's moving
+  'next unreached extension' replacement. A T1 already touched means INVALID,
+  never promoting T2 to T1 to manufacture a new entry.
+
+Type 2X / 2XS:
+  A valid 0-1-2-3 prefix and W3 >= 1.618*W1 are required. Freeze W3 on its
+  confirmed pivot. Zone is .382–.5 of W2->W3, clipped beyond 1.01*W1 top for
+  longs / below .99*W1 low for shorts. An empty clipped interval is unsupported.
+  T1/T2 are the next TWO untouched 1.618/2.618/4.236 W1 extensions from W2 as
+  known at creation, including intervening candle wicks. If fewer than two
+  remain, no candidate. Do not invent 6.854 extensions. A later W1 overlap
+  wick invalidates the standard-impulse candidate even without a daily breach.
+  Interpret this as a wave-4 entry toward wave 5: Tier 1 only and half risk.
+  No discretionary target trim/CCR is automated; frozen targets and R:R still
+  have to pass. The discretionary 'in 5' target trim exception is unsupported.
+
+Type 5S / 5L:
+  Require a complete valid five, a confirmed A pivot, and a confirmed B pivot.
+  At least one daily close from after W5 through A's occurrence must break W4.
+  A must move opposite the five; B must be inside the .5–.618 retracement of A
+  and strictly inside W5. Freeze B at its confirmed price; targets are B +/- A
+  and B +/- 1.618*A. Invalidation is W5. A later wick through W5 invalidates
+  the candidate (expanded flat unsupported). Waiting for confirmed B is a
+  deliberately conservative timing choice; an earlier historical B-zone
+  entry is not resurrected. Another future 4H entry trigger is required.
+  This validates the enumerated A/B geometry, not five subwaves inside A/C.
+
+Percentage buffers are based on absolute market prices. Consequently translating
+prices about a reflection constant preserves price-distance wave geometry but
+does NOT preserve percentage stop distances or 1%/0.5% bands exactly. Short
+formulas independently use the charter's mirrored percentage inequalities.
+
+Triggers and lifecycle
+
+All plans begin WAIT. Execution bars must OPEN at or after plan creation. No
+4H bar partly predating the available daily evidence is an entry trigger.
+Zone touch alone, wick crossing alone, and projected waves are never READY.
+The preceding already-closed 4H candle is comparison evidence for a cross on
+the first eligible bar; it is never a trigger itself. Version 1.1 repairs v1's
+missing comparison close on that boundary. Evidence IDs are versioned so old
+stored plans are not silently rewritten; replay results must name the version.
+
+Default confirmation: zone must have been touched since creation; the latest
+two available execution swing highs must form a lower high for a long (higher
+lows for a short). Both must be known before the triggering bar opens. The
+comparison predecessor may predate the daily anchor. The latest trigger swing
+must belong to the applicable corrective approach: Type 1/2X from W5/W3,
+Type 5 from A (before B), Type 2 from the frozen daily breakout candle's open
+(not an unrelated older W2 correction). A later close must cross the most recent
+swing level from the opposite side. We do not choose an older convenient swing
+when the latest swing fails the lower-high/higher-low test.
+
+Type 2 alternate confirmation: a NEW closed 4H cross of W1 after plan creation,
+then the FIRST retest on one of the next three closed 4H bars. The range must
+intersect W1 +/-0.1%; the close must remain beyond W1. A breakout cannot retest
+itself. A first failed retest or no retest by the third bar retires only this
+alternate attempt. Evidence retains FAILED_FIRST_RETEST/RETEST_EXPIRED and its
+time; its clock never restarts. A valid deep-add plan remains WAIT for a fresh
+ordinary closed-bar trigger. Retests have their own
+entry zone around W1; this is the charter's explicit exception to the add zone.
+
+Entry is the actual trigger close. For longs entry must be >= zone_low and <=
+1.01*zone_high; shorts >= .99*zone_low and <= zone_high. These asymmetric 1%
+bands are the charter allowance, not an extra new zone. Subsequent closes must
+remain inside the permitted entry band and not move >0.5% adversely from the
+trigger close. Otherwise the plan is terminal (out of zone / chasing), even
+if price returns later. At risk assessment these checks run again on rounded
+entry. An initially out-of-zone trigger is instead recorded as a rejected
+attempt while the untriggered setup remains WAIT; it never creates a ticket.
+This differs from invalidation after an accepted READY trigger. Funding and
+R:R are policy checks, so READY alone is not permission.
+
+Plan waiting lifetime is 30 days from creation (chosen bounded machine rule,
+not claimed as charter text). A trigger expires after exactly two more 4H bars,
+capped by the waiting lifetime. No Juba overnight extension: this cloud API has
+no manual sleeping-owner workflow. Expiry is INVALID with reason/terminal_status
+EXPIRED because the shared Opportunity state contract is WAIT/READY/INVALID.
+Actual terminal transitions do not rearm. Type 2 alternate-attempt expiry is
+recorded separately and does not extend the original 30-day setup lifetime.
+
+Hard stops use 1% beyond invalidation for BTC/ETH/BNB, 2.5% for bucket B4/meme/
+memes/base/base_coins, 1.5% otherwise. Bucket is caller-supplied metadata; this
+module does not infer a token's chain or sector. Ordinary thesis invalidation
+uses daily CLOSE; hard-stop/target passage uses wicks. 2X overlap and expanded-B
+exceptions use wicks. Stop/structure invalidation wins over targets if an OHLC
+bar spans both, because OHLC cannot establish intrabar order. Daily events win
+ties with execution events. The first terminal transition is retained on replay.
+Pre-creation target/stop passage after the final anchor can reject a newly
+available plan immediately. The runtime must distinguish this from a trade.
+
+If simultaneously READY candidates disagree on direction for a symbol, all
+are returned WAIT/CONFLICTING_DIRECTIONS. There is no directional tiebreaker.
+
+Evidence contract
+
+Opportunity.id == evidence.evidence_id hashes version, symbol, tier, bucket,
+frozen anchors/levels/creation time and a hash of the available daily candles.
+Plan IDs and daily_evidence_id do not depend on future candles. This is content
+identity, not an authentication signature. Only validated engine outputs should
+be passed to assess; mutable shared evidence dictionaries must not be edited.
+trigger_evidence_id hashes the plan, trigger kind, confirmation, trigger candle
+and known execution pivot IDs. It stays frozen after that first trigger.
+
+Required risk evidence: engine_version, evidence_id, structural_valid=True,
+data_valid=True, terminal_status=None, trigger_evidence_id, trigger_kind
+(SWING_BREAK/BREAKOUT_RETEST), trigger_closed_at, trigger_price, daily_closed_at,
+execution_closed_at, as_of, zone_low/high, entry_zone_low/high. Engine also
+emits anchors, daily_evidence_id, risk_multiplier, stop_buffer_pct and, for
+terminal plans, terminal_at. Latest data times and as_of are snapshot metadata,
+not part of the frozen ID. Runtime callers may persist transitions keyed by ID.
+Risk requires a snapshot no older than 300 seconds; future evidence fails.
+
+Risk policy and integration
+
+PROFILES is a plain dict of plain dicts with exactly these keys:
+  risk_pct, heat_pct, bucket_pct, max_positions, max_per_bucket,
+  single_notional_pct, gross_notional_pct
+Base percentages: ultra_cautious .10, cautious .25, balanced .50, aggressive .75,
+extreme 1.00. Every profile currently shares the hardcaps: 4% heat, 2% bucket
+heat, 6 positions, 2 per bucket, 25% single notional, 100% gross notional.
+Profile cap settings can only tighten the hardcaps. Greater risk never lowers
+structure/data/stop/price/R:R/funding/spread requirements.
+
+risk_pct=None uses the profile base; an explicit base must be .05–1.0 percent
+inclusive. Parent runtime passes only context scaling in regime_multiplier
+(0..1; zero blocks). Do NOT pre-apply tier or drawdown in the caller: this
+module applies Tier 2 x.5, Type 2X/2XS x.5, evidence risk_multiplier <=1, and
+drawdown >=8% x.5. The 2X reduction and its identical evidence multiplier are
+one reduction, not a double charge. These reductions can take effective risk
+below .05%; the custom lower bound applies only to the base override.
+Daily loss >=2%, weekly loss >=4%, drawdown >=12% halt new entries. These loss
+inputs are nonnegative percentage points. Halt persistence and authorized reset
+are the runtime's responsibility; assess does not reset loss windows.
+
+equity is caller-provided authorized capital. exposures=None means unknown and
+rejects; [] means reconciled flat. Include every bot/OWN/external position and
+resting/reserved order, with symbol, bucket, nonnegative known risk_cash and
+positive gross notional. Unknown risk is rejected, not treated as zero. Explicit
+zero risk is allowed for a caller-verified protected position. Do not net long
+and short exposure or exclude external positions from heat/caps. This is a
+deliberately stricter current policy than the charter's OWN-heat exclusion.
+Any existing same-symbol exposure blocks entry: the supplied exposure contract
+has no side, so same-direction pyramiding cannot safely be distinguished.
+Each supplied position/reservation consumes a position slot. Caller must supply
+one reconciled snapshot without accidentally duplicating a fill and its order.
+
+Funding is a signed fractional rate already normalized to 8h, NOT percentage
+points: long > .0003 rejects, short < -.0003 rejects; equality passes. Missing
+funding rejects. Caller performs normalization/freshness checks. Spread uses
+percentage points (e.g. .10 means 0.10%); missing/nonfinite/negative rejects;
+> .20% rejects (chosen conservative ceiling). Funding interval metadata does
+not renormalize an already normalized argument.
+
+Conservative Decimal rounding: long entry up, stop down, targets down; short
+entry down, stop up, targets up. Revalidate positivity/order, minimum stop buffer,
+entry zone, trigger direction and chase distance after rounding. Cost per unit
+= entry * (.0015 + spread_pct/100 + max(direction*funding_rate_8h, 0)). .0015 is
+an explicit 15bp roundtrip fee/slippage allowance, plus full spread and one
+adverse 8h funding charge. Actual fees/holding-period costs may be higher;
+this is a bounded policy allowance, not venue fee discovery or cost prediction.
+
+Unit risk = |rounded entry-stop| + allowance. Net rewards subtract allowance.
+Tier 1 requires net T1 >=1.5R AND 50/50 blend >=2.5R; Tier 2 >=1.8R AND >=3R.
+Qty = floor_to_step(capital * effective_risk_pct/100 / unit_risk). Never round
+quantity up to meet minimums and never increase risk/stop to force a ticket.
+Reject too-small qty/notional, too-large qty, or cap violations; no automatic
+downscaling to fit a cap. Budget must fit heat before sizing, and actual risk
+is rechecked after rounding. Leverage never expands position notional or size.
+TP1 takes half the units rounded UP. Recheck blend with that actual odd-lot
+split. One lot has no partial exit; keep the nominal 50/50 hurdle so its special
+management convention does not weaken entry quality. Execution must implement
+single-lot stop-to-entry at T1 and its later exit independently.
+
+Unimplemented complexities / caller responsibilities
+
+No weekly/nested degree validation, proof of internal five/three subdivisions,
+diagonals, truncated fifths, expanded/running flats, triangles, combinations,
+alternation scoring, Elliott channel validation, RSI/MACD divergence counts,
+momentum/volume confirmation, discretionary count arbitration, CCR target
+trims, chart annotations, resting ladders, trailing/partial/time-stop execution,
+liquidation/margin estimation, venue identity/liquidity checks, regime/event/
+direction switch discovery, independent human/AI review or performance claims.
+Those may only be added with explicit data/contracts and separate validation.
+This module cannot determine freshness of scalar funding/spread or account
+exposures (their timestamps are not in the API); the runtime must do so.
+It does not establish consistency between supplied daily and 4H venue series;
+the market-data service must guarantee identical instrument/venue provenance.
+
+Assess has no reservation, storage, lease or execution side effect. Recheck
+inside the executor's atomic reservation/leader transaction against current
+capital, exposures and halt state; persist order intent and consumed IDs before
+submission. No synthetic unit test establishes safety or edge of live trading.
+
+Verification command (no contacts, all fixtures in memory):
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest \
+  tests/apex/test_engine.py tests/apex/test_risk.py -q -p no:cacheprovider
+
+2026-10-05 v1.1 acceptance audit (historical engineering evidence)
+
+The parent's ACCEPTANCE_REPLAY.json covers 2026-02-24 through 2026-05-25,
+using BTC/ETH/SOL hourly files in cache_3yr_1h. Those files match its recorded
+SHA256 values. The available cache_ew_1h copies have different file hashes but
+identical consumed OHLCV across 2024-01-11 through 2026-05-25 (20,761 hourly
+rows per symbol); this also covers the broader 365-day window plus warmup.
+
+Version 1.1 fixes one confirmed implementation defect: the first eligible
+execution bar lacked its already-known previous close. A failing-then-passing
+regression covers long/short new crosses and later retests, with no pre-plan
+trigger or future-candle dependence. No ATR, pivot, zone, stop, target, cost,
+R:R or risk threshold was loosened. Evidence IDs change by design with version.
+
+The corrected engine reproduces the 90-day first-READY counts 0/1/1 for
+BTC/ETH/SOL. Both READY signals are Type 2 breakout retests, not deep add-zone
+entries. ETH: entry 2397.29, stop 1917.0261, T1 2581.10, T2 2979.53078;
+gross T1 0.383R, net T1 0.372R, net blend 0.783R. SOL: entry 91.38,
+stop 74.37735, T1 99.42, T2 114.19638; gross T1 0.473R, net T1 0.460R,
+net blend 0.891R. Net here uses the replay's .01% spread, zero funding and the
+policy's .0015 base allowance. Rejections are correct even before fees/rounding.
+RR_ROUNDED_SPLIT is another failed check, not a third independent candidate.
+
+Why the fixed Type 2 retest often fails: let L be W1 length and r the fraction
+of W1 retraced by W2. At an ideal W1-extreme retest with NO buffer/cost/slippage,
+T1 R:R is (1-r)/r and the 50/50 blend is (1.309-r)/r. A 2.5R blend requires
+r <= 1.309/3.5, approximately 37.4%. The observed ETH/SOL retracements are
+69.58%/65.70%. The charter radar's common .382–.886 retracement interval and
+the fixed-target retest path thus conflict economically with the blended hurdle.
+Deeper add-zone entries have different arithmetic. This is no authorization to
+move targets, tighten stops, lower R:R or use unconfirmed pivots to force trades.
+
+There are also conservative interpretation limits, not newly proven bugs:
+daily 2-ATR confirmation can lag the actual extreme by days; Type 2 creation
+waits for a daily breakout and then a NEW 4H trigger; a failed/missed first
+retest retires that plan; Type 5 waits for confirmed B before another trigger.
+These choices were explicitly documented but have not been validated as an
+economically useful substitute for the complete discretionary Apex method.
+In the 90-day sample ETH W2 took 10 days to confirm, then 10 more days to the
+daily-breakout plan, then 108 hours to entry. SOL took 2 days, then 18 days,
+then 192 hours respectively. The poor R:R is not caused solely by pivot lag.
+
+A 365-day frozen-plan diagnostic (2025-05-25 to 2026-05-25, same fixed warmup
+convention) finds 28 new plans: 25 Type 2/2S, one Type 1, two Type 2X/2XS,
+no Type 5. At original availability, 6 are already invalid from prior stop or
+target passage. Public analyze calls at historical trigger times confirm
+0/3/1 READY for BTC/ETH/SOL; every one fails the unchanged risk hurdles.
+This diagnostic is not a portfolio PnL simulation or a parameter search.
+
+The completed sequential 365-day v1.1 capture also confirms 0/3/1 READY and
+zero executable trades. It used the unmodified parent replay function with
+offline frozen-prefix terminal/validation memoization, 6,570 sequential 4H
+checkpoints and 55 exact comparisons against uncached analysis. Preserved capture:
+docs/apex/ACCEPTANCE_REPLAY_365D.json; the offline runner is preserved alongside
+it as replay_audit_source.py.txt. No parameter grid was run.
+The slower initial pre-fix sequential attempt was interrupted without a final
+artifact; do not describe that attempt as a completed acceptance replay.
+
+Readiness conclusion: strategy_ready=false, live_ready=false,
+edge_demonstrated=false. Unit-test success demonstrates implemented mechanical
+behavior, not expected profitability. Zero executable trades yield no estimate
+of expectancy or win rate; do not report a zero-percent win rate or a proven
+negative edge. The Opportunity state READY still denotes only a confirmed
+technical trigger. It does not mean strategy/release readiness; the runtime's
+independent release gate must retain the acceptance failure.
+
+2026-10-05 follow-up: resting-zone research
+
+zone_orders.analyze_zones is a separate, explicit offline/shadow experiment.
+It offers one limit at the frozen zone midpoint for Tier 1 plans, and never
+labels a zone order as a confirmed reversal. The existing plan availability,
+structural stop, Elliott T1/T2 and partial-exit policy remain the same. Its
+maximum lifetime is 48 hours from the original plan creation, never renewed
+because it is discovered late. Stop, structure, daily invalidation, prior
+target passage and conflicting directions can cancel/block an offer.
+
+The midpoint and 48-hour lifetime are fixed research choices, not literal
+reproduction of charter 7.2's 30/30/40 ladder. All lots still pass the original
+net T1 and blended R:R hurdles, costs, quantity precision and exposure limits.
+assess requires explicit allow_resting=True; ordinary runtime calls do not
+enable it. ExecutionManager rejects this style in both testnet and live mode.
+Only simulation's separate resting_shadow book accepts it. Actual simulated
+fills need future complete price bars. No historical zone touch is backfilled.
+Unfilled orders cancel if T1 passes before entry. Expiry is not a closed trade.
+
+The completed five-symbol 90-day comparison ending 2026-05-25 is historical,
+not a current signal scan. Three resting offers passed risk (ETH short,
+SOL long, BNB long), but none filled within 48 hours. No win rate/expectancy
+can be measured. See TIMING_AND_ZONE_COMPARISON.txt and its raw capture.

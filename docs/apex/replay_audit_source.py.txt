@@ -1,0 +1,62 @@
+"""Offline-only memoization for fixed immutable input prefixes, never production."""
+from pathlib import Path
+from dataclasses import replace
+from functools import lru_cache
+import hashlib,json,time
+import apex_bot.engine as engine
+import apex_bot.replay as replay
+
+original_evaluate=engine._evaluate
+original_closed=engine._closed
+terminal={}
+cache_hits=0
+checks=0
+calls=0
+start=time.monotonic()
+# Candle/Pivot fields are scalars. This preserves exact serialization content.
+engine.asdict=lambda obj: vars(obj).copy()
+@lru_cache(maxsize=8)
+def closed_cached(bars,seconds,now):
+    return original_closed(bars,seconds,now)
+engine._closed=lambda bars,seconds,now: closed_cached(tuple(bars),seconds,now)
+def evaluate_cached(symbol,plan,daily,execution,swings,now,tier,bucket):
+    global cache_hits
+    key=(symbol,plan,tier,bucket,daily[0].open_time,execution[0].open_time if execution else None)
+    previous=terminal.get(key)
+    if previous is not None and now>=previous.evidence['as_of']:
+        cache_hits+=1
+        evidence=dict(previous.evidence,as_of=now,daily_closed_at=daily[-1].open_time/1000+engine.DAY,
+                      execution_closed_at=execution[-1].open_time/1000+engine.H4 if execution else None)
+        return replace(previous,evidence=evidence)
+    result=original_evaluate(symbol,plan,daily,execution,swings,now,tier,bucket)
+    if result.state=='INVALID':terminal[key]=result
+    return result
+engine._evaluate=evaluate_cached
+def checked_analyze(*args,**kwargs):
+    global calls,checks
+    calls+=1
+    result=engine.analyze(*args,**kwargs)
+    if calls%120==1:
+        engine._evaluate=original_evaluate
+        try: expected=engine.analyze(*args,**kwargs)
+        finally: engine._evaluate=evaluate_cached
+        assert result==expected,('Cache changed output',calls,args[0],args[3])
+        checks+=1
+    if calls%360==0:
+        print('checkpoints',calls,'equality_checks',checks,'elapsed_seconds',round(time.monotonic()-start),flush=True)
+    return result
+replay.analyze=checked_analyze
+results=[]
+for symbol in ('BTCUSDT','ETHUSDT','SOLUSDT'):
+    results.append(replay.replay(Path('cache_3yr_1h')/(symbol+'.parquet'),365))
+    print('COMPLETE',symbol,'READY',results[-1]['ready_candidates'],'trades',results[-1]['summary']['total'],flush=True)
+report={'purpose':'Engineering acceptance only; no demonstrated strategy edge','strategy_ready':False,'live_ready':False,'edge_demonstrated':False,
+        'engine_version':engine.VERSION,'engine_sha256':hashlib.sha256(Path('apex_bot/engine.py').read_bytes()).hexdigest(),
+        'runner':'Unmodified apex_bot.replay.replay, offline scalar serialization and terminal/validation memoization on fixed prefixes',
+        'memoization_equality_checks':checks,'sequential_checkpoints':calls,'terminal_cache_hits':cache_hits,
+        'limitations':['Hourly execution, synthetic instrument rules, zero assumed funding','Independent symbol books; no macro or AI; no portfolio loss-path validation',
+                       'One first-READY attempt per candidate','No executable trades means no expectancy or win-rate estimate'],
+        'results':results}
+path=Path('/private/tmp/APEX_ACCEPTANCE_REPLAY_365_V1_1.json')
+path.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n')
+print(str(path),flush=True)

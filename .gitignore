@@ -4,6 +4,10 @@ __pycache__/
 .env
 .DS_Store
 
+# Regenerable public archives for offline spot/perpetual comparisons
+cache_spot_comparison_*/
+cache_leverage_comparison_*/
+
 # Runtime data files - NEVER commit these!
 lifetime_stats.json
 daily_stats.json

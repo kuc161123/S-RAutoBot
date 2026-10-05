@@ -1,0 +1,97 @@
+APEX TIMING AND ZONE-ENTRY FOLLOW-UP
+2026-10-05
+
+Conclusion
+
+Resting buys in valid bullish zones and resting sells in bearish zones are
+coherent entry styles. They improve the proposed entry price relative to a
+late confirmation, but remove the evidence that price has actually reversed.
+Elliott targets are projections, not guaranteed exit prices. The comparison
+does not justify live activation or relaxing the stop/R:R requirements.
+
+Corrections made
+
+1. Confirmed pivots retain opposite extremes observed during confirmation lag.
+   The old reset could discard an intervening low/high and invent an anchor.
+2. Trigger comparison evidence can predate the daily anchor; the latest swing
+   must belong to the applicable correction and be known before the trigger.
+3. A failed/expired alternate retest retires that attempt. A structurally valid
+   deep-add plan can wait for a fresh ordinary trigger. An out-of-zone initial
+   trigger is rejected without automatically retiring the entire setup.
+4. The replay retries unconsumed eligible candidates until expiry, separates
+   plans/orders/fills/closed trades, validates missing bars and reports partial
+   runs honestly. No incomplete run is used as a completed benchmark.
+5. Telegram /why now shows numerical net R:R, the required ratios, rounded
+   target split when different, and a hypothetical price bound for passing
+   nominal R:R. That bound is diagnostic, never an order authorization.
+
+What was not changed
+
+Hard stops, Elliott target arithmetic, fees/cost allowance, risk percentage,
+position/notional/heat limits and required R:R remain intact. Daily Type 2
+breakout-based plan creation remains; arming from the first closed 4H break
+would need a separately specified causal endpoint freeze and comparison.
+
+Resting experiment
+
+Single fixed midpoint limit per Tier 1 plan, original structural stop,
+50% at T1 then remaining quantity at T2/management exit, 48-hour expiry.
+This is a simplified research alternative to Apex's three-order resting
+ladder, not the full discretionary Apex process. Prices and targets freeze
+using only information available at plan creation. No later data moves the
+entry to manufacture a fill. A future complete candle is required to fill.
+Stop-first handling applies to ambiguous candles; entry-bar targets are not
+awarded. An unfilled order is cancelled if T1 passes first.
+
+This experiment runs only when explicitly selected in the offline replay.
+It is not enabled in the deployed bot or the new runtime's automatic scan.
+Both live and testnet exchange submission reject resting research candidates.
+
+Completed 90-day observations
+
+Window: 2026-02-24 00:00 UTC through 2026-05-25 00:00 UTC.
+Universe: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, LINKUSDT.
+Corrected confirmation style: 3 READY candidates, 0 risk-approved orders.
+Resting midpoint style: 9 READY proposals, 3 risk-approved orders, 0 fills.
+All three approved resting orders expired unfilled. WR and expectancy are
+unavailable. Observed-plan counts in raw traces include old tombstones and
+must not be reported as new opportunities in this window.
+Full consolidated evidence is in TIMING_ZONE_REPLAY.json. The controlled
+v1.1 BTC/ETH/SOL comparison, using the same runner/history, likewise produced
+zero approved orders. These corrections do not establish improved acceptance
+for the confirmation style in this window.
+
+Historical offers (NOT current trading recommendations)
+
+Date UTC    Symbol   Side   Entry       Hard stop   T1          T2         Net T1 / blended R
+2026-02-26  ETHUSDT  SHORT  2473.4172   2800.9421   1637.3403   546.2905   2.51 / 4.16
+2026-03-16  SOLUSDT  LONG     83.3290     74.3773     99.4200   114.1963   1.76 / 2.57
+2026-05-11  BNBUSDT  LONG    634.7930    603.6030    693.4000   745.1265   1.79 / 2.59
+
+The old late SOL confirmation was around 91.38 with the same broad structural
+stop and fixed targets. Buying deeper improves that arithmetic; it does not
+ensure the market returns to the chosen price while the order remains valid.
+
+Limitations and next research decision
+
+Hourly execution data, synthetic instrument precision, assumed 0.01% spread
+and zero funding for sizing; independent symbol books, no AI/macro selection
+or portfolio loss-path validation. Historical funding is not certified. The
+new replay uses the full contiguous source origin, so compare versions using
+that same origin; do not attribute differences from older 500-bar warmups
+solely to engine changes. Complete paired captures use the same window and
+unchanged risk gates. Later touches after expiry are not fills.
+
+The useful next experiment is causal earlier plan availability and/or an
+explicitly longer, structurally monitored order lifetime for daily-wave setups.
+Define that policy before testing it, preserve the 48-hour comparison, and
+report both outcomes rather than selecting the best expiry after the fact.
+A multi-order ladder also needs risk checks for partial fills, since only its
+worst-priced leg may fill; a favorable theoretical full-ladder average is not
+proof that a partially filled position has acceptable R:R.
+
+Verification: 819 tests passed, 1 disposable-Postgres test skipped; the later
+Telegram display adjustment passed its 31 focused tests. Compilation and
+credential-free shadow configuration check passed. No exchange orders, paid
+OpenAI calls, Telegram messages, commit, push or deployment were performed.
+Existing Apex Drive/Sheets/ledger and pre-existing research files are untouched.

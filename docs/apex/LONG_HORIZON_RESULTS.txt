@@ -1,0 +1,92 @@
+LONGER ELLIOTT TEST AND DYNAMIC UNIVERSE
+2026-10-05
+
+Recommendation: keep the monitored-zone entry proposal in shadow research.
+It found more entries and improved on the confirmation control, but did not
+demonstrate a reliable positive edge after costs. Do not increase risk or enable
+live monitored entries on the strength of this test.
+
+Fixed test, completed in full
+
+Five original symbols: BTC, ETH, SOL, BNB and LINK USDT perpetuals. Each arm and
+symbol starts independently with a hypothetical $10,000 and cautious sizing.
+Entry window: 2023-11-27 to 2025-11-26 (730 days). Management-only follow-up:
+180 days through 2026-05-25. No entry, target, stop or risk tuning after seeing
+results. All ten runs completed without truncated coverage or trade data gaps.
+No new entries fill during follow-up and no position is forced closed at the
+end. All positions in this cohort actually closed BEFORE follow-up began; the
+extra six months produced no additional exits. This is a new historical cohort,
+not a claim to have resolved the six trades in the earlier 2026 comparison.
+
+                         Confirmation control       Monitored zone (30-day watch)
+Filled/closed            8 / 8                      29 / 29
+Long / short             5 / 3                      20 / 9
+Wins / losses            0 / 8                      8 / 21
+Win rate                 0.0%                       27.6%
+Still open at end        0                          0
+Net before funding      -$186.65                    +$5.43
+Funding estimate         -$5.54                     -$19.80
+Net incl. estimate      -$192.19                    -$14.37
+Median holding time      11.23 days                  17.04 days
+Longest holding time     36.75 days                  62.67 days
+
+Cash figures are sums across independent symbol books, NOT a combined portfolio
+return or a prediction of the user's account. Simulated fees/spread/slippage are
+included; actual tick fills, funding marks and live account constraints are not.
+
+Monitored-zone results by symbol (before funding)
+BTC: 6 closed, 1 win / 5 losses, -$106.64
+ETH: 6 closed, 2 wins / 4 losses, +$48.80
+SOL: 5 closed, 1 win / 4 losses, +$19.88
+BNB: 4 closed, 3 wins / 1 loss, +$157.99
+LINK: 8 closed, 1 win / 7 losses, -$114.60
+
+Longs: 20 closed, 7 winners, +$100.90 including estimated funding.
+Shorts: 9 closed, 1 winner, -$115.27 including estimated funding.
+Eight monitored positions lasted more than 30 days. There were five T2 exits
+and 24 stop exits; three stop exits were profitable after stop adjustments.
+Wins/losses use net P&L, not an assumption that every stop exit is a loss.
+
+What this means
+
+Daily-wave trades do need multi-week evaluation. The monitored approach improved
+entry frequency, and both directions were exercised, but the aggregate was near
+break-even before funding and slightly negative afterward. Results depend heavily
+on BNB; short entries were weak in this sample. Investigate entry quality, short
+setups and stop behavior in separate prospective tests. Do not cherry-pick BNB
+or disable shorts based only on this same small sample. More symbols can provide
+more observations; breadth alone does not establish an edge.
+
+Funding and other limits
+
+All five cached rate histories contain exactly the expected 2,730 eight-hour
+observations in this span. Estimates use each recorded rate times remaining
+ENTRY notional, with partial exits accounted for; actual settlement mark prices
+are unavailable. Entry/exit timestamp ties are excluded. Rates are an after-run
+estimate and do not retroactively change sizing decisions or claim exchange
+accounting completeness. The apparent $5.43 price-and-fee gain is too small to
+support live activation even before these execution uncertainties.
+
+The source has a missing hour on May 25, 2026. This experiment ends before it;
+no missing candles are interpolated. Prices are hourly and use the conservative
+next-hour execution model from MONITORED_ZONE_PROTOCOL.txt. No AI/macro veto,
+full portfolio loss-circuit path, actual spreads/depth or point-in-time rotating
+universe was backtested. The fixed five are selected surviving symbols. Historical
+results are conditional on this universe, history origin and these assumptions.
+
+Reproducibility
+
+LONG_HORIZON_PROTOCOL.txt was saved before the runs. Full evidence is under
+long_horizon_evidence_20261005/: manifest.json, report.json, ten compressed raw
+replays, analysis.json and trades.csv. Report checks verify code/source hashes,
+full requested coverage, final replay timestamps and no fills past entry cutoff.
+The management cache was checked against uncached open-to-close trajectories,
+both directions, future perturbations, gaps, and bounded real-data paths.
+
+The separate dynamic universe feature targets 50 eligible symbols, reviews every
+six hours, and uses sustained turnover plus spread/depth checks. Normal rotation
+requires a 50% score advantage at two successive observations, with up to five
+healthy replacements per UTC day. Existing positions keep normal management.
+See OPERATIONS.txt and /universe for the full policy. Local implementation and
+offline validation do not constitute deployment; today's actual top 50 cannot
+be verified from this machine because the unsigned Bybit request returns 403.

@@ -1,0 +1,94 @@
+APEX OVERHAUL — VERIFIED HANDOVER
+2026-10-05
+
+Delivery status
+
+Implemented locally: a separate cloud-oriented Elliott Wave shadow/testnet
+runtime, immutable opportunity evidence, independent risk controls, optional
+OpenAI critique, read-only Drive references, Telegram controls/notifications,
+Postgres state and outbox, Redis cache, exchange execution/reconciliation,
+Docker build definition and CI checks. The requested analysis prompt is in
+ANALYSIS_PROMPT.txt. Setup and migration instructions are in OPERATIONS.txt.
+
+This is not a deployed or approved live replacement. The numeric engine covers
+an explicitly documented subset of discretionary Apex analysis. The source
+release gate blocks live mode. Credentials alone cannot override this gate.
+
+Verification completed
+
+- Offline tests after monitored-zone follow-up: 988 passed, 1 skipped, 3 warnings
+  (219.77 seconds during concurrent replays). A final conflict correction passed
+  all 31 replay regressions. Earlier 666/819-test results are historical.
+- The skipped test requires an explicitly configured disposable PostgreSQL
+  server. It never falls back to the production DATABASE_URL.
+- Python compilation and credential-free configuration check passed.
+- Black formatting and Python compilation checks cover the new runtime,
+  tests and entrypoint files.
+- git diff --check passed.
+- Tests use mocks/fixtures or local isolated storage; no real exchange orders,
+  paid OpenAI calls or Telegram messages were sent by these checks.
+- Local warnings relate to Python 3.9/LibreSSL dependency support. The Docker
+  target uses Python 3.12; that image was not built on this machine.
+
+Strategy acceptance
+
+Historical v1.1 artifacts (preserved, not current-engine results):
+ACCEPTANCE_REPLAY.json: 90-day BTC/ETH/SOL replay, zero eligible trades.
+ACCEPTANCE_REPLAY_365D.json: corrected v1.1 365-day sequential audit, 6,570
+checkpoints, 55 equality checks of offline memoization, zero eligible trades.
+ENGINE_ACCEPTANCE_AUDIT.json and ENGINE_RULES.txt explain the diagnosis.
+The slow, separate pre-fix year-long attempt was interrupted and is not counted.
+No win rate, expectancy or profitable edge can be inferred with no trades.
+The completed audits have hourly execution/synthetic instrument assumptions,
+zero assumed funding and independent symbol books; they do not validate live
+execution, macro/calendar gates, AI selection or portfolio loss-path behavior.
+
+Earlier v1.2 follow-up: TIMING_AND_ZONE_COMPARISON.txt and
+TIMING_ZONE_REPLAY.json document a completed 90-day, five-symbol comparison
+ending 2026-05-25. Confirmation produced three READY candidates and zero
+risk-approved orders. The separate resting-midpoint experiment produced nine
+READY proposals (eight long, one short), three risk-approved orders and zero
+fills; all three orders expired unfilled after 48 hours. No win rate or edge
+can be estimated. The same-runner v1.1 BTC/ETH/SOL control also had zero approved
+orders. This is historical evidence, not a scan of today's opportunities.
+Resting mode is offline-only and explicitly rejected by exchange submission.
+
+Latest monitored follow-up: MONITORED_ZONE_RESULTS.txt and the complete
+monitored_zone_evidence_20261005 directory. All 40 runs across two 90-day windows
+completed. The 30-day monitored policy produced six long fills: one closed win,
+one closed loss and four open positions. The other three arms produced no fills.
+Only two closed trades cannot establish an edge. No short performance has been
+demonstrated. Funding is unknown; long holding periods are a material limitation.
+This mode also remains offline-only and exchange submission rejects it. Four
+cached/uncached real-data checks matched. See analysis.json for final runner-fix
+provenance, evidence-hash verification and open-position marks.
+
+External configuration
+
+Three variables are staged in Railway S-RAutoBot Variables:
+  OPENAI_API_KEY: user reports entering the key; never revealed or tested here
+  OPENAI_MODEL: gpt-5.4-mini-2026-03-17
+  TELEGRAM_ALLOWED_USER_IDS: the personal numeric ID supplied by the user
+The model and allowlist values were verified through the UI. Apply/Deploy was
+not clicked. The bot username cannot authorize its controller. Actual model
+access and Telegram/cloud connectivity still need validation after deployment.
+Existing credentials were not revealed or changed. See apex.env.example for
+additional deployment settings and optional read-only Drive configuration.
+
+Outstanding evidence
+
+Real cloud public-data/calendar, Telegram and OpenAI connectivity; Docker and
+Postgres CI; testnet execution/restart/protection observations; legacy position
+ownership and single Telegram poller migration; and a revised, prospectively
+validated strategy interpretation before any live release.
+The local unsigned probe found Bybit HTTP 403 and denied BLS calendar access.
+The Federal Reserve calendar parsed successfully. Railway connectivity has
+not been established by these host-specific results.
+
+Preservation
+
+No changes were made to the existing Apex Drive documents, Sheets or ledger.
+The original main.py is preserved as legacy_main.py. The only existing tracked
+file changed for this implementation is main.py, which selects the new runtime
+or explicit AUTOBOT_RUNTIME=legacy. Pre-existing research changes and files
+were left alone. No commit, push or deployment was performed for this overhaul.

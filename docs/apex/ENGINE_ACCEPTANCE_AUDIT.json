@@ -1,0 +1,1169 @@
+{
+  "strategy_ready": false,
+  "live_ready": false,
+  "edge_demonstrated": false,
+  "rule_version": "apex-numeric-1.1",
+  "tests_passed": 83,
+  "classification": {
+    "confirmed_code_defect": "First eligible execution bar dropped a known preceding close; fixed with versioned evidence IDs and regression tests",
+    "observed_rr_rejections": "Legitimate before costs, also after rounded costs; no quality gate changed",
+    "interpretation_limit": "Daily confirmed pivots, daily breakout planning, fresh 4H trigger and terminal failed retest are conservative choices not validated as full discretionary Apex"
+  },
+  "source_equivalence": "cache_3yr_1h matches original report SHA256; cache_ew_1h OHLCV verified identical 2024-01-11 through 2026-05-25 (20761 hourly rows per symbol), encompassing 365-day replay plus daily warmup",
+  "pre_fix_engine_sha256": "7ea70c7c340e1924a673652298eea2a2916401abb95845de7a973b7fc848b274",
+  "post_fix_engine_sha256": "ea35103a80fc3fca8365b2719072997e9e41778e3175cf74e0b349da410f867d",
+  "type2_retest_math": {
+    "gross_rr1": "(1-r)/r",
+    "gross_blended_rr": "(1.309-r)/r",
+    "max_retracement_for_2_5_blend_before_buffers_and_costs": 0.374
+  },
+  "pre_fix_90day": [
+    {
+      "symbol": "BTCUSDT",
+      "window_start": 1771891200.0,
+      "window_end": 1779667200.0,
+      "daily_pivots_total": 44,
+      "new_plan_counts": {
+        "2": 2
+      },
+      "new_plan_final_reasons": {
+        "FAILED_FIRST_RETEST": 2
+      },
+      "plans": [
+        {
+          "id": "3a8425682b45ec4525166dfb",
+          "setup": "2",
+          "created": "2026-03-05T00:00:00+00:00",
+          "reason_at_creation": "AWAIT_CLOSED_4H_TRIGGER",
+          "terminal_reason": "FAILED_FIRST_RETEST",
+          "trigger_closed_at": null,
+          "last_anchor_confirmation_delay_days": 9.0
+        },
+        {
+          "id": "17342e43303061434e2ef1f3",
+          "setup": "2",
+          "created": "2026-03-17T00:00:00+00:00",
+          "reason_at_creation": "AWAIT_CLOSED_4H_TRIGGER",
+          "terminal_reason": "FAILED_FIRST_RETEST",
+          "trigger_closed_at": null,
+          "last_anchor_confirmation_delay_days": 9.0
+        }
+      ],
+      "ready": []
+    },
+    {
+      "symbol": "ETHUSDT",
+      "window_start": 1771891200.0,
+      "window_end": 1779667200.0,
+      "daily_pivots_total": 44,
+      "new_plan_counts": {
+        "2XS": 1,
+        "2": 1
+      },
+      "new_plan_final_reasons": {
+        "TRIGGER_OUTSIDE_ZONE": 1,
+        "EXPIRED": 1
+      },
+      "plans": [
+        {
+          "id": "6ec5f73bb141f1441443c4fb",
+          "setup": "2XS",
+          "created": "2026-02-26T00:00:00+00:00",
+          "reason_at_creation": "AWAIT_CLOSED_4H_TRIGGER",
+          "terminal_reason": "TRIGGER_OUTSIDE_ZONE",
+          "trigger_closed_at": null,
+          "last_anchor_confirmation_delay_days": 20.0
+        },
+        {
+          "id": "8d94ae762f7ba1d775874205",
+          "setup": "2",
+          "created": "2026-04-18T00:00:00+00:00",
+          "reason_at_creation": "AWAIT_CLOSED_4H_TRIGGER",
+          "terminal_reason": "EXPIRED",
+          "trigger_closed_at": 1776859200.0,
+          "last_anchor_confirmation_delay_days": 20.0
+        }
+      ],
+      "ready": [
+        {
+          "op": {
+            "id": "8d94ae762f7ba1d775874205",
+            "symbol": "ETHUSDT",
+            "side": "Buy",
+            "setup": "2",
+            "state": "READY",
+            "entry": 2397.29,
+            "stop": 1917.0261,
+            "target1": 2581.1000000000004,
+            "target2": 2979.53078,
+            "invalidation": 1936.39,
+            "confirmation": 2385.0,
+            "created_at": 1776470400.0,
+            "expires_at": 1776888000.0,
+            "reason": "BREAKOUT_RETEST",
+            "evidence": {
+              "engine_version": "apex-numeric-1",
+              "anchors": [
+                {
+                  "id": "bda68a26255fa03b131de01e",
+                  "kind": "low",
+                  "price": 1740.29,
+                  "open_time": 1770336000000,
+                  "available_at": 1772064000.0,
+                  "index": 482,
+                  "atr": 125.0023529788874
+                },
+                {
+                  "id": "abdd11769f62a9dbd98e56f8",
+                  "kind": "high",
+                  "price": 2385.0,
+                  "open_time": 1773619200000,
+                  "available_at": 1774137600.0,
+                  "index": 520,
+                  "atr": 124.31106535486865
+                },
+                {
+                  "id": "4eb28a612b33a1ab1b624518",
+                  "kind": "low",
+                  "price": 1936.39,
+                  "open_time": 1774742400000,
+                  "available_at": 1775606400.0,
+                  "index": 533,
+                  "atr": 101.46956570487765
+                }
+              ],
+              "setup": "2",
+              "side": "Buy",
+              "zone_low": 2137.91792,
+              "zone_high": 2200.17,
+              "invalidation": 1936.39,
+              "target1": 2581.1000000000004,
+              "target2": 2979.53078,
+              "created_at": 1776470400.0,
+              "risk_multiplier": 1,
+              "daily_evidence_id": "35e6316f2ea987ea265b390b",
+              "evidence_id": "8d94ae762f7ba1d775874205",
+              "structural_valid": true,
+              "data_valid": true,
+              "daily_closed_at": 1776816000.0,
+              "execution_closed_at": 1776859200.0,
+              "as_of": 1776859200.0,
+              "stop_buffer_pct": 0.01,
+              "trigger_closed_at": 1776859200.0,
+              "trigger_price": 2397.29,
+              "trigger_evidence_id": "fe78eadc7bee583ad4e069d4",
+              "entry_zone_low": 2382.615,
+              "entry_zone_high": 2385.0,
+              "terminal_status": null,
+              "trigger_kind": "BREAKOUT_RETEST"
+            },
+            "tier": 1,
+            "bucket": "majors"
+          },
+          "sizing": {
+            "allowed": false,
+            "reasons": [
+              "RR_TARGET1",
+              "RR_BLENDED",
+              "RR_ROUNDED_SPLIT"
+            ],
+            "qty": 0.0,
+            "qty_step": 0.0001,
+            "risk_cash": 0.0,
+            "risk_pct": 0.25,
+            "notional": 0.0,
+            "entry": 2397.29,
+            "stop": 1917.0261,
+            "target1": 2581.1,
+            "target2": 2979.5307
+          },
+          "wave2_retracement": 0.6958322346481361,
+          "gross_rr1": 0.3827270798408967,
+          "gross_blend": 0.7975310865547053,
+          "net_rr1": 0.37177132429724813,
+          "net_blend": 0.7832887162030171,
+          "plan_to_trigger_hours": 108.0
+        }
+      ]
+    },
+    {
+      "symbol": "SOLUSDT",
+      "window_start": 1771891200.0,
+      "window_end": 1779667200.0,
+      "daily_pivots_total": 38,
+      "new_plan_counts": {
+        "2": 2
+      },
+      "new_plan_final_reasons": {
+        "ENTRY_OUTSIDE_ZONE": 1,
+        "TARGET_ALREADY_PASSED": 1
+      },
+      "plans": [
+        {
+          "id": "f73dcf9e53326a2f34d4b65f",
+          "setup": "2",
+          "created": "2026-03-16T00:00:00+00:00",
+          "reason_at_creation": "AWAIT_CLOSED_4H_TRIGGER",
+          "terminal_reason": "ENTRY_OUTSIDE_ZONE",
+          "trigger_closed_at": 1774310400.0,
+          "last_anchor_confirmation_delay_days": 20.0
+        },
+        {
+          "id": "be4c19df491f0b78389f9467",
+          "setup": "2",
+          "created": "2026-05-09T00:00:00+00:00",
+          "reason_at_creation": "AWAIT_CLOSED_4H_TRIGGER",
+          "terminal_reason": "TARGET_ALREADY_PASSED",
+          "trigger_closed_at": null,
+          "last_anchor_confirmation_delay_days": 10.0
+        }
+      ],
+      "ready": [
+        {
+          "op": {
+            "id": "f73dcf9e53326a2f34d4b65f",
+            "symbol": "SOLUSDT",
+            "side": "Buy",
+            "setup": "2",
+            "state": "READY",
+            "entry": 91.38,
+            "stop": 74.37735,
+            "target1": 99.42,
+            "target2": 114.19638,
+            "invalidation": 75.51,
+            "confirmation": 91.22,
+            "created_at": 1773619200.0,
+            "expires_at": 1774339200.0,
+            "reason": "BREAKOUT_RETEST",
+            "evidence": {
+              "engine_version": "apex-numeric-1",
+              "anchors": [
+                {
+                  "id": "93d4615752c32fa84cad11ec",
+                  "kind": "low",
+                  "price": 67.31,
+                  "open_time": 1770336000000,
+                  "available_at": 1770508800.0,
+                  "index": 482,
+                  "atr": 9.541466914601537
+                },
+                {
+                  "id": "b5a24270b2e117ddc5ccbf78",
+                  "kind": "high",
+                  "price": 91.22,
+                  "open_time": 1771113600000,
+                  "available_at": 1771891200.0,
+                  "index": 491,
+                  "atr": 6.160613102361988
+                },
+                {
+                  "id": "b7a1dc001a3d3e101f69c175",
+                  "kind": "low",
+                  "price": 75.51,
+                  "open_time": 1771891200000,
+                  "available_at": 1772064000.0,
+                  "index": 500,
+                  "atr": 5.983998032138652
+                }
+              ],
+              "setup": "2",
+              "side": "Buy",
+              "zone_low": 82.28286,
+              "zone_high": 84.375,
+              "invalidation": 75.51,
+              "target1": 99.42,
+              "target2": 114.19638,
+              "created_at": 1773619200.0,
+              "risk_multiplier": 1,
+              "daily_evidence_id": "6e36a39f4beb0d0b1e65d916",
+              "evidence_id": "f73dcf9e53326a2f34d4b65f",
+              "structural_valid": true,
+              "data_valid": true,
+              "daily_closed_at": 1774310400.0,
+              "execution_closed_at": 1774310400.0,
+              "as_of": 1774310400.0,
+              "stop_buffer_pct": 0.015,
+              "trigger_closed_at": 1774310400.0,
+              "trigger_price": 91.38,
+              "trigger_evidence_id": "4451ce81888b092cbeb97548",
+              "entry_zone_low": 91.12877999999999,
+              "entry_zone_high": 91.22,
+              "terminal_status": null,
+              "trigger_kind": "BREAKOUT_RETEST"
+            },
+            "tier": 1,
+            "bucket": "alts"
+          },
+          "sizing": {
+            "allowed": false,
+            "reasons": [
+              "RR_TARGET1",
+              "RR_BLENDED",
+              "RR_ROUNDED_SPLIT"
+            ],
+            "qty": 0.0,
+            "qty_step": 0.0001,
+            "risk_cash": 0.0,
+            "risk_pct": 0.25,
+            "notional": 0.0,
+            "entry": 91.38,
+            "stop": 74.3773,
+            "target1": 99.42,
+            "target2": 114.1963
+          },
+          "wave2_retracement": 0.6570472605604348,
+          "gross_rr1": 0.4728674647775501,
+          "gross_blend": 0.9073991407221826,
+          "net_rr1": 0.46031006846053607,
+          "net_blend": 0.8911370074905289,
+          "plan_to_trigger_hours": 192.0
+        }
+      ]
+    }
+  ],
+  "post_fix_diagnostics": [
+    {
+      "version": "apex-numeric-1.1",
+      "days": 90,
+      "symbol": "BTCUSDT",
+      "source": "cache_3yr_1h/BTCUSDT.parquet",
+      "source_sha256": "e29f5d29c34d50a70b18171374d43d81b31f49446e13dd8309ee3a8deb5e27cf",
+      "window": [
+        "2026-02-24T00:00:00+00:00",
+        "2026-05-25T00:00:00+00:00"
+      ],
+      "daily_pivots_total": 44,
+      "new_plan_counts": {
+        "2": 2
+      },
+      "new_plan_final_reasons": {
+        "FAILED_FIRST_RETEST": 2
+      },
+      "reasons_at_creation": {
+        "AWAIT_CLOSED_4H_TRIGGER": 2
+      },
+      "last_anchor_confirmation_delay_days": [
+        9.0,
+        8.0
+      ],
+      "first_ready_count": 0,
+      "risk_rejections": {},
+      "allowed_with_flat_capital": 0,
+      "ready": [],
+      "method": "Final frozen plans inspected, then each historical trigger verified by public analyze(as_of=trigger); no portfolio or trade outcomes"
+    },
+    {
+      "version": "apex-numeric-1.1",
+      "days": 90,
+      "symbol": "ETHUSDT",
+      "source": "cache_3yr_1h/ETHUSDT.parquet",
+      "source_sha256": "b269c7286b085e8acaff7a96f4a4db7e268800085cad25445432cd335377947b",
+      "window": [
+        "2026-02-24T00:00:00+00:00",
+        "2026-05-25T00:00:00+00:00"
+      ],
+      "daily_pivots_total": 44,
+      "new_plan_counts": {
+        "2XS": 1,
+        "2": 1
+      },
+      "new_plan_final_reasons": {
+        "TRIGGER_OUTSIDE_ZONE": 1,
+        "EXPIRED": 1
+      },
+      "reasons_at_creation": {
+        "AWAIT_CLOSED_4H_TRIGGER": 2
+      },
+      "last_anchor_confirmation_delay_days": [
+        20.0,
+        10.0
+      ],
+      "first_ready_count": 1,
+      "risk_rejections": {
+        "RR_TARGET1": 1,
+        "RR_BLENDED": 1,
+        "RR_ROUNDED_SPLIT": 1
+      },
+      "allowed_with_flat_capital": 0,
+      "ready": [
+        {
+          "op": {
+            "id": "76c9190d629cb90d1da4536c",
+            "symbol": "ETHUSDT",
+            "side": "Buy",
+            "setup": "2",
+            "state": "READY",
+            "entry": 2397.29,
+            "stop": 1917.0261,
+            "target1": 2581.1000000000004,
+            "target2": 2979.53078,
+            "invalidation": 1936.39,
+            "confirmation": 2385.0,
+            "created_at": 1776470400.0,
+            "expires_at": 1776888000.0,
+            "reason": "BREAKOUT_RETEST",
+            "evidence": {
+              "engine_version": "apex-numeric-1.1",
+              "anchors": [
+                {
+                  "id": "93b170488410f83609c88d20",
+                  "kind": "low",
+                  "price": 1740.29,
+                  "open_time": 1770336000000,
+                  "available_at": 1772064000.0,
+                  "index": 482,
+                  "atr": 125.0023529788874
+                },
+                {
+                  "id": "730db229a029a0d1c2a24433",
+                  "kind": "high",
+                  "price": 2385.0,
+                  "open_time": 1773619200000,
+                  "available_at": 1774137600.0,
+                  "index": 520,
+                  "atr": 124.31106535486865
+                },
+                {
+                  "id": "e53361b5f6d72a3877fa9c83",
+                  "kind": "low",
+                  "price": 1936.39,
+                  "open_time": 1774742400000,
+                  "available_at": 1775606400.0,
+                  "index": 533,
+                  "atr": 101.46956570487765
+                }
+              ],
+              "setup": "2",
+              "side": "Buy",
+              "zone_low": 2137.91792,
+              "zone_high": 2200.17,
+              "invalidation": 1936.39,
+              "target1": 2581.1000000000004,
+              "target2": 2979.53078,
+              "created_at": 1776470400.0,
+              "risk_multiplier": 1,
+              "daily_evidence_id": "35e6316f2ea987ea265b390b",
+              "evidence_id": "76c9190d629cb90d1da4536c",
+              "structural_valid": true,
+              "data_valid": true,
+              "daily_closed_at": 1776816000.0,
+              "execution_closed_at": 1776859200.0,
+              "as_of": 1776859200.0,
+              "stop_buffer_pct": 0.01,
+              "trigger_closed_at": 1776859200.0,
+              "trigger_price": 2397.29,
+              "trigger_evidence_id": "49bf2068339ad9c858f3d1c8",
+              "entry_zone_low": 2382.615,
+              "entry_zone_high": 2385.0,
+              "terminal_status": null,
+              "trigger_kind": "BREAKOUT_RETEST"
+            },
+            "tier": 1,
+            "bucket": "majors"
+          },
+          "sizing_at_flat_10000_capital": {
+            "allowed": false,
+            "reasons": [
+              "RR_TARGET1",
+              "RR_BLENDED",
+              "RR_ROUNDED_SPLIT"
+            ],
+            "qty": 0.0,
+            "qty_step": 0.0001,
+            "risk_cash": 0.0,
+            "risk_pct": 0.25,
+            "notional": 0.0,
+            "entry": 2397.29,
+            "stop": 1917.0261,
+            "target1": 2581.1,
+            "target2": 2979.5307
+          }
+        }
+      ],
+      "method": "Final frozen plans inspected, then each historical trigger verified by public analyze(as_of=trigger); no portfolio or trade outcomes"
+    },
+    {
+      "version": "apex-numeric-1.1",
+      "days": 90,
+      "symbol": "SOLUSDT",
+      "source": "cache_3yr_1h/SOLUSDT.parquet",
+      "source_sha256": "99b11ae14bed5bbe195620f44db3d51ae56604c2b4fb57f57c95edf2a57ceaa1",
+      "window": [
+        "2026-02-24T00:00:00+00:00",
+        "2026-05-25T00:00:00+00:00"
+      ],
+      "daily_pivots_total": 38,
+      "new_plan_counts": {
+        "2": 2
+      },
+      "new_plan_final_reasons": {
+        "ENTRY_OUTSIDE_ZONE": 1,
+        "TARGET_ALREADY_PASSED": 1
+      },
+      "reasons_at_creation": {
+        "AWAIT_CLOSED_4H_TRIGGER": 2
+      },
+      "last_anchor_confirmation_delay_days": [
+        2.0,
+        8.0
+      ],
+      "first_ready_count": 1,
+      "risk_rejections": {
+        "RR_TARGET1": 1,
+        "RR_BLENDED": 1,
+        "RR_ROUNDED_SPLIT": 1
+      },
+      "allowed_with_flat_capital": 0,
+      "ready": [
+        {
+          "op": {
+            "id": "b3e3379dc6ea72e72c734477",
+            "symbol": "SOLUSDT",
+            "side": "Buy",
+            "setup": "2",
+            "state": "READY",
+            "entry": 91.38,
+            "stop": 74.37735,
+            "target1": 99.42,
+            "target2": 114.19638,
+            "invalidation": 75.51,
+            "confirmation": 91.22,
+            "created_at": 1773619200.0,
+            "expires_at": 1774339200.0,
+            "reason": "BREAKOUT_RETEST",
+            "evidence": {
+              "engine_version": "apex-numeric-1.1",
+              "anchors": [
+                {
+                  "id": "42078bf17d996a7d1ba1d855",
+                  "kind": "low",
+                  "price": 67.31,
+                  "open_time": 1770336000000,
+                  "available_at": 1770508800.0,
+                  "index": 482,
+                  "atr": 9.541466914601537
+                },
+                {
+                  "id": "8a05c89ff0d5f352abd29801",
+                  "kind": "high",
+                  "price": 91.22,
+                  "open_time": 1771113600000,
+                  "available_at": 1771891200.0,
+                  "index": 491,
+                  "atr": 6.160613102361988
+                },
+                {
+                  "id": "842157c8e547d1979d6a21d2",
+                  "kind": "low",
+                  "price": 75.51,
+                  "open_time": 1771891200000,
+                  "available_at": 1772064000.0,
+                  "index": 500,
+                  "atr": 5.983998032138652
+                }
+              ],
+              "setup": "2",
+              "side": "Buy",
+              "zone_low": 82.28286,
+              "zone_high": 84.375,
+              "invalidation": 75.51,
+              "target1": 99.42,
+              "target2": 114.19638,
+              "created_at": 1773619200.0,
+              "risk_multiplier": 1,
+              "daily_evidence_id": "6e36a39f4beb0d0b1e65d916",
+              "evidence_id": "b3e3379dc6ea72e72c734477",
+              "structural_valid": true,
+              "data_valid": true,
+              "daily_closed_at": 1774310400.0,
+              "execution_closed_at": 1774310400.0,
+              "as_of": 1774310400.0,
+              "stop_buffer_pct": 0.015,
+              "trigger_closed_at": 1774310400.0,
+              "trigger_price": 91.38,
+              "trigger_evidence_id": "c7515ea4de8e21fb4e35cf3f",
+              "entry_zone_low": 91.12877999999999,
+              "entry_zone_high": 91.22,
+              "terminal_status": null,
+              "trigger_kind": "BREAKOUT_RETEST"
+            },
+            "tier": 1,
+            "bucket": "alts"
+          },
+          "sizing_at_flat_10000_capital": {
+            "allowed": false,
+            "reasons": [
+              "RR_TARGET1",
+              "RR_BLENDED",
+              "RR_ROUNDED_SPLIT"
+            ],
+            "qty": 0.0,
+            "qty_step": 0.0001,
+            "risk_cash": 0.0,
+            "risk_pct": 0.25,
+            "notional": 0.0,
+            "entry": 91.38,
+            "stop": 74.3773,
+            "target1": 99.42,
+            "target2": 114.1963
+          }
+        }
+      ],
+      "method": "Final frozen plans inspected, then each historical trigger verified by public analyze(as_of=trigger); no portfolio or trade outcomes"
+    },
+    {
+      "version": "apex-numeric-1.1",
+      "days": 365,
+      "symbol": "BTCUSDT",
+      "source": "cache_3yr_1h/BTCUSDT.parquet",
+      "source_sha256": "e29f5d29c34d50a70b18171374d43d81b31f49446e13dd8309ee3a8deb5e27cf",
+      "window": [
+        "2025-05-25T00:00:00+00:00",
+        "2026-05-25T00:00:00+00:00"
+      ],
+      "daily_pivots_total": 58,
+      "new_plan_counts": {
+        "2": 6,
+        "2X": 1,
+        "2S": 1
+      },
+      "new_plan_final_reasons": {
+        "HARD_STOP_BREACHED": 2,
+        "TRIGGER_OUTSIDE_ZONE": 2,
+        "TARGET_ALREADY_PASSED": 2,
+        "FAILED_FIRST_RETEST": 2
+      },
+      "reasons_at_creation": {
+        "HARD_STOP_BREACHED": 2,
+        "AWAIT_CLOSED_4H_TRIGGER": 6
+      },
+      "last_anchor_confirmation_delay_days": [
+        5.0,
+        5.0,
+        4.0,
+        5.0,
+        5.0,
+        16.0,
+        9.0,
+        8.0
+      ],
+      "first_ready_count": 0,
+      "risk_rejections": {},
+      "allowed_with_flat_capital": 0,
+      "ready": [],
+      "method": "Final frozen plans inspected, then each historical trigger verified by public analyze(as_of=trigger); no portfolio or trade outcomes"
+    },
+    {
+      "version": "apex-numeric-1.1",
+      "days": 365,
+      "symbol": "ETHUSDT",
+      "source": "cache_3yr_1h/ETHUSDT.parquet",
+      "source_sha256": "b269c7286b085e8acaff7a96f4a4db7e268800085cad25445432cd335377947b",
+      "window": [
+        "2025-05-25T00:00:00+00:00",
+        "2026-05-25T00:00:00+00:00"
+      ],
+      "daily_pivots_total": 60,
+      "new_plan_counts": {
+        "2": 4,
+        "1": 1,
+        "2S": 6,
+        "2XS": 1
+      },
+      "new_plan_final_reasons": {
+        "FAILED_FIRST_RETEST": 2,
+        "EXPIRED": 4,
+        "ENTRY_OUTSIDE_ZONE": 1,
+        "TARGET_ALREADY_PASSED": 4,
+        "TRIGGER_OUTSIDE_ZONE": 1
+      },
+      "reasons_at_creation": {
+        "AWAIT_CLOSED_4H_TRIGGER": 9,
+        "TARGET_ALREADY_PASSED": 3
+      },
+      "last_anchor_confirmation_delay_days": [
+        4.0,
+        2.0,
+        3.0,
+        2.0,
+        10.0,
+        3.0,
+        18.0,
+        5.0,
+        5.0,
+        7.0,
+        20.0,
+        10.0
+      ],
+      "first_ready_count": 3,
+      "risk_rejections": {
+        "RR_TARGET1": 3,
+        "RR_BLENDED": 3,
+        "RR_ROUNDED_SPLIT": 3
+      },
+      "allowed_with_flat_capital": 0,
+      "ready": [
+        {
+          "op": {
+            "id": "0748c1a805a66ebbcf7d4dd5",
+            "symbol": "ETHUSDT",
+            "side": "Buy",
+            "setup": "2",
+            "state": "READY",
+            "entry": 4813.14,
+            "stop": 4019.1425999999997,
+            "target1": 5503.71,
+            "target2": 6396.08346,
+            "invalidation": 4059.74,
+            "confirmation": 4793.97,
+            "created_at": 1755907200.0,
+            "expires_at": 1756094400.0,
+            "reason": "BREAKOUT_RETEST",
+            "evidence": {
+              "engine_version": "apex-numeric-1.1",
+              "anchors": [
+                {
+                  "id": "0f316991bf4bcfd1c0031e8f",
+                  "kind": "low",
+                  "price": 3350.0,
+                  "open_time": 1754179200000,
+                  "available_at": 1754352000.0,
+                  "index": 570,
+                  "atr": 179.046096125551
+                },
+                {
+                  "id": "957cc18e34ca23a3b27d7618",
+                  "kind": "high",
+                  "price": 4793.97,
+                  "open_time": 1755129600000,
+                  "available_at": 1755561600.0,
+                  "index": 581,
+                  "atr": 218.12459531123574
+                },
+                {
+                  "id": "bf0cfd866dbeac6bb62954c8",
+                  "kind": "low",
+                  "price": 4059.74,
+                  "open_time": 1755648000000,
+                  "available_at": 1755907200.0,
+                  "index": 587,
+                  "atr": 225.29777219606945
+                }
+              ],
+              "setup": "2",
+              "side": "Buy",
+              "zone_low": 4376.135319999999,
+              "zone_high": 4473.87,
+              "invalidation": 4059.74,
+              "target1": 5503.71,
+              "target2": 6396.08346,
+              "created_at": 1755907200.0,
+              "risk_multiplier": 1,
+              "daily_evidence_id": "4fbffb74cdd2ec16c7fcf37f",
+              "evidence_id": "0748c1a805a66ebbcf7d4dd5",
+              "structural_valid": true,
+              "data_valid": true,
+              "daily_closed_at": 1755993600.0,
+              "execution_closed_at": 1756065600.0,
+              "as_of": 1756065600.0,
+              "stop_buffer_pct": 0.01,
+              "trigger_closed_at": 1756065600.0,
+              "trigger_price": 4813.14,
+              "trigger_evidence_id": "112cc4c06387316758b1beff",
+              "entry_zone_low": 4789.1760300000005,
+              "entry_zone_high": 4793.97,
+              "terminal_status": null,
+              "trigger_kind": "BREAKOUT_RETEST"
+            },
+            "tier": 1,
+            "bucket": "majors"
+          },
+          "sizing_at_flat_10000_capital": {
+            "allowed": false,
+            "reasons": [
+              "RR_TARGET1",
+              "RR_BLENDED",
+              "RR_ROUNDED_SPLIT"
+            ],
+            "qty": 0.0,
+            "qty_step": 0.0001,
+            "risk_cash": 0.0,
+            "risk_pct": 0.25,
+            "notional": 0.0,
+            "entry": 4813.14,
+            "stop": 4019.1425,
+            "target1": 5503.71,
+            "target2": 6396.0834
+          }
+        },
+        {
+          "op": {
+            "id": "1f852acbc5031f4ccc8c2aea",
+            "symbol": "ETHUSDT",
+            "side": "Sell",
+            "setup": "2S",
+            "state": "READY",
+            "entry": 3038.1,
+            "stop": 3694.58,
+            "target1": 2419.42,
+            "target2": 1653.97756,
+            "invalidation": 3658.0,
+            "confirmation": 3051.42,
+            "created_at": 1763424000.0,
+            "expires_at": 1763640000.0,
+            "reason": "BREAKOUT_RETEST",
+            "evidence": {
+              "engine_version": "apex-numeric-1.1",
+              "anchors": [
+                {
+                  "id": "f39f44463462672f375edbdb",
+                  "kind": "high",
+                  "price": 4290.0,
+                  "open_time": 1760313600000,
+                  "available_at": 1761868800.0,
+                  "index": 641,
+                  "atr": 224.43589344309052
+                },
+                {
+                  "id": "fdf89d845eb6bae93d1af89d",
+                  "kind": "low",
+                  "price": 3051.42,
+                  "open_time": 1762214400000,
+                  "available_at": 1762732800.0,
+                  "index": 663,
+                  "atr": 237.38598095327626
+                },
+                {
+                  "id": "55e5ddf6902b1903faf20cc7",
+                  "kind": "high",
+                  "price": 3658.0,
+                  "open_time": 1762732800000,
+                  "available_at": 1763164800.0,
+                  "index": 669,
+                  "atr": 245.8099581388796
+                }
+              ],
+              "setup": "2S",
+              "side": "Sell",
+              "zone_low": 3307.7,
+              "zone_high": 3390.3708,
+              "invalidation": 3658.0,
+              "target1": 2419.42,
+              "target2": 1653.97756,
+              "created_at": 1763424000.0,
+              "risk_multiplier": 1,
+              "daily_evidence_id": "cf1750fcaf44fb6185deb888",
+              "evidence_id": "1f852acbc5031f4ccc8c2aea",
+              "structural_valid": true,
+              "data_valid": true,
+              "daily_closed_at": 1763596800.0,
+              "execution_closed_at": 1763611200.0,
+              "as_of": 1763611200.0,
+              "stop_buffer_pct": 0.01,
+              "trigger_closed_at": 1763611200.0,
+              "trigger_price": 3038.1,
+              "trigger_evidence_id": "3f806ba9f9ddd63453de314c",
+              "entry_zone_low": 3051.42,
+              "entry_zone_high": 3054.47142,
+              "terminal_status": null,
+              "trigger_kind": "BREAKOUT_RETEST"
+            },
+            "tier": 1,
+            "bucket": "majors"
+          },
+          "sizing_at_flat_10000_capital": {
+            "allowed": false,
+            "reasons": [
+              "RR_TARGET1",
+              "RR_BLENDED",
+              "RR_ROUNDED_SPLIT"
+            ],
+            "qty": 0.0,
+            "qty_step": 0.0001,
+            "risk_cash": 0.0,
+            "risk_pct": 0.25,
+            "notional": 0.0,
+            "entry": 3038.1,
+            "stop": 3694.58,
+            "target1": 2419.42,
+            "target2": 1653.9776
+          }
+        },
+        {
+          "op": {
+            "id": "324183a48e318e410cde4682",
+            "symbol": "ETHUSDT",
+            "side": "Buy",
+            "setup": "2",
+            "state": "READY",
+            "entry": 2397.29,
+            "stop": 1917.0261,
+            "target1": 2581.1000000000004,
+            "target2": 2979.53078,
+            "invalidation": 1936.39,
+            "confirmation": 2385.0,
+            "created_at": 1776470400.0,
+            "expires_at": 1776888000.0,
+            "reason": "BREAKOUT_RETEST",
+            "evidence": {
+              "engine_version": "apex-numeric-1.1",
+              "anchors": [
+                {
+                  "id": "93b170488410f83609c88d20",
+                  "kind": "low",
+                  "price": 1740.29,
+                  "open_time": 1770336000000,
+                  "available_at": 1772064000.0,
+                  "index": 757,
+                  "atr": 125.0023529788874
+                },
+                {
+                  "id": "730db229a029a0d1c2a24433",
+                  "kind": "high",
+                  "price": 2385.0,
+                  "open_time": 1773619200000,
+                  "available_at": 1774137600.0,
+                  "index": 795,
+                  "atr": 124.31106535486865
+                },
+                {
+                  "id": "e53361b5f6d72a3877fa9c83",
+                  "kind": "low",
+                  "price": 1936.39,
+                  "open_time": 1774742400000,
+                  "available_at": 1775606400.0,
+                  "index": 808,
+                  "atr": 101.46956570487765
+                }
+              ],
+              "setup": "2",
+              "side": "Buy",
+              "zone_low": 2137.91792,
+              "zone_high": 2200.17,
+              "invalidation": 1936.39,
+              "target1": 2581.1000000000004,
+              "target2": 2979.53078,
+              "created_at": 1776470400.0,
+              "risk_multiplier": 1,
+              "daily_evidence_id": "f0b2caf039992082c6c52d2c",
+              "evidence_id": "324183a48e318e410cde4682",
+              "structural_valid": true,
+              "data_valid": true,
+              "daily_closed_at": 1776816000.0,
+              "execution_closed_at": 1776859200.0,
+              "as_of": 1776859200.0,
+              "stop_buffer_pct": 0.01,
+              "trigger_closed_at": 1776859200.0,
+              "trigger_price": 2397.29,
+              "trigger_evidence_id": "5387866d0092d44ab2d0d501",
+              "entry_zone_low": 2382.615,
+              "entry_zone_high": 2385.0,
+              "terminal_status": null,
+              "trigger_kind": "BREAKOUT_RETEST"
+            },
+            "tier": 1,
+            "bucket": "majors"
+          },
+          "sizing_at_flat_10000_capital": {
+            "allowed": false,
+            "reasons": [
+              "RR_TARGET1",
+              "RR_BLENDED",
+              "RR_ROUNDED_SPLIT"
+            ],
+            "qty": 0.0,
+            "qty_step": 0.0001,
+            "risk_cash": 0.0,
+            "risk_pct": 0.25,
+            "notional": 0.0,
+            "entry": 2397.29,
+            "stop": 1917.0261,
+            "target1": 2581.1,
+            "target2": 2979.5307
+          }
+        }
+      ],
+      "method": "Final frozen plans inspected, then each historical trigger verified by public analyze(as_of=trigger); no portfolio or trade outcomes"
+    },
+    {
+      "version": "apex-numeric-1.1",
+      "days": 365,
+      "symbol": "SOLUSDT",
+      "source": "cache_3yr_1h/SOLUSDT.parquet",
+      "source_sha256": "99b11ae14bed5bbe195620f44db3d51ae56604c2b4fb57f57c95edf2a57ceaa1",
+      "window": [
+        "2025-05-25T00:00:00+00:00",
+        "2026-05-25T00:00:00+00:00"
+      ],
+      "daily_pivots_total": 56,
+      "new_plan_counts": {
+        "2S": 4,
+        "2": 4
+      },
+      "new_plan_final_reasons": {
+        "RETEST_EXPIRED": 2,
+        "TRIGGER_OUTSIDE_ZONE": 1,
+        "TARGET_ALREADY_PASSED": 2,
+        "EXPIRED": 1,
+        "FAILED_FIRST_RETEST": 1,
+        "ENTRY_OUTSIDE_ZONE": 1
+      },
+      "reasons_at_creation": {
+        "AWAIT_CLOSED_4H_TRIGGER": 7,
+        "TARGET_ALREADY_PASSED": 1
+      },
+      "last_anchor_confirmation_delay_days": [
+        3.0,
+        7.0,
+        4.0,
+        5.0,
+        21.0,
+        12.0,
+        2.0,
+        8.0
+      ],
+      "first_ready_count": 1,
+      "risk_rejections": {
+        "RR_TARGET1": 1,
+        "RR_BLENDED": 1,
+        "RR_ROUNDED_SPLIT": 1
+      },
+      "allowed_with_flat_capital": 0,
+      "ready": [
+        {
+          "op": {
+            "id": "5e5a63e79a08e5d2ff1d9a51",
+            "symbol": "SOLUSDT",
+            "side": "Buy",
+            "setup": "2",
+            "state": "READY",
+            "entry": 91.38,
+            "stop": 74.37735,
+            "target1": 99.42,
+            "target2": 114.19638,
+            "invalidation": 75.51,
+            "confirmation": 91.22,
+            "created_at": 1773619200.0,
+            "expires_at": 1774339200.0,
+            "reason": "BREAKOUT_RETEST",
+            "evidence": {
+              "engine_version": "apex-numeric-1.1",
+              "anchors": [
+                {
+                  "id": "42078bf17d996a7d1ba1d855",
+                  "kind": "low",
+                  "price": 67.31,
+                  "open_time": 1770336000000,
+                  "available_at": 1770508800.0,
+                  "index": 757,
+                  "atr": 9.541466914601537
+                },
+                {
+                  "id": "8a05c89ff0d5f352abd29801",
+                  "kind": "high",
+                  "price": 91.22,
+                  "open_time": 1771113600000,
+                  "available_at": 1771891200.0,
+                  "index": 766,
+                  "atr": 6.160613102361988
+                },
+                {
+                  "id": "842157c8e547d1979d6a21d2",
+                  "kind": "low",
+                  "price": 75.51,
+                  "open_time": 1771891200000,
+                  "available_at": 1772064000.0,
+                  "index": 775,
+                  "atr": 5.983998032138652
+                }
+              ],
+              "setup": "2",
+              "side": "Buy",
+              "zone_low": 82.28286,
+              "zone_high": 84.375,
+              "invalidation": 75.51,
+              "target1": 99.42,
+              "target2": 114.19638,
+              "created_at": 1773619200.0,
+              "risk_multiplier": 1,
+              "daily_evidence_id": "ff36508bccf083a2a3608577",
+              "evidence_id": "5e5a63e79a08e5d2ff1d9a51",
+              "structural_valid": true,
+              "data_valid": true,
+              "daily_closed_at": 1774310400.0,
+              "execution_closed_at": 1774310400.0,
+              "as_of": 1774310400.0,
+              "stop_buffer_pct": 0.015,
+              "trigger_closed_at": 1774310400.0,
+              "trigger_price": 91.38,
+              "trigger_evidence_id": "5a97bfe9e15e9611bd059353",
+              "entry_zone_low": 91.12877999999999,
+              "entry_zone_high": 91.22,
+              "terminal_status": null,
+              "trigger_kind": "BREAKOUT_RETEST"
+            },
+            "tier": 1,
+            "bucket": "alts"
+          },
+          "sizing_at_flat_10000_capital": {
+            "allowed": false,
+            "reasons": [
+              "RR_TARGET1",
+              "RR_BLENDED",
+              "RR_ROUNDED_SPLIT"
+            ],
+            "qty": 0.0,
+            "qty_step": 0.0001,
+            "risk_cash": 0.0,
+            "risk_pct": 0.25,
+            "notional": 0.0,
+            "entry": 91.38,
+            "stop": 74.3773,
+            "target1": 99.42,
+            "target2": 114.1963
+          }
+        }
+      ],
+      "method": "Final frozen plans inspected, then each historical trigger verified by public analyze(as_of=trigger); no portfolio or trade outcomes"
+    }
+  ],
+  "full_sequential_365_capture": "/private/tmp/APEX_ACCEPTANCE_REPLAY_365_V1_1.json",
+  "full_sequential_365_status": "complete; corrected v1.1; zero executable trades",
+  "limitations": [
+    "Zero executions do not estimate expectancy or win rate",
+    "Hourly aggregate input is not production 3-minute execution evidence",
+    "Fixed daily/4H warmup changes with chosen replay start; results are history-origin specific",
+    "Synthetic precision, assumed spread and zero funding; no AI/context/portfolio validation",
+    "READY means a confirmed trigger only, not release or profitability readiness"
+  ],
+  "offline_replay_runner": "/private/tmp/apex_fast_replay_audit.py",
+  "handoff_verdict": "One proven and fixed first-eligible-bar comparison-close bug; unchanged 90-day outcome. Sparse numeric interpretation and valid RR failures. No demonstrated edge; strategy/live readiness false.",
+  "notification_policy": "Initial historical INVALID/EXPIRED tombstones are replay evidence; parent owns quiet first-observation terminal notifications.",
+  "full_sequential_365_counts": {
+    "BTCUSDT": {
+      "ready": 0,
+      "trades": 0,
+      "rejections": {}
+    },
+    "ETHUSDT": {
+      "ready": 3,
+      "trades": 0,
+      "rejections": {
+        "RR_TARGET1": 3,
+        "RR_BLENDED": 3,
+        "RR_ROUNDED_SPLIT": 3
+      }
+    },
+    "SOLUSDT": {
+      "ready": 1,
+      "trades": 0,
+      "rejections": {
+        "RR_TARGET1": 1,
+        "RR_BLENDED": 1,
+        "RR_ROUNDED_SPLIT": 1
+      }
+    }
+  },
+  "sequential_checkpoints": 6570,
+  "memoization_equality_checks": 55
+}

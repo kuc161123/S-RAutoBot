@@ -1,0 +1,18 @@
+# Dockerfile.apex only needs this package and its production dependencies.
+# Keep legacy experiments, credentials and historical archives out of the
+# build context instead of relying on an ever-growing cache directory list.
+**
+!Dockerfile.apex
+!requirements-apex.txt
+!apex_bot/
+!apex_bot/**
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.env*
+**/*.db
+**/*.sqlite*
+**/*.csv
+**/*.parquet
+**/*.pkl
+**/*.log

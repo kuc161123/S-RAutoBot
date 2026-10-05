@@ -1,0 +1,258 @@
+APEX CLOUD BOT — IMPLEMENTATION AND OPERATIONS
+2026-10-05
+
+Current state
+
+The new implementation is in apex_bot/. It defaults to SHADOW: public market
+data, hypothetical trades, AI review and Telegram reporting; no exchange orders.
+The existing Apex Drive/Sheet ledger is read-only and is not the bot's database.
+Existing strategy/research files are preserved. legacy_main.py is the original
+main.py entrypoint; main.py now selects Apex unless AUTOBOT_RUNTIME=legacy.
+Dockerfile.apex intentionally contains only the new runtime.
+
+This is a conservative numerical implementation of a subset of the Apex method,
+not a reproduction of every discretionary analyst decision. ENGINE_RULES.txt
+lists each formula, engineering interpretation and unsupported case. Weekly
+degree selection, complex corrections/diagonals, discretionary recounts, resting
+ladders and the complete TradingView/Claude workflow are not automated here.
+Two blind model reviews critique the same candidate; they are not independent
+full-market Elliott counts. Agreement is not a win probability.
+
+Pipeline
+
+1. Bybit public endpoints provide instrument rules, UTC daily/4H closed candles,
+   quotes, spread and funding rates. Only confirmed pivots and later confirmed
+   structure can create a candidate. Both long and short mirrors are supported.
+2. PostgreSQL stores a fixed market-history origin, opportunities, execution
+   intents, outcomes, settings, a single-worker lease and a durable Telegram
+   outbox. A changed historic candle is rejected for review, not silently used
+   to rewrite signals. Redis is an optional disposable public-data cache.
+3. The rules-only shadow book simulates eligible candidates. OpenAI's Responses
+   API receives a frozen, bounded evidence packet twice in independent calls.
+   Both valid approvals are required for the AI-selected book/live gate. Model
+   output cannot alter entry, stop, targets, quantities or hard risk limits.
+4. Optional Drive service-account reads import explicitly allowlisted Docs and
+   selected Settings/Counts/Levels/CCR Sheet ranges. Revisions/hashes are stored
+   separately. Fresh, bounded symbol-related extracts may inform AI critique;
+   they cannot execute instructions or change numeric trading policy. No writes
+   to Drive, Docs or Sheets are implemented. A connected desktop Drive login
+   does not provision cloud credentials automatically.
+5. A native context service uses BTC daily structure and official event calendars.
+   Its market proxy is explicitly different from Apex's full macro/DXY process.
+   Missing calendar/context evidence blocks new exchange entries. Optional
+   external feed and OpenAI web research are advisory evidence, not policy
+   authority. Public research is limited to primary-source domains.
+6. The independent risk gate checks data freshness, spread/funding, reward/risk,
+   precision, quantity/notional constraints, portfolio heat and loss limits.
+   A live entry also needs fresh reconciliation, isolated one-way settings,
+   liquidation-distance allowance and healthy Telegram delivery.
+7. Stable order IDs and durable intents precede any exchange request. Ambiguous
+   submissions are queried, not blindly resent. ACK is not a fill. Ownership,
+   execution records and current size must reconcile before management. Unknown
+   or external positions/orders block entries; the bot does not adopt them.
+8. Exchange-side stops remain primary protection. Confirmed partial target fills
+   govern break-even changes; structure management and recovery use closed bars.
+   Exits use exchange trigger/fill evidence, not a guessed label based on price.
+   Missing accounting/funding evidence is visible and blocks further execution.
+9. Telegram receives state transitions, candidates, approvals/rejections/waits,
+   fills/exits, reference changes and operational faults through the outbox.
+   Repeated unchanged scans do not send another copy of every decision. Delivery
+   is at least once: a timeout after Telegram accepted a message can duplicate it.
+
+Risk controls
+
+Profiles (percentage points of sizing equity, before reductions):
+  ultra_cautious 0.10%; cautious 0.25%; balanced 0.50%; aggressive 0.75%; extreme 1%.
+Custom risk through Telegram is 0.05%–1.00%. Tier/setup/context/drawdown reductions
+can lower the result. "Extreme" does not disable safety or change wave rules.
+Hard maxima: 4% open risk, 2% per bucket, six positions/two per bucket,
+25% single-position notional, 100% gross notional, verified isolated leverage <=5.
+Daily loss gate 2%, weekly 4%, halve risk at 8% strategy drawdown, stop at 12%.
+UTC accounting; open losses are included conservatively even if carried from
+an earlier day. Deposits/withdrawals are not strategy profits. Portfolio risk
+caps and risk budgets do not guarantee a maximum realized loss during a gap.
+No automatic live promotion or runtime self-modification is implemented.
+The current source-controlled release decision in apex_bot/release.py also
+blocks LIVE mode. Credentials, environment flags, Telegram and AI approval
+cannot override this acceptance result. Shadow and testnet remain available.
+
+Telegram
+
+Both TELEGRAM_CHAT_ID and the sender's positive numeric TELEGRAM_ALLOWED_USER_IDS
+must match, including read commands and buttons. @AutotradingBot222_bot is the
+bot's username, not the owner's authorization ID. Comma-separated numeric IDs
+allow multiple controllers. Unknown users receive no private account details.
+Use /help for the registered menu. Dashboard, opportunities/why, waves, positions,
+performance, research, system/telemetry, profile/risk, pause and resume have
+handlers. Risk changes show old/new settings and require an expiring actor-bound
+confirmation. Cancellation is persisted. /start opens the dashboard, not trading.
+Pause stops new entries; protective management continues. It is not liquidation.
+Mode/live deployment authorizations are not editable through Telegram buttons.
+
+Performance interpretation
+
+Rules-only baseline and AI-selected shadow books are independent hypothetical
+portfolios. They show pending/open/closed/expired, wins/losses/breakeven, win rate,
+estimated net and outstanding funding/data evidence. A signal is not an entry.
+Shadow entries require a subsequent fully observed candle; entry-bar targets
+are not awarded; existing stops win ambiguous same-bar ties. Costs assume 6bps
+per fill and 3bps exit slippage. Historical funding rates use remaining entry
+notional, not the unknown historical settlement mark, so the amount is estimated.
+AI selection plus decision latency, sizing and book exposure can change outcomes;
+the comparison reports these confounds and is not causal evidence of AI uplift.
+Exchange results are separate and need actual transaction/accounting evidence.
+No closed trades means no measured win rate, not a fabricated 0% success rate.
+
+Railway setup and safe migration
+
+Inspected service: S-RAutoBot, production, zippy-generosity; Postgres and Redis
+already exist. The existing service is still on the old deployment. Three new
+variable placeholders were STAGED in the UI, not applied/deployed:
+  OPENAI_API_KEY=REPLACE_WITH_OPENAI_API_KEY
+  OPENAI_MODEL=REPLACE_WITH_OPENAI_MODEL_ID
+  TELEGRAM_ALLOWED_USER_IDS=REPLACE_WITH_YOUR_NUMERIC_TELEGRAM_USER_ID
+Existing Bybit, Telegram, Redis and Postgres values were not changed or revealed.
+Replace placeholders privately in Railway; do not put credentials in Git/chat.
+Follow-up configuration: OPENAI_MODEL is now staged as the documented fixed
+snapshot gpt-5.4-mini-2026-03-17, and the user's supplied numeric Telegram ID
+has been staged in TELEGRAM_ALLOWED_USER_IDS. The user reports entering the
+real API key. Model/key access has not been verified with a paid API call;
+no Apply/Deploy was performed. OPENAI_MODEL remains configurable.
+The API key requires API billing/model access; a ChatGPT desktop subscription
+does not substitute for an API key. OPENAI_MODEL must support Responses structured
+outputs and web_search for the advisory research feature. Verify model access
+with a bounded staging smoke test before production; no real calls were made here.
+
+Review apex.env.example. Use RAILWAY_DOCKERFILE_PATH=Dockerfile.apex, one replica,
+always-on compute, healthcheck /healthz on PORT, and persistent DATABASE_URL.
+Set APEX_MODE=shadow, APEX_LIVE_ENABLED=false, APEX_MIGRATION_VERIFIED=false.
+/healthz is process liveness for deployment overlap; /readyz additionally requires
+current leadership and a successful recent market scan. A healthy liveness
+response alone does not mean the bot is ready to trade.
+Liveness stays unsuccessful until database/ledger compatibility, public instrument
+access and configured Telegram identity pass read-only startup checks.
+Do not use deprecated Nixpacks/legacy railway.json as the new build definition.
+
+Before replacing a running bot, reconcile its positions and pending orders and
+ensure they have an explicit management owner. The new bot does not reconstruct
+old strategy identity/stop policy from balances. Stop the old Telegram poller
+before using the same token in Apex. Its old lease does not coordinate with the
+new apex_lease. Prefer a separate staging service, new database and bot token.
+Do not enable live while validation/credentials/migration checks are incomplete.
+
+Recommended release sequence:
+  A. Run isolated tests and Docker/Postgres CI against this exact revision.
+  B. Deploy shadow to staging with real public-data, calendar, Telegram and
+     bounded AI connectivity checks. Test pause, risk preview/cancel/confirm,
+     restart/lease handover, missing Redis and missing DB behavior.
+  C. Use a separate TESTNET database, API keys and APEX_MODE=testnet to verify
+     minimum-size order/fill, stop, partial target, timeout and restart behavior.
+     Never use a production exchange ledger for testnet or vice versa.
+  D. Require prospective results after costs, representative two-sided setups,
+     operational observations and resolved migration evidence before live.
+     Setting APEX_LIVE_ENABLED/APEX_MIGRATION_VERIFIED=true is an operator
+     attestation, not a substitute for these checks or a profit guarantee.
+     A reviewed source release must also explicitly clear the current strategy
+     validation block; this implementation has not earned that clearance.
+
+Commands (credential-free local validation)
+
+  .venv/bin/python -m pytest tests/apex -q
+  PYTHONPYCACHEPREFIX=/private/tmp/apex-pycache .venv/bin/python -m compileall -q apex_bot
+  .venv/bin/python -m apex_bot --check
+
+Do not run main.py, start.py or legacy_main.py as a test: they launch services.
+Local SQLite is explicit for tests/shadow only. Railway refuses ephemeral DB
+fallback. The CI workflow has a disposable Postgres integration test and Docker
+build. TEST_APEX_DATABASE_URL is for that disposable test DB only; DATABASE_URL
+is never read by those tests.
+
+Operational limits and unresolved release evidence
+
+The default universe now targets 50 eligible liquid USDT perpetuals. /universe
+and the dashboard show persisted membership, eligible entry count, freshness,
+replacement policy and draining positions. This does not grant more portfolio
+risk or turn research entry modes into live trading. APEX_UNIVERSE_MODE=static
+explicitly selects the APEX_SYMBOLS list; dynamic mode does not fall back to it.
+
+Dynamic selection uses fresh paginated instrument metadata, all linear tickers,
+and displayed book depth. Defaults: trading USDT perpetual, age >=30 days, no
+pre-listing/stablecoin base/xstocks, 24h turnover >=20m USDT, spread <=10bps and
+at least 25k USDT on EACH side within 25bps of mid. Depth checks cover the top
+150 by sustained turnover after status/age/spread screening plus existing
+qualified members, at four concurrent requests.
+Book failure blocks entries for that member; a whole snapshot failure preserves
+the prior snapshot and its age. Fewer than 50 qualifying symbols is shown as
+underfilled rather than weakening the requirements to reach an arbitrary count.
+
+Review every six hours, with failed attempts retried by a supervised five-minute
+loop. Rank median 24h turnover from up to 28 observations over seven days; startup
+uses available history and labels it explicitly. A healthy member is replaced
+only if a challenger has >=1.5x its score at two successive six-hour observations,
+with at most five such replacements per UTC day. Hard eligibility failures can
+remove a symbol immediately at a review; eligible replacements fill those holes.
+Selection, observations and replacement budgets survive restart in Postgres.
+No fresh selection (or age >=24h) means no new entries. Current quotes and all
+existing risk gates are still checked for each proposed entry.
+Changing the target or liquidity thresholds requires matching revalidation;
+an older snapshot cannot authorize entries under newly changed settings.
+Explicit target reductions keep the highest-ranked members and preserve their
+history, while excess members drain through normal position management.
+
+Retired symbols with open positions continue structure, stops, targets, funding
+and exchange reconciliation. Removal cancels unfilled entry remainders and does
+not liquidate an existing position. Shadow recovery still resolves any fills
+evidenced before retirement, rather than rewriting them as never entered.
+Each execution intent saves its instrument rules. If a contract disappears from
+fresh Trading metadata, reconciliation can use that saved metadata solely for
+its owned position and pending remainder. It cannot restore entry permission.
+Unknown/corrupt historical metadata remains a visible reconciliation blocker.
+The initial dynamic selection starts with the supervised heartbeat, so a slow
+book fetch does not starve the single-worker lease. Bybit HTTP 403 from this
+local host prevents verifying today's actual membership here; Railway must
+produce a fresh selection before any entries. No deployment was made locally.
+
+Core state is transactionally stored as JSON with append-only events;
+long-term retention/archival throughput must be measured before scaling.
+Public calendar HTML/ICS formats can change; parsing failures visibly block new
+entries. Freshness and startup checks are mandatory, not a calendar guarantee.
+Local offline tests cannot certify Railway networking, real exchange behavior,
+live Telegram permissions, actual AI model access or profitable strategy results.
+Historical acceptance diagnostics are separate JSON files and include assumptions.
+The initial 90-day BTC/ETH/SOL replay produced no eligible trades; do not treat
+passing software tests as proof of a deployable trading edge.
+The corrected v1.1 sequential 365-day audit also produced zero eligible trades
+(6,570 checkpoints; 55 equality checks of offline memoization). The artifacts
+record assumptions and warmup sensitivity. The separate slow, pre-fix parent
+year-long replay was interrupted and is not counted as a completed test.
+Those files preserve v1.1 results. The v1.2 timing/zone follow-up is documented
+in TIMING_AND_ZONE_COMPARISON.txt and TIMING_ZONE_REPLAY.json. Its completed
+five-symbol 90-day comparison produced zero approved confirmation orders and
+three approved resting research orders, all expired unfilled. No profitability
+inference is available. Resting candidates are offline-only, and exchange
+submission explicitly rejects them; they are not enabled by deployment.
+The subsequent monitored-zone experiment is documented in MONITORED_ZONE_RESULTS.txt.
+It waits up to 30 days with fresh in-zone quote/R:R checks and models immediate
+execution only in offline replay (--entry-style monitored_zone). It is NOT wired
+to the runtime scan or Telegram activation. Six long fills across two windows,
+only two closed outcomes and unknown funding are insufficient release evidence.
+Exchange guards reject both monitored-zone and resting research candidates.
+The subsequent 730-day entry plus 180-day runoff experiment has its own fixed
+LONG_HORIZON_PROTOCOL.txt and long_horizon_evidence_20261005 artifacts. It uses
+the original five-symbol paired universe, not a hindsight reconstruction of
+historical top-50 membership. See LONG_HORIZON_RESULTS.txt for its results and
+funding assumptions. Existing shorter reports are retained unchanged.
+The unsigned public probe from this machine found Bybit HTTP 403 and BLS access
+denied; the official Federal Reserve calendar parsed eight meetings. These are
+host-specific results. Railway public-data/calendar connectivity remains a
+release prerequisite, not an assumed success.
+
+Official deployment/API references checked during implementation:
+https://docs.railway.com/builds/dockerfiles
+https://docs.railway.com/infrastructure-as-code
+https://bybit-exchange.github.io/docs/v5/order/create-order
+https://bybit-exchange.github.io/docs/v5/position/trading-stop
+https://bybit-exchange.github.io/docs/v5/account/wallet-balance
+https://core.telegram.org/bots/api
+https://developers.openai.com/api/docs/guides/structured-outputs
+https://developers.openai.com/api/docs/guides/tools-web-search

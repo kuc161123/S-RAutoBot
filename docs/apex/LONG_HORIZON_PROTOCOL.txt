@@ -1,0 +1,41 @@
+LONG HORIZON ELLIOTT ENTRY COMPARISON — PREDEFINED RULES
+2026-10-05
+
+Question: does the monitored-zone proposal remain coherent over a much longer
+history, with enough follow-up for daily-wave positions to resolve naturally?
+Recorded before running the new comparison. This is offline research, not a
+deployment, exchange order, or live-entry-policy change.
+
+Fixed paired symbols: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, LINKUSDT.
+Entry period: 730 days, 2023-11-27 00:00 UTC to 2025-11-26 00:00 UTC.
+Follow-up: 180 additional days, ending 2026-05-25 00:00 UTC. No new entries or
+pending entries may fill during follow-up; previously filled positions continue
+normal management. End before the known May 25 missing hourly candle. Never
+interpolate gaps. Warm-up history precedes the entry period and is disclosed.
+
+Arms: existing confirmed-entry control; monitored-zone proposal with the fixed
+30-day watch lifetime from MONITORED_ZONE_PROTOCOL.txt. Same daily-wave rules,
+strict zones, invalidation, targets, sizing, conservative hourly IOC simulation,
+fees, spread and slippage. No parameter sweep or selecting a favorable period
+after seeing outcomes. Independent $10,000 cautious books per symbol and arm;
+these are not a combined portfolio. Long and short plans both remain eligible.
+
+Report complete/incomplete status, source/code hashes, plans, fills by direction,
+closed/open, W/L/breakeven, realized PnL before funding, R results and holding
+durations. Separate entries from the follow-up. Unresolved positions stay open,
+with age and estimated mark-to-market clearly separate from realized results.
+
+Funding is not proven zero. Inspect cached funding coverage and provenance;
+only call after-funding results complete when the historical rates and notional
+at each settlement are evidenced. Otherwise label any calculation an estimate
+and retain the before-funding primary results. No macro/AI/account overlay is
+silently claimed tested. Hourly prices cannot prove actual tick/queue fills.
+
+The new 50-symbol liquidity universe is a separate operational feature. Today's
+liquid symbols must not be substituted into historical tests and represented as
+a point-in-time universe. This experiment is conditional on the five selected
+survivors and does not validate returns from historical universe rotation.
+
+Cache optimizations must be causally equivalent to the existing unoptimized
+replay: test open-trade management and compare bounded real-data runs before
+starting the long comparison. Preserve the earlier 90-day reports unchanged.

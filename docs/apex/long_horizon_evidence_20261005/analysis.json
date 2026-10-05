@@ -1,0 +1,153 @@
+{
+  "confirmed": {
+    "filled": 8,
+    "closed": 8,
+    "open": 0,
+    "wins_before_funding": 0,
+    "wins_est_after_funding": 0,
+    "net_before_funding": -186.64999374716103,
+    "funding_estimate": -5.538291031217835,
+    "net_est_after_funding": -192.18828477837886,
+    "r_before_funding": -7.99101002419944,
+    "hold_median_days": 11.229166666666666,
+    "hold_mean_days": 15.885416666666666,
+    "hold_max_days": 36.75,
+    "held_over_30_days": 2,
+    "closed_in_runoff": 0,
+    "exits": {
+      "STOP": 8
+    },
+    "directions": {
+      "Buy": {
+        "closed": 5,
+        "wins": 0,
+        "net_before_funding": -124.24469974559935,
+        "net_est_after_funding": -130.4002426382728
+      },
+      "Sell": {
+        "closed": 3,
+        "wins": 0,
+        "net_before_funding": -62.40529400156168,
+        "net_est_after_funding": -61.78804214010607
+      }
+    },
+    "by_symbol": {
+      "BNBUSDT": {
+        "closed": 0,
+        "wins": 0,
+        "net_before_funding": 0,
+        "funding_estimate": 0,
+        "hold_max_days": null
+      },
+      "BTCUSDT": {
+        "closed": 2,
+        "wins": 0,
+        "net_before_funding": -49.51839928150696,
+        "funding_estimate": -2.2030140029271985,
+        "hold_max_days": 36.75
+      },
+      "ETHUSDT": {
+        "closed": 1,
+        "wins": 0,
+        "net_before_funding": -24.92810329066906,
+        "funding_estimate": -0.0445261043285,
+        "hold_max_days": 5.541666666666667
+      },
+      "LINKUSDT": {
+        "closed": 3,
+        "wins": 0,
+        "net_before_funding": -74.73099630412766,
+        "funding_estimate": -3.6554142262524962,
+        "hold_max_days": 32.208333333333336
+      },
+      "SOLUSDT": {
+        "closed": 2,
+        "wins": 0,
+        "net_before_funding": -37.47249487085736,
+        "funding_estimate": 0.36466330229036037,
+        "hold_max_days": 22.583333333333332
+      }
+    },
+    "entry_years": {
+      "2024": 4,
+      "2025": 3,
+      "2023": 1
+    }
+  },
+  "monitored_zone": {
+    "filled": 29,
+    "closed": 29,
+    "open": 0,
+    "wins_before_funding": 8,
+    "wins_est_after_funding": 8,
+    "net_before_funding": 5.428592015771997,
+    "funding_estimate": -19.798544375266125,
+    "net_est_after_funding": -14.369952359494128,
+    "r_before_funding": 0.7876585270748151,
+    "hold_median_days": 17.041666666666668,
+    "hold_mean_days": 20.764367816091955,
+    "hold_max_days": 62.666666666666664,
+    "held_over_30_days": 8,
+    "closed_in_runoff": 0,
+    "exits": {
+      "STOP": 24,
+      "TP2": 5
+    },
+    "directions": {
+      "Buy": {
+        "closed": 20,
+        "wins": 7,
+        "net_before_funding": 122.9998875946109,
+        "net_est_after_funding": 100.90116414550951
+      },
+      "Sell": {
+        "closed": 9,
+        "wins": 1,
+        "net_before_funding": -117.57129557883891,
+        "net_est_after_funding": -115.27111650500373
+      }
+    },
+    "by_symbol": {
+      "BNBUSDT": {
+        "closed": 4,
+        "wins": 3,
+        "net_before_funding": 157.98592746585257,
+        "funding_estimate": -1.706687896227066,
+        "hold_max_days": 62.666666666666664
+      },
+      "BTCUSDT": {
+        "closed": 6,
+        "wins": 1,
+        "net_before_funding": -106.64063981737358,
+        "funding_estimate": -6.741612292769596,
+        "hold_max_days": 37.125
+      },
+      "ETHUSDT": {
+        "closed": 6,
+        "wins": 2,
+        "net_before_funding": 48.79965705513646,
+        "funding_estimate": -3.207631627464958,
+        "hold_max_days": 30.333333333333332
+      },
+      "LINKUSDT": {
+        "closed": 8,
+        "wins": 1,
+        "net_before_funding": -114.59619822170217,
+        "funding_estimate": -6.251845235007782,
+        "hold_max_days": 49.208333333333336
+      },
+      "SOLUSDT": {
+        "closed": 5,
+        "wins": 1,
+        "net_before_funding": 19.87984553385871,
+        "funding_estimate": -1.8907673237967266,
+        "hold_max_days": 32.291666666666664
+      }
+    },
+    "entry_years": {
+      "2024": 14,
+      "2025": 12,
+      "2023": 3
+    }
+  }
+}

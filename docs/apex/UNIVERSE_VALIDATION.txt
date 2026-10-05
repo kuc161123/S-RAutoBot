@@ -1,0 +1,43 @@
+DYNAMIC UNIVERSE VALIDATION — 2026-10-05
+
+Implemented locally; no commit, push, Railway deployment or exchange order in
+this work. Existing ledger/research data was not edited. Full behavior and
+configuration are documented in OPERATIONS.txt and apex.env.example.
+
+Full offline suite: 1,275 passed, 1 skipped (78.00 seconds). The skipped test
+needs a disposable TEST_APEX_DATABASE_URL; it is not production-DB verification.
+Three local Python 3.9/LibreSSL dependency warnings remain; Docker uses 3.12.
+Final display and public-timestamp adjustments were followed by targeted adapter,
+runtime, universe and Telegram regression checks. Compilation and diff checks
+passed. The local unsigned production-Bybit connectivity check returned HTTP 403.
+
+Validated with real selector/runtime/store/execution code and mocked venue I/O:
+- Select 50 eligible members without using the manual seed list as a fallback.
+- Exclude unsuitable contracts before allocating limited order-book requests.
+- Bound concurrency to four; preserve snapshot age on failed selection attempts.
+- Median ranking, challenger confirmation, UTC daily budgets and restart state.
+- Block missing/stale/changed-policy membership at decision and atomic commit.
+- Stop new entry when membership changes during data fetching or AI review.
+- Resize membership explicitly while retaining ranking history and old positions.
+- Cancel only unfilled exchange remainders; preserve and protect partial fills.
+- Continue structure, stops, targets and accounting after symbol retirement.
+- Recover delisted owned-position rules from the saved order after restart;
+  saved management rules cannot authorize a fresh entry.
+- Resolve shadow fills evidenced before retirement; reject later hypothetical fills.
+- Display actual eligible/active/draining counts, failures, age and policy in
+  /universe, dashboard and status. The Help command and dashboard button are wired.
+
+Adapter receipt timestamps use the runtime clock. Order-book age is first checked
+against the synchronized exchange clock, then mapped to runtime time for freshness;
+the original exchange timestamp is also retained. This prevents harmless signing
+clock offsets from making a newly received market snapshot appear from the future.
+
+Engine-only capacity check: 50 evaluations of five cached 500-daily/500-4H histories
+completed in 8.16 seconds while other tests ran. This is a local CPU check, not
+a claim about 50-symbol Railway network/Postgres latency. Actual production
+membership, scan timing, Telegram delivery and venue reconciliation still require
+cloud observation after deployment.
+
+The separate long-history experiment completed ten full replays. Frozen source,
+candle, funding and protocol hashes were checked, as were coverage, terminal
+timestamps and absence of new fills in runoff. See LONG_HORIZON_RESULTS.txt.

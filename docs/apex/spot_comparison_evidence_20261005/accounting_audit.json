@@ -1,0 +1,33 @@
+{
+  "complete": true,
+  "arms": [
+    {
+      "market": "perpetual",
+      "reconstructed_cash": 10110.246810706281,
+      "reconstructed_equity": 10110.246810706281,
+      "fees": 4.651236763346159,
+      "funding_estimate": -21.601343914274153,
+      "counts": {
+        "filled": 18,
+        "open": 0,
+        "closed": 18,
+        "expired": 1
+      },
+      "checks": "fill quantity/coin fees/cash conservation/equity/funding chronology/cutoff/source hashes all passed"
+    },
+    {
+      "market": "spot",
+      "reconstructed_cash": 10018.051815662955,
+      "reconstructed_equity": 10018.051815662955,
+      "fees": 8.47949681207349,
+      "funding_estimate": 0.0,
+      "counts": {
+        "filled": 19,
+        "open": 0,
+        "closed": 19,
+        "expired": 0
+      },
+      "checks": "fill quantity/coin fees/cash conservation/equity/funding chronology/cutoff/source hashes all passed"
+    }
+  ]
+}

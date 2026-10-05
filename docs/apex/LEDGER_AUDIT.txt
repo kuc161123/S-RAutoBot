@@ -1,0 +1,88 @@
+
+
+READ-ONLY LEDGER FINDINGS AND CONTEXT IMPLEMENTATION — 2026-10-05
+
+Scope: Backtests, Predictions, Journal, Lessons, Incidents, Handoffs, SyncQueue,
+ScriptLog, ChartCoverage in the supplied local XLSX snapshot only. External Apex
+files were not edited. Snapshot records are not exchange truth. No private
+capital or position amounts are reproduced here.
+
+Evidence and unresolved dependencies
+- Backtests row 2 is pending-work prose, with no performance metrics. Journal
+  row 1 is headers only. Predictions has 48 forecasts and six scored records
+  (rows 4, 13-16, 24), mean Brier 0.1895833; these are not trade returns. Lessons
+  row 19 identifies overlapping forecasts and ambiguous settlement conventions.
+- Funding-cost, TCS and radar backtests remain open (Handoffs 15, 20, 47). All
+  31 lesson entries (Lessons 2-32) are candidates, not validated improvements.
+- The desktop suspension was subsequently closed (Incidents 6-7), but the
+  public-data failure remains open (Incidents 8). Funding/venue checks remain
+  partial (SyncQueue 153). The last October 2 checkpoint is incomplete (150).
+- Queue omissions and missing/delayed scheduler executions remain unresolved
+  (Handoffs 349, 352, 354). History, volume and EMA-source gaps remain
+  (SyncQueue 7; Handoffs 223, 226, 293).
+- Latest recorded EW Clean is 21.0 (= build 20.1), a display change (ScriptLog
+  28-29). Seven panes reverted after rollout and were restored (30). Latest
+  coverage is 47/188 timeframe cells, with 141 not run (ChartCoverage 194-240).
+- Bearish radar was built (Handoffs 66), and --both ran with informational
+  bearish output (SyncQueue 103). Verification and short-side evidence remain
+  open (Handoffs 187, 67, 115). Handoffs 311 identifies stale bearish pivots,
+  invalid candidate output, skipped universe members and missing Type 5S code.
+- Significant inconsistencies: H-034 pending in Backtests 2 but DONE in
+  Handoffs 39; rollout waiting in Handoffs 296 but completed in 299; coverage
+  tool adaptation substituted with an in-page check while later recomputation
+  remains pending (ChartCoverage 169-171, 175, 190-191). Degree-based eligibility
+  conflicts and future-stamped records remain (Handoffs 340, 353, 351).
+
+Implemented contracts (limited to assigned files)
+- ReferenceReader(session, store, credentials_json='', file_ids=tuple()) uses
+  explicit file IDs only and read-only Drive/Sheets scopes. No folder discovery,
+  shortcut following, external writes, credential files or ambient credentials.
+  Native Docs export to plain text. Sheets reads are restricted to Settings
+  A1:E180, Counts A1:K250, Levels A1:Q100 and CCR A1:K50 plus bounded metadata.
+- Native Drive version and modified time are checked before/after each read;
+  responses have byte/time limits and bounded transient retries. Snapshots
+  include content/provenance hashes and asof. Every observed version is retained
+  in the NEW store's event audit. Failed refreshes retain the prior snapshot
+  without renewing asof or calling it current. Revision regressions fail closed.
+- Source text is untrusted evidence, with policy_authority=False. It does not
+  change settings, execute instructions or automatically become live policy.
+  Source changes emit a review notice through the new store's Telegram outbox.
+- Optional load_context validates a public HTTPS JSON feed, DNS/IP safety and
+  pinned TLS requests; redirects are refused. Required timestamps, bounded
+  multipliers, risk state, scoped blackout and dated public sources are checked.
+  Missing/invalid data returns fresh=False, live_blocked=True, no invented
+  neutral regime. Provider assertions are not independent fact verification.
+
+Autonomous default context
+- ContextService(session).build(btc_daily, now) now provides as_of, expires_at,
+  data_complete, risk_state, long_multiplier, short_multiplier, event_blackout,
+  blackout_scopes, sources and reason. Parent runtime persists the returned
+  source URLs, fetch timestamps and hashes. No manual context feed is required.
+- Official URLs verified against primary public web pages:
+  https://www.bls.gov/help/hlpical.htm
+  https://www.bls.gov/schedule/news_release/bls.ics
+  https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+  The suggested FOMCmeetingcalendars.htm URL was not accessible; the official
+  linked schedule is fomccalendars.htm. Raw network format retrieval was not
+  completed; parser tests use local fixtures matching the published schedule.
+- BLS CPI/jobs use +/-60-minute windows. Date-only releases and scheduled FOMC
+  decision dates use full America/New_York local days, respecting DST. Empty,
+  malformed, missing-date or incomplete calendars block live entries. Both BLS
+  release types must have an upcoming event within 45 days; FOMC requires at
+  least six unique valid current-year meetings spanning all four quarters.
+- BTC policy is NEW, not Apex's DXY/BTC.D rule: at least 220 consecutive closed
+  daily bars; latest completed UTC day required; EMA200 seeded with the first
+  200 closes of the latest up-to-500 bars, and a 20-bar close trend. Above EMA
+  and rising => risk_on (long 1, short 0.5); below and falling => risk_off
+  (long 0.5, short 1); otherwise neutral (0.5 each). Missing evidence blocks.
+- Completeness is scoped to scheduled US CPI/jobs/FOMC plus BTC regime only.
+  Crypto-specific material events, other releases and unscheduled decisions
+  are NOT proven clear. Advisory AI research is separate and is not hard proof
+  of comprehensive event coverage. This is not fully autonomous macro coverage
+  across every economically relevant source.
+
+Validation: .venv Python 3.9; 123 focused tests passed across test_context.py and
+test_references.py, including DST, all-day events, malformed/missing dates,
+credential absence, read scopes, redaction, snapshot failures and unsafe URLs.
+No production APIs or external systems were exercised by these tests. Lock
+construction is deferred to the running loop for Python 3.9 compatibility.

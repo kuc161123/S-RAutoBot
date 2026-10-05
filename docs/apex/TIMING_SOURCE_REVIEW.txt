@@ -1,0 +1,112 @@
+APEX TIMING — NARROW SOURCE REVIEW, 2026-10-05
+
+Conclusion: the post-anchor swing cutoff and whole-plan retirement on a failed
+entry attempt are stricter than the charter. Correct those interpretations
+without loosening confirmation, stops, targets or R:R. More qualifying signals
+or profitable trades are not established by this source review.
+
+Authority and scope
+Read ENGINE_RULES.txt and DISCOVERY_NOTES.txt; retrieved the original Google Doc
+read-only through signed-in Chrome. Title: EW_Firm_Charter v1.7.
+https://docs.google.com/document/d/1PoybJ3KpkjU1BtjmpnDnMAXZMApN5G51LFA8lLBjDng/edit
+Browser-generated Markdown export:
+/var/folders/px/mndfzl6d753gvc1h0gtm8kgw0000gn/T/browser-use/exports/EW_Firm_Charter v1.7-53ac4828-ca96-4565-8be2-c307a6bc573b.md
+SHA256: 3092b23afaee723dc82033a1a11de038d54b710f2c3368796f0b079dd8942aff
+Line references below identify this export; quotes remove Markdown escaping.
+The existing Downloads/EW_Firm_Charter.md is v1.0, not current authority.
+No engine/code audit or replay was performed here. Code behavior reported by
+the parent is compared with source text and the documented engine policy.
+
+1. Confirmed swing evidence may predate the final daily anchor
+
+SOURCE: 7.2, line 450: price enters the zone, then a 4H candle "closes above
+the high of the most recent 4H lower-high", defined as "the last swing high
+made while price was falling into the zone". Line 454 mirrors this for shorts:
+the latest higher-low made while price was rising into the sell zone.
+
+There is no condition that this swing, or its comparison predecessor, must
+occur after W2/W5/B or after a software plan is created. ENGINE_RULES lines
+131-136 add that restriction. Two comparison highs establish ONE lower-high;
+the charter does not demand two successive lower-high formations.
+
+MINIMAL CORRECTION: remove the blanket occurrence-time cutoff at the final
+daily anchor for the comparison evidence. Keep confirmed pivots only, known
+before the trigger bar opens, the latest relevant swing/predecessor comparison,
+zone arrival, a NEW eligible closed-4H trigger and existing entry-price limits.
+The predecessor may predate the anchor. The trigger swing may also predate it
+if it belongs to the actual corrective approach into this entry zone.
+
+LIMIT: this does not authorize any old pre-W2 swing. An old W2 correction is
+not automatically the later deep-add correction after a rally through W1.
+The selected swing must represent the current approach into the applicable
+zone and must not have been superseded; do not search backwards for a convenient
+lower level when the current swing fails. Exact corrective-leg identification
+is a machine interpretation the charter leaves unspecified. Preserve the
+existing causal trigger boundary; never resurrect a trigger that occurred
+before the necessary setup evidence was available. No pivot-parameter change
+or same-bar pivot confirmation is needed for this correction.
+
+2. Failed alternate entry does not inherently invalidate the deep-add plan
+
+SOURCE: 7.2, line 453: "4H close above the confirm level, then entry on the
+first retest within three 4H bars; otherwise skip." The short mirror is line
+454. An ordinary out-of-band close means "no ticket" (lines 450/454).
+7.10 condition 1 (line 527) explicitly joins ordinary zone triggers OR breakout/
+breakdown retests. 7.1 places Type 2/2S invalidation at W2 (438/443), and 7.3
+judges invalidation on a daily close (457). 7.11 ties plan direction/status to
+the structural verdict (540-548), not to the first missed entry attempt.
+
+RECOMMENDED INTERPRETATION: skip/expire the breakout attempt, while the still
+valid deep-add setup remains eligible for a later independent 7.2 trigger.
+This follows the entry/setup distinction; the source does not explicitly
+specify a software retry state machine.
+
+MINIMAL CORRECTION: RETEST_EXPIRED and FAILED_FIRST_RETEST close only the
+alternate branch. TRIGGER_OUTSIDE_ZONE rejects that proposed trigger/ticket;
+it is not alone proof of structural invalidation. Keep an otherwise valid
+setup WAIT and evaluate future fresh ordinary triggers. Preserve the failed
+attempt's evidence and never extend/restart its three-bar window or reuse its
+old trigger. Do not revive filled/consumed opportunities. Genuine structure,
+stop/target and existing bounded-plan-lifetime terminal rules still apply.
+For minimal scope, leave broader post-READY expiry/chase behavior unchanged.
+Unlimited breakout retries, relaxed retest tolerance, or ignoring the first
+failed retest are separate policy decisions, unnecessary for this correction.
+
+3. Daily W1 breakout followed by a NEW 4H W1 cross is an added double wait
+
+SOURCE: 7.1 calls Type 2 confirmation the W1 break (438/443). 7.2 specifies a
+4H close and first retest (453/454), not a prerequisite daily close followed
+by another cross. 7.11 requires a decisive W1 break as structural evidence
+(536); its "When" item concerns count/CCR updates (548), not a second entry
+timer. The DAILY-close condition belongs to radar stage classification in
+11.8 (718-724). A radar hit is not itself an entry authorization.
+
+Thus ENGINE_RULES lines 84-86 plus 138-142 combine screening and execution
+rules into a stricter policy. A separate revision can arm a causally known
+setup before its first eligible 4H W1 break and start the three-bar clock at
+that break. Do not backfill an entry from before setup availability. The
+charter leaves the move-off-W2 endpoint/freeze unspecified: changing daily
+plan creation or freezing it on a 4H bar changes zones and evidence IDs and
+needs an explicit machine-policy definition and separate causal replay. It
+is not required for the two minimal corrections above. Removing W1 confirmation
+altogether is not source-backed.
+
+4. Preserve the risk hurdle; test whether deeper entries become available
+
+7.3 (457-459) requires buffered hard-stop risk at ACTUAL entry: Tier 1 T1 >=
+1.5R AND 50/50 blend >=2.5R; Tier 2 >=1.8R AND >=3R, including rounded splits.
+7.1 fixes Type 2 targets at W2 +/- 1.0 and 1.618 times W1 length (438/443).
+The reported ETH/SOL retests already fail gross R:R (ENGINE_RULES 291-307).
+Correct timing can restore access to deeper pullbacks/higher short bounces;
+it cannot make those same bad-price entries pass. Lower hurdles, tighter
+nonstructural stops, larger targets or unconfirmed pivots would be deliberate
+policy revisions, not corrections justified by these clauses.
+
+Parent validation targets: mirrored long/short cases using a relevant confirmed
+pre-anchor swing; rejection of future/unconfirmed/superseded evidence; failed
+or expired alternate followed by a valid independent deep-add trigger; an
+out-of-zone rejected attempt followed by a fresh valid trigger; unchanged
+structural terminal precedence and R:R; prefix/streaming replay without lookahead.
+
+External Google Docs/Drive/ledger were unmodified. No Railway/key pages,
+exchange calls, orders, deployment or implementation edits were made.

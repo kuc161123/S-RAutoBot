@@ -1,0 +1,48 @@
+name: Apex isolated checks
+on:
+  pull_request:
+  push:
+    paths:
+      - 'apex_bot/**'
+      - 'tests/apex/**'
+      - 'requirements-apex.txt'
+      - 'requirements-apex-tests.txt'
+      - 'Dockerfile.apex'
+      - '.dockerignore'
+      - 'main.py'
+      - 'legacy_main.py'
+      - 'apex.env.example'
+      - '.github/workflows/apex-tests.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: apex_ci_only
+          POSTGRES_DB: apex_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_APEX_DATABASE_URL: postgresql://postgres:apex_ci_only@localhost:5432/apex_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-apex-tests.txt
+      - run: python -m pip check
+      # Fail explicitly if research dependencies are missing; optional-import
+      # tests must not silently disappear from the CI acceptance run.
+      - run: python -c "import numpy, pandas, pyarrow; import pyarrow.parquet"
+      - run: python -m compileall -q apex_bot
+      - run: python -m pytest tests/apex -q -ra
+      - run: python -m apex_bot --check
+      - run: docker build -f Dockerfile.apex -t apex-check .
+      - run: docker run --rm --network none apex-check python -m apex_bot --check

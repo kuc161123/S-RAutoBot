@@ -1,0 +1,140 @@
+{
+  "purpose": "Engineering acceptance only; no demonstrated strategy edge",
+  "strategy_ready": false,
+  "live_ready": false,
+  "edge_demonstrated": false,
+  "engine_version": "apex-numeric-1.1",
+  "engine_sha256": "ea35103a80fc3fca8365b2719072997e9e41778e3175cf74e0b349da410f867d",
+  "runner": "Unmodified apex_bot.replay.replay, offline scalar serialization and terminal/validation memoization on fixed prefixes",
+  "memoization_equality_checks": 55,
+  "sequential_checkpoints": 6570,
+  "terminal_cache_hits": 112778,
+  "limitations": [
+    "Hourly execution, synthetic instrument rules, zero assumed funding",
+    "Independent symbol books; no macro or AI; no portfolio loss-path validation",
+    "One first-READY attempt per candidate",
+    "No executable trades means no expectancy or win-rate estimate"
+  ],
+  "results": [
+    {
+      "symbol": "BTCUSDT",
+      "source_sha256": "e29f5d29c34d50a70b18171374d43d81b31f49446e13dd8309ee3a8deb5e27cf",
+      "start": "2025-05-25T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "excluded_after_source_gap": "2026-05-25 02:00:00",
+      "ready_candidates": 0,
+      "ready_by_setup_side": {},
+      "states_observed": {
+        "INVALID": 37588,
+        "WAIT": 106
+      },
+      "risk_rejections": {},
+      "summary": {
+        "total": 0,
+        "open": 0,
+        "pending": 0,
+        "closed": 0,
+        "expired": 0,
+        "wins": 0,
+        "losses": 0,
+        "breakeven": 0,
+        "wr": null,
+        "net_pnl": 0,
+        "invalid_outcomes": 0,
+        "funding_pending": 0,
+        "management_incomplete": 0,
+        "data_gaps": 0,
+        "cohort": "arm-specific simulated candidates",
+        "comparison_note": "Observational selection; differing eligibility, sizing or management confound arm outcomes"
+      },
+      "closed_net_before_funding": 0,
+      "data_issues": 0,
+      "closed_trades": []
+    },
+    {
+      "symbol": "ETHUSDT",
+      "source_sha256": "b269c7286b085e8acaff7a96f4a4db7e268800085cad25445432cd335377947b",
+      "start": "2025-05-25T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "excluded_after_source_gap": "2026-05-25 02:00:00",
+      "ready_candidates": 3,
+      "ready_by_setup_side": {
+        "2:Buy": 2,
+        "2S:Sell": 1
+      },
+      "states_observed": {
+        "INVALID": 44467,
+        "WAIT": 564,
+        "READY": 5
+      },
+      "risk_rejections": {
+        "RR_TARGET1": 3,
+        "RR_BLENDED": 3,
+        "RR_ROUNDED_SPLIT": 3
+      },
+      "summary": {
+        "total": 0,
+        "open": 0,
+        "pending": 0,
+        "closed": 0,
+        "expired": 0,
+        "wins": 0,
+        "losses": 0,
+        "breakeven": 0,
+        "wr": null,
+        "net_pnl": 0,
+        "invalid_outcomes": 0,
+        "funding_pending": 0,
+        "management_incomplete": 0,
+        "data_gaps": 0,
+        "cohort": "arm-specific simulated candidates",
+        "comparison_note": "Observational selection; differing eligibility, sizing or management confound arm outcomes"
+      },
+      "closed_net_before_funding": 0,
+      "data_issues": 0,
+      "closed_trades": []
+    },
+    {
+      "symbol": "SOLUSDT",
+      "source_sha256": "99b11ae14bed5bbe195620f44db3d51ae56604c2b4fb57f57c95edf2a57ceaa1",
+      "start": "2025-05-25T00:00:00+00:00",
+      "end": "2026-05-25T00:00:00+00:00",
+      "excluded_after_source_gap": "2026-05-25 02:00:00",
+      "ready_candidates": 1,
+      "ready_by_setup_side": {
+        "2:Buy": 1
+      },
+      "states_observed": {
+        "INVALID": 30788,
+        "WAIT": 341,
+        "READY": 1
+      },
+      "risk_rejections": {
+        "RR_TARGET1": 1,
+        "RR_BLENDED": 1,
+        "RR_ROUNDED_SPLIT": 1
+      },
+      "summary": {
+        "total": 0,
+        "open": 0,
+        "pending": 0,
+        "closed": 0,
+        "expired": 0,
+        "wins": 0,
+        "losses": 0,
+        "breakeven": 0,
+        "wr": null,
+        "net_pnl": 0,
+        "invalid_outcomes": 0,
+        "funding_pending": 0,
+        "management_incomplete": 0,
+        "data_gaps": 0,
+        "cohort": "arm-specific simulated candidates",
+        "comparison_note": "Observational selection; differing eligibility, sizing or management confound arm outcomes"
+      },
+      "closed_net_before_funding": 0,
+      "data_issues": 0,
+      "closed_trades": []
+    }
+  ]
+}

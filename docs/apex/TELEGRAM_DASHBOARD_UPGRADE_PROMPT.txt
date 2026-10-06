@@ -1,0 +1,118 @@
+APEX TELEGRAM CONTROL CENTRE — IMPLEMENTATION BRIEF
+Evidence gathered 2026-10-06; this is the prompt used for this implementation.
+
+ROLE AND OBJECTIVE
+Act as a product engineer and reliability reviewer for the existing Apex bot.
+Make Telegram a clear, professional, phone-friendly control centre. Begin with
+the real deployed experience, trace every displayed fact to persisted state,
+then implement and verify the improvements. Improve explanation and observability
+without changing trading strategy, risk policy, AI approval rules or execution mode.
+
+OBSERVED BASELINE
+Computer use confirmed Railway deployment 67f0a585 / commit 63ae35ad is active;
+Postgres and Redis are online. Telegram /dashboard and /system respond.
+The dashboard contains full risk-circuit explanations and full performance
+comparisons even with no trades, followed by eighteen navigation/control buttons.
+It requires excessive scrolling, especially on a phone. Other pages repeat the
+same large keyboard. Status and dashboard are effectively the same page.
+Opportunity alerts expose internal tokens such as AWAIT_CLOSED_4H_TRIGGER, Buy,
+Sell and opaque setup numbers. They do not make clear that a planned entry is
+not a fill or explain the next required event in ordinary language.
+The system screen says 'Issue recorded: yes' for an old Telegram failure even
+though all current component-error fields are clear. It says 'AI configured: yes'
+while persisted daily research is UNAVAILABLE because validation failed.
+The deployed snapshot contained 496 historical candidate records and zero trades;
+a candidate total must not imply 496 current actionable opportunities.
+Universe selection currently qualifies fewer than its target of fifty: explain
+why this can be normal, rather than pretending fifty qualified symbols exist.
+
+NON-NEGOTIABLE BOUNDARIES
+Keep APEX_MODE=shadow, APEX_LIVE_ENABLED=false and the source live-release lock.
+Do not place/cancel exchange orders, change leverage, alter entries/stops/targets,
+relax filters, tune risk, erase records, rewrite historical outcomes or touch the
+Apex/Google Drive ledger. Preserve authentication, allowed numeric user/chat IDs,
+single poller/lease, durable Telegram cursor/outbox, redaction and confirmation
+tokens. Do not start another poller locally. Do not expose secrets or account IDs
+in screenshots, fixtures, logs or the public repository. Keep unrelated work intact.
+AI validation failure is an unavailable result, never approval or 'no risk found'.
+Do not reduce source-validation requirements just to make research look healthy.
+
+INFORMATION ARCHITECTURE
+1. Home: one compact overview, with updated UTC time, unmistakable simulation mode,
+   scan freshness and actual operational state; current eligible universe/target;
+   current candidate funnel (ready/waiting, long/short), not lifetime totals;
+   base risk/profile and explicitly hypothetical starting capital; brief separate
+   Rules baseline and AI-approved shadow activity/results; material active alerts.
+   Do not embed full performance tables or technical caveats here.
+2. Status/System: explain operational dependencies with last-success age, current
+   errors versus historical/recovered errors, optional/inactive components, and
+   whether a problem blocks decisions or only an advisory feature. Shadow mode
+   does not reconcile the private account: show 'not used', not a misleading green
+   private-exchange check. Report Telegram outbox health and research availability.
+3. Opportunities: prioritize current eligible unexpired READY/WAIT opportunities;
+   count historical/expired/retired records separately. Use concise cards with
+   LONG/SHORT, readable state, planned levels, decision and next condition.
+   /why SYMBOL and /waves SYMBOL must reach detailed evidence, rejection reasons,
+   structure/invalidation, trigger and last net reward:risk assessment.
+   Page lists instead of silently hiding records or creating huge messages.
+4. Positions: explicitly distinguish simulated waiting entries, simulated open
+   trades and exchange-confirmed positions. Never call an entry intention a fill
+   or missing private data a flat account. Show targets and remaining quantity
+   when available, and page records without silent truncation.
+5. Performance: separate Rules baseline, AI-approved shadow and executed history.
+   Show wins/losses/breakeven, denominator and unavailable WR when no valid closes.
+   Preserve invalid/incomplete/funding-pending/data-gap labels. Put comparison
+   methodology and cohort/latency limitations in an accessible detail page; never
+   claim causal AI uplift from selected or unmatched trades. Keep observer outcomes
+   separate from fundable portfolio returns and historical backtests.
+6. Risk: concise current settings and current caps first; readable profile names;
+   prospective preview remains complete before confirmation. Preserve explicit
+   percentage units, hard limits, loss circuits and existing-position protection.
+7. Research: show configured versus actual results, result date, COMPLETE versus
+   UNAVAILABLE, validated facts and sources when present, and understandable failure
+   state when absent. Stored facts must be rendered (the current screen falls back
+   to a generic reason). Do not imply missing Google references are loaded.
+8. Universe/Observer/Telemetry: retain essential qualified-symbol/ranking/rotation,
+   independent observation, timing and evidence metrics with readable sections.
+   Provide a glossary for WR, R, net reward:risk, simulation assumptions and states.
+9. Navigation: a small home keyboard and page-specific two-column actions. Always
+   expose Home/Refresh; current-page refresh must preserve context/page. Put pause/
+   resume under controls rather than all informational pages. All emitted buttons
+   and documented commands must have tested authorized handlers. Existing callback
+   forms should keep working. Expired or malformed controls must fail safely.
+
+PRESENTATION AND MESSAGE DELIVERY
+Use restrained, consistent emojis as scan anchors, short labels, grouped lines,
+readable dates/relative ages and sensible price precision. Avoid wide pipe tables,
+raw JSON, snake_case internal names, and unexplained error/enum strings on home.
+Keep all output plain text unless escaping/rendering is rigorously implemented;
+never accidentally interpret model/exchange content as Telegram markup.
+Views should fit within a single Telegram message with deliberate pagination for
+long data. Keep the lossless transport fallback for unexpected long content and
+full mutation previews. Split at paragraph/line boundaries where possible.
+Refreshing unchanged content must not create duplicate dashboard messages when
+Telegram returns 'message is not modified'. Handle that exact response as success;
+other edit failures must retain correct recovery and uncertain-send semantics.
+Notifications should say setup spotted / confirmation pending / candidate ready /
+invalidated / simulated entry / closed as appropriate. A WAIT alert must state no
+trade opened. A READY candidate is still subject to risk and AI checks. Explain
+the next condition; include planned stop/targets and symbol detail command.
+
+ENGINEERING AND VERIFICATION
+Read the existing source/tests before editing. Keep formatting helpers pure and
+snapshot reads free of market/network side effects. Use one captured 'now' per
+render. Keep unknown/stale data distinct from zero; do not fabricate prices,
+balances, heartbeat success, sample counts or AI conclusions.
+Add focused tests for missing/stale/future timestamps, recovered errors, research
+unavailability, real fact rendering, candidate expiry/universe eligibility,
+pagination coverage, long/short labels, zero/invalid/funding-pending outcomes,
+message limits, contextual callbacks, unchanged refresh, unauthorized users and
+confirmation invariants. Run the existing relevant suite and full Apex acceptance
+suite after integration; do not run trading entrypoints locally.
+Create an offline phone-width preview from synthetic fixtures and inspect it with
+computer use. It is a layout preview, not proof of native Telegram rendering.
+Commit/push the intended changes under the user's existing deployment authority,
+verify CI and Railway startup, then use computer use in the real Telegram chat to
+exercise read-only views and inspect the actual resulting layout. No risk changes
+are needed to test navigation. If cloud/UI access blocks a check, state the exact
+unverified part. Deliver this prompt, the concrete improvements and test evidence.

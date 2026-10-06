@@ -24,16 +24,18 @@ Verified in Railway
   No positions/orders could be verified with that key. The user explicitly
   confirmed no open positions or pending entries before the shadow handoff.
 
-Staged deployment settings (verify applied after source push)
+Applied deployment settings (release 63ae35ad observed active 2026-10-06)
   RAILWAY_DOCKERFILE_PATH=Dockerfile.apex
   APEX_MODE=shadow
   APEX_LIVE_ENABLED=false
   Healthcheck path=/healthz
   Wait for CI=enabled
 Existing masked Bybit/Telegram/DB/Redis credentials were not revealed or changed.
-The earlier OpenAI key/model and numeric Telegram authorization changes remain
-part of the staged service configuration. The actual model/key connection must
-be verified after deployment; local tests do not certify account access.
+The earlier OpenAI key/model and numeric Telegram authorization changes are part
+of the deployed configuration. Telegram /dashboard and /system responded during
+the 2026-10-06 computer-use audit; the PostgreSQL state could be read from the
+running container. AI configured is not equivalent to a successful API result:
+check /research for the actual outcome and its provider diagnostic.
 
 Data collection added
 - Baseline and AI-approved simulated portfolios retain their actual risk caps.

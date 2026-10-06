@@ -20,6 +20,7 @@ import aiohttp
 
 
 PROFILES = ("ultra_cautious", "cautious", "balanced", "aggressive", "extreme")
+PROFILE_LABELS = {name: name.replace("_", " ").capitalize() for name in PROFILES}
 VIEWS = (
     "dashboard",
     "status",
@@ -31,26 +32,63 @@ VIEWS = (
     "risk",
     "profile",
     "performance",
+    "comparison",
     "research",
     "observer",
     "system",
     "telemetry",
+    "settings",
+    "guide",
     "help",
 )
-COMMANDS = {view: f"Show {view}" for view in VIEWS}
-COMMANDS.update(start="Open dashboard", pause="Preview pause", resume="Preview resume")
+COMMANDS = {
+    "start": "Open the home overview (does not resume trading)",
+    "dashboard": "Home: activity, freshness and active alerts",
+    "status": "Operational status and decision blockers",
+    "opportunities": "Current setups and their next required conditions",
+    "why": "Setup evidence and rejection reasons; optional SYMBOL",
+    "waves": "Wave structure, trigger and invalidation; optional SYMBOL",
+    "positions": "Waiting entries, simulated trades and confirmed positions",
+    "universe": "Qualified symbols, rankings and rotation",
+    "performance": "Rules, AI-approved shadow and executed results",
+    "comparison": "Comparison methodology and limits of the evidence",
+    "risk": "Risk budgets and caps; add a percent to preview a change",
+    "profile": "Current profile; add a profile name to preview a change",
+    "research": "Stored research results, availability and sources",
+    "observer": "Independent outcomes of capacity-rejected setups",
+    "system": "Component health, current errors and recovery",
+    "telemetry": "Decision timing and evidence quality",
+    "settings": "Controls: pause, resume and profile previews",
+    "guide": "Glossary: WR, R, setup states and simulation assumptions",
+    "help": "Command reference and navigation help",
+    "pause": "Preview pausing new entries; confirmation required",
+    "resume": "Preview resuming; confirmation and safety checks required",
+}
 HELP = (
     "🤖 Apex controls\n"
-    "/start · /dashboard — dashboard\n"
-    "/status · /positions\n"
+    "/start · /dashboard — home overview\n"
+    "/status — operational status and blockers\n"
+    "/positions — waiting entries, simulated trades and confirmed positions\n"
     "/universe — selected symbols and rotation status (read-only)\n"
-    "/opportunities · /why SYMBOL · /waves SYMBOL\n"
-    "/risk — risk and all profiles\n"
-    "/risk 0.25 — preview 0.25% per trade (0.05–1%)\n"
-    "/profile NAME — preview a profile\n"
-    "/performance · /research · /system · /telemetry\n"
+    "/opportunities — current setups and next conditions\n"
+    "/why SYMBOL — evidence and rejection reasons\n"
+    "/waves SYMBOL — structure, trigger and invalidation\n"
+    "/performance — Rules, AI-approved shadow and executed results\n"
+    "/comparison — methodology and comparison limitations\n"
+    "/research — stored results, availability and sources\n"
     "/observer — capacity-rejected shadow outcomes\n"
+    "/system — component health and recovery\n"
+    "/telemetry — timing and evidence quality\n"
+    "/guide — WR, R, states and simulation glossary\n"
+    "/help — this command reference\n\n"
+    "/settings — pause/resume and profile controls\n"
+    "/risk — current risk budgets and caps\n"
+    "/risk 0.25 — preview 0.25% per trade (0.05–1%)\n"
+    "/profile — current profile and profile picker\n"
+    "/profile balanced — preview a profile by name\n"
     "/pause · /resume — preview, then confirm\n"
+    "Profiles: Ultra cautious · Cautious · Balanced · Aggressive · Extreme.\n\n"
+    "Use Previous/Next for more records; Refresh keeps your page and symbol.\n"
     "🔎 /start only opens the dashboard.\n"
     "Research shows stored offline analysis.\n"
     "Changes require confirmation; resume remains subject to service safety checks."
@@ -58,11 +96,67 @@ HELP = (
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{1,56}\Z")
 _SYMBOL = re.compile(r"[A-Z0-9][A-Z0-9._/-]{0,31}\Z")
 _PERCENT = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)%?\Z")
+_PAGE = re.compile(r"(?:0|[1-9][0-9]*)\Z")
+_UNCHANGED_EDIT_DESCRIPTIONS = {
+    "Bad Request: message is not modified",
+    "Bad Request: message is not modified: specified new message content and reply "
+    "markup are exactly the same as a current content and reply markup of the message",
+}
+
+# Submenus have at most four actions, leaving room for paging and Home/Refresh.
+_VIEW_LINKS = {
+    "dashboard": (
+        ("🔎 Opportunities", "opportunities"),
+        ("📂 Positions", "positions"),
+        ("📈 Performance", "performance"),
+        ("🌐 Universe", "universe"),
+        ("⚙️ System", "system"),
+        ("🎛 Settings", "settings"),
+    ),
+    "status": (("⚙️ System", "system"), ("📡 Telemetry", "telemetry")),
+    "opportunities": (
+        ("💡 Why", "why"),
+        ("🌊 Waves", "waves"),
+        ("🌐 Universe", "universe"),
+        ("📖 Guide", "guide"),
+    ),
+    "why": (("🌊 Waves", "waves"), ("🔎 Opportunities", "opportunities")),
+    "waves": (("💡 Why", "why"), ("🔎 Opportunities", "opportunities")),
+    "positions": (("📈 Performance", "performance"), ("🛡 Risk", "risk")),
+    "universe": (("🔎 Opportunities", "opportunities"), ("📖 Guide", "guide")),
+    "performance": (
+        ("⚖️ Comparison", "comparison"),
+        ("🔬 Observer", "observer"),
+        ("📂 Positions", "positions"),
+        ("📖 Guide", "guide"),
+    ),
+    "comparison": (("📈 Performance", "performance"), ("🔬 Observer", "observer")),
+    "risk": (("🎛 Settings", "settings"), ("📖 Guide", "guide")),
+    "profile": (("🛡 Risk", "risk"), ("🎛 Settings", "settings")),
+    "research": (("⚙️ System", "system"), ("📖 Guide", "guide")),
+    "observer": (("📈 Performance", "performance"), ("⚖️ Comparison", "comparison")),
+    "system": (
+        ("📊 Status", "status"),
+        ("📡 Telemetry", "telemetry"),
+        ("🧪 Research", "research"),
+        ("❓ Help", "help"),
+    ),
+    "telemetry": (("⚙️ System", "system"), ("📖 Guide", "guide")),
+    "settings": (("🛡 Risk", "risk"), ("🎚 Profiles", "profile")),
+    "guide": (("❓ Help", "help"), ("⚖️ Comparison", "comparison")),
+    "help": (("📖 Guide", "guide"), ("🎛 Settings", "settings")),
+}
 
 
 class Proposal(TypedDict):
     token: str
     summary: str
+
+
+class RenderedPage(TypedDict):
+    text: str
+    page: int
+    pages: int
 
 
 class TelegramService(Protocol):
@@ -84,6 +178,18 @@ class TelegramService(Protocol):
 
     async def cancel_change(self, token: str, actor: str) -> str:
         """Atomically revoke this actor's token without changing settings."""
+        ...
+
+
+class PaginatedTelegramService(TelegramService, Protocol):
+    async def render_page(
+        self, view: str, symbol: str | None = None, page: int = 0
+    ) -> RenderedPage:
+        """Optional: text and clamped page metadata from ONE committed snapshot.
+
+        Includes all page headings/guidance. The controller never appends content
+        or reads page counts separately. Legacy services only need snapshot().
+        """
         ...
 
 
@@ -122,18 +228,34 @@ def _positive_id(value: object) -> bool:
 
 
 def _chunks(text: str) -> list[str]:
-    """Lossless chunks bounded to 3900 UTF-16 units, including astral emoji."""
+    """Lossless UTF-16 chunks, preferring paragraphs then complete lines."""
     if not isinstance(text, str) or not text.strip():
         raise ValueError("A nonempty plain-text message is required")
     chunks = []
-    start = units = 0
-    for index, char in enumerate(text):
-        width = 2 if ord(char) > 0xFFFF else 1
-        if units + width > 3900:
-            chunks.append(text[start:index])
-            start, units = index, 0
-        units += width
-    chunks.append(text[start:])
+    start = 0
+    while start < len(text):
+        end, units = start, 0
+        while end < len(text):
+            width = 2 if ord(text[end]) > 0xFFFF else 1
+            if units + width > 3900:
+                break
+            units += width
+            end += 1
+        if end < len(text):
+            # Keep the delimiters: stripping a chunk would lose preview content.
+            boundaries = [
+                index + len(separator)
+                for separator in ("\n\n", "\r\n\r\n")
+                if (index := text.rfind(separator, start, end)) >= start
+            ]
+            boundary = (
+                max(boundaries) if boundaries else text.rfind("\n", start, end) + 1
+            )
+            # Do not turn leading blank lines into a separate empty message.
+            if boundary > start and text[start:boundary].strip():
+                end = boundary
+        chunks.append(text[start:end])
+        start = end
     return chunks
 
 
@@ -361,58 +483,112 @@ class TelegramController:
     def _button(label: str, data: str) -> dict:
         return {"text": label, "callback_data": data}
 
-    def _keyboard(self, view: str, symbol: str | None = None) -> dict:
+    @staticmethod
+    def _page_callback(view: str, page: int = 0, symbol: str | None = None) -> str:
+        return f"pg:{view}:{page}" + (f":{symbol}" if symbol else "")
+
+    def _keyboard(
+        self, view: str, symbol: str | None = None, page: int = 0, pages: int = 1
+    ) -> dict:
         button = self._button
+        actions = []
         if view in ("risk", "profile"):
-            rows = [[button(name, f"p:profile:{name}")] for name in PROFILES]
-            rows.append([button("✏️ Custom %", "custom_risk")])
-        elif view == "universe":
-            rows = []
-        else:
-            rows = [
+            actions.extend(
                 [
-                    button("📊 Status", "v:status"),
-                    button("📂 Positions", "v:positions"),
-                ],
+                    button("🎚 Choose profile", "profiles"),
+                    button("✏️ Custom %", "custom_risk"),
+                ]
+            )
+        elif view == "settings":
+            actions.extend(
                 [
-                    button("🔎 Opportunities", "v:opportunities"),
-                    button("🌊 Waves", "v:waves"),
-                ],
-                [button("💡 Why", "v:why"), button("🛡 Risk", "v:risk")],
-                [
-                    button("🎚 Profile", "v:profile"),
-                    button("📈 Performance", "v:performance"),
-                ],
-                [button("🧪 Research", "v:research"), button("⚙️ System", "v:system")],
-                [
-                    button("🌐 Universe", "v:universe"),
-                    button("🔬 Observer", "v:observer"),
-                ],
-                [button("⏸ Pause", "p:paused:1"), button("▶️ Resume", "p:paused:0")],
-                [button("📡 Telemetry", "v:telemetry"), button("❓ Help", "v:help")],
-            ]
-        refresh = f"v:{view}" + (f":{symbol}" if symbol else "")
+                    button("⏸ Pause", "p:paused:1"),
+                    button("▶️ Resume", "p:paused:0"),
+                ]
+            )
+        actions.extend(
+            button(
+                label,
+                self._page_callback(
+                    destination,
+                    symbol=symbol if destination in ("why", "waves") else None,
+                ),
+            )
+            for label, destination in _VIEW_LINKS[view]
+        )
+        rows = [actions[index : index + 2] for index in range(0, len(actions), 2)]
+        navigation = []
+        if page > 0:
+            navigation.append(
+                button("← Previous", self._page_callback(view, page - 1, symbol))
+            )
+        if page + 1 < pages:
+            navigation.append(
+                button("Next →", self._page_callback(view, page + 1, symbol))
+            )
+        if navigation:
+            rows.append(navigation)
         rows.append(
-            [button("🔄 Refresh", refresh), button("🏠 Dashboard", "v:dashboard")]
+            [
+                button("🔄 Refresh", self._page_callback(view, page, symbol)),
+                button("🏠 Home", self._page_callback("dashboard")),
+            ]
         )
         return {"inline_keyboard": rows}
 
-    async def _view(self, view: str, symbol: str | None, message: dict | None) -> None:
-        if view == "help":
+    async def _profiles(self, message: dict | None) -> None:
+        # Separate chooser keeps every profile accessible even on paged reports.
+        buttons = [
+            self._button(PROFILE_LABELS[name], f"p:profile:{name}") for name in PROFILES
+        ]
+        rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+        rows.append(
+            [
+                self._button("🔄 Refresh", "profiles"),
+                self._button("🏠 Home", self._page_callback("dashboard")),
+            ]
+        )
+        await self._render(
+            "🎚 Choose a risk profile\n\n"
+            "Select a profile to preview its risk budget, caps and prospective effect.\n"
+            "Changes require confirmation and apply to future entries; existing positions "
+            "keep their protection.",
+            {"inline_keyboard": rows},
+            message,
+        )
+
+    async def _view(
+        self, view: str, symbol: str | None, message: dict | None, page: int = 0
+    ) -> None:
+        render_page = getattr(self._service, "render_page", None)
+        pages = 1
+        if callable(render_page):
+            result = await asyncio.wait_for(
+                render_page(view, symbol=symbol, page=page),
+                timeout=self.SERVICE_TIMEOUT,
+            )
+            if (
+                not isinstance(result, dict)
+                or not isinstance(result.get("text"), str)
+                or not result["text"].strip()
+                or type(result.get("page")) is not int
+                or type(result.get("pages")) is not int
+                or not 0 <= result["page"] < result["pages"]
+            ):
+                raise ValueError("Invalid service page")
+            text, page, pages = result["text"], result["page"], result["pages"]
+        elif view == "help":
             text = HELP
+            page = 0
         else:
+            # Keep the original two-argument API for older services/fakes. A stale
+            # paged button simply reopens the full report, with no paging controls.
             text = await asyncio.wait_for(
                 self._service.snapshot(view, symbol),
                 timeout=self.SERVICE_TIMEOUT,
             )
-        if view in ("risk", "profile"):
-            text += (
-                "\n\n🎚 Profiles (mild → aggressive):\n"
-                + " · ".join(PROFILES)
-                + "\n✏️ /risk 0.25 previews 0.25% (allowed: 0.05–1%)."
-                + "\nSelect a profile to inspect its prospective effect before confirming."
-            )
-        await self._render(text, self._keyboard(view, symbol), message)
+            page = 0
+        await self._render(text, self._keyboard(view, symbol, page, pages), message)
 
     def _fresh(self, message: dict, *, callback: bool = False) -> None:
         timestamp = (
@@ -434,10 +610,18 @@ class TelegramController:
     async def _propose(
         self, key: str, value: object, actor: str, message: dict | None
     ) -> None:
-        proposal = await asyncio.wait_for(
-            self._service.propose_change(key, value, actor),
-            timeout=self.SERVICE_TIMEOUT,
-        )
+        from .service import ServiceRejection
+
+        try:
+            proposal = await asyncio.wait_for(
+                self._service.propose_change(key, value, actor),
+                timeout=self.SERVICE_TIMEOUT,
+            )
+        except ServiceRejection as error:
+            # The service sanitizes known pre-proposal policy rejections. Never
+            # apply this exception handling to a possibly committed confirmation.
+            await self._render(str(error), self._keyboard("settings"), message)
+            return
         if not isinstance(proposal, dict):
             raise ValueError("Invalid service proposal")
         token, summary = proposal.get("token"), proposal.get("summary")
@@ -578,13 +762,25 @@ class TelegramController:
         if not isinstance(data, str) or len(data.encode("utf-8")) > 64:
             raise _CommandError("Invalid control. Open /dashboard for fresh controls.")
         parts = data.split(":")
-        if parts[0] == "v" and len(parts) in (2, 3) and parts[1] in VIEWS:
-            symbol = parts[2] if len(parts) == 3 else None
+        if (
+            (parts[0] == "v" and len(parts) in (2, 3))
+            or (parts[0] == "pg" and len(parts) in (3, 4))
+        ) and parts[1] in VIEWS:
+            page = 0
+            if parts[0] == "pg":
+                if not _PAGE.fullmatch(parts[2]):
+                    raise _CommandError("Invalid page control. Open /dashboard.")
+                page = int(parts[2])
+                symbol = parts[3] if len(parts) == 4 else None
+            else:
+                symbol = parts[2] if len(parts) == 3 else None
             if symbol is not None and (
                 parts[1] not in ("why", "waves") or not _SYMBOL.fullmatch(symbol)
             ):
                 raise _CommandError("Invalid symbol control. Open /dashboard.")
-            await self._view(parts[1], symbol, message)
+            await self._view(parts[1], symbol, message, page)
+        elif data == "profiles":
+            await self._profiles(message)
         elif data == "custom_risk":
             await self._render(
                 "✏️ Enter /risk 0.25 to preview 0.25% risk per trade.\n"
@@ -685,8 +881,11 @@ class TelegramController:
                     method == "editMessageText"
                     and status == 400
                     and isinstance(body, dict)
-                    and "message is not modified"
-                    in str(body.get("description", "")).lower()
+                    and body.get("ok") is False
+                    and type(body.get("error_code")) is int
+                    and body["error_code"] == 400
+                    and isinstance(body.get("description"), str)
+                    and body["description"] in _UNCHANGED_EDIT_DESCRIPTIONS
                 ):
                     return None
                 parameters = body.get("parameters") if isinstance(body, dict) else None

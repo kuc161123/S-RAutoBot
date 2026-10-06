@@ -282,6 +282,17 @@ def test_real_telegram_observer_menu_command_button_help_and_authorization(harne
             await control._handle_update(
                 {"message": message("/dashboard", chat=chat, user=user)}
             )
+            home_buttons = [
+                b
+                for row in session.text_payloads()[-1]["reply_markup"][
+                    "inline_keyboard"
+                ]
+                for b in row
+            ]
+            assert any(b["callback_data"] == "pg:performance:0" for b in home_buttons)
+            await control._handle_update(
+                {"callback_query": callback("pg:performance:0", chat=chat, user=user)}
+            )
             buttons = [
                 b
                 for row in session.text_payloads()[-1]["reply_markup"][
@@ -290,7 +301,7 @@ def test_real_telegram_observer_menu_command_button_help_and_authorization(harne
                 for b in row
             ]
             assert any(
-                b["callback_data"] == "v:observer" and "Observer" in b["text"]
+                b["callback_data"] == "pg:observer:0" and "Observer" in b["text"]
                 for b in buttons
             )
             await control._handle_update(

@@ -298,6 +298,55 @@ class Store:
 
         return await asyncio.to_thread(self._run, health)
 
+    async def ai_failure_diagnostic(self, archive_key):
+        """Read only safe failure categories from an existing immutable AI archive.
+
+        Older state records omit provider error codes. Never return the archived
+        response, packet or arbitrary provider text to a presentation caller.
+        """
+        if not isinstance(archive_key, str) or not archive_key:
+            return {}
+
+        def read(cur):
+            self._execute(
+                cur,
+                "SELECT payload FROM apex_events WHERE event_key=%s AND kind=%s",
+                (archive_key, "ai_archive"),
+            )
+            row = cur.fetchone()
+            if not row:
+                return {}
+            try:
+                attempts = json.loads(row[0]).get("record", {}).get("attempts", [])
+                failed = [a for a in attempts if a.get("valid") is False]
+                if not failed:
+                    return {}
+                attempt = failed[-1]
+                code = attempt.get("error_code")
+                raw = attempt.get("raw_response")
+                if not code and isinstance(raw, str):
+                    error = json.loads(raw).get("error", {})
+                    code = error.get("code") if isinstance(error, dict) else None
+                result = {}
+                if (
+                    type(attempt.get("http_status")) is int
+                    and 100 <= attempt["http_status"] <= 599
+                ):
+                    result["http_status"] = attempt["http_status"]
+                if isinstance(code, str) and code in {
+                    "billing_not_active",
+                    "insufficient_quota",
+                    "rate_limit_exceeded",
+                    "invalid_api_key",
+                    "model_not_found",
+                }:
+                    result["error_code"] = code
+                return result
+            except (ValueError, TypeError, AttributeError):
+                return {}
+
+        return await asyncio.to_thread(self._run, read)
+
     async def close(self):
         def release(cur):
             self._execute(

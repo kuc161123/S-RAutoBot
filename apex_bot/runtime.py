@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import logging
 import math
+import re
 import time
 from dataclasses import replace
 from copy import deepcopy
@@ -20,6 +21,7 @@ from .engine import analyze
 from .evidence import review_context, context_fingerprint, candidate_fingerprint
 from .execution import ExecutionManager, number, client_id
 from .models import Opportunity
+from .notifications import opportunity_alert, review_alert, sanitize_text, shadow_alert
 from .references import ReferenceReader, load_context
 from .risk import PROFILES, assess
 from .service import Service
@@ -32,10 +34,112 @@ from .universe import entry_symbols, refresh_universe
 LOG = logging.getLogger(__name__)
 
 
+def _issue_time(value, now):
+    """Legacy missing, malformed and future timestamps are not evidence of time."""
+    try:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if math.isfinite(value) and 0 < value <= now:
+                return value
+    except OverflowError:
+        pass
+    return None
+
+
+def _health_history(health, name, error, now):
+    """Add observational metadata; only the existing *_error fields are active.
+
+    issues retains each component's latest failure and first subsequent success;
+    last_issue identifies the latest global failure. Neither is a policy input.
+    Legacy health.error and the durable health_issue events remain untouched.
+    """
+    if not isinstance(health.get("issues"), dict):
+        health["issues"] = {}
+    issues = health["issues"]
+
+    def legacy_issue(component, error_type, *, active):
+        # Never copy exception messages/URLs into metadata from a legacy record.
+        safe_type = (
+            error_type
+            if isinstance(error_type, str)
+            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", error_type)
+            else "UnknownError"
+        )
+        return {
+            "component": component,
+            "error_type": safe_type,
+            "occurred_at": (
+                _issue_time(health.get(component + "_attempt_at"), now)
+                if active
+                else None
+            ),
+            "recovered_at": None,
+            "legacy": True,
+        }
+
+    latest = health.get("last_issue")
+    if not isinstance(latest, dict) or not isinstance(latest.get("component"), str):
+        old = health.get("error")
+        match = (
+            re.fullmatch(r"([A-Za-z][A-Za-z0-9_]*): ([A-Za-z][A-Za-z0-9_]*)", old)
+            if isinstance(old, str)
+            else None
+        )
+        if match:
+            component, error_type = match.groups()
+            issue = issues.get(component)
+            if not isinstance(issue, dict) or issue.get("component") != component:
+                issue = legacy_issue(
+                    component,
+                    error_type,
+                    active=health.get(component + "_error") == error_type,
+                )
+                issues[component] = issue
+            health["last_issue"] = dict(issue)
+
+    active = health.get(name + "_error")
+    issue = issues.get(name)
+    if active and (
+        not isinstance(issue, dict)
+        or issue.get("error_type") != active
+        or issue.get("recovered_at") is not None
+    ):
+        issue = issues[name] = legacy_issue(name, active, active=True)
+        if not isinstance(health.get("last_issue"), dict):
+            health["last_issue"] = dict(issue)
+    if error:
+        issue = {
+            "component": name,
+            "error_type": type(error).__name__,
+            "occurred_at": now,
+            "recovered_at": None,
+        }
+        issues[name] = issue
+        health["last_issue"] = dict(issue)
+    elif (
+        error is None and isinstance(issue, dict) and issue.get("recovered_at") is None
+    ):
+        # Record recovery only on an actual success for this component. A clear
+        # legacy *_error alone cannot date recovery, and another loop can't heal it.
+        issue["recovered_at"] = now
+        latest = health.get("last_issue")
+        if isinstance(latest, dict) and latest.get("component") == name:
+            health["last_issue"] = dict(issue)
+
+
 class Runtime:
     def __init__(self, config, store, session):
         self.config, self.store, self.session = config, store, session
         self.service = Service(config, store)
+        self._notification_secrets = tuple(
+            getattr(config, field, "")
+            for field in (
+                "telegram_token",
+                "bybit_key",
+                "bybit_secret",
+                "openai_key",
+                "drive_credentials_json",
+            )
+        )
         self.client = BybitClient(
             session,
             base_url=config.bybit_url,
@@ -122,13 +226,15 @@ class Runtime:
         self.started = True
 
     async def _health(self, name, error=None):
+        now = time.time()
         if error is None:
-            self.last_loop[name] = time.time()
+            self.last_loop[name] = now
 
         def write(tx):
-            tx.state["health"][name + "_attempt_at"] = time.time()
+            _health_history(tx.state["health"], name, error, now)
+            tx.state["health"][name + "_attempt_at"] = now
             if error is None:
-                tx.state["health"][name + "_at"] = time.time()
+                tx.state["health"][name + "_at"] = now
                 tx.state["health"].pop(name + "_error", None)
             tx.state["health"]["redis"] = self.cache.status
             if error:
@@ -136,7 +242,7 @@ class Runtime:
                 text = f"{name}: {type(error).__name__}"
                 tx.state["health"]["error"] = text
                 tx.state["health"][name + "_error"] = type(error).__name__
-                key = "issue:" + name + ":" + str(int(time.time() // 900))
+                key = "issue:" + name + ":" + str(int(now // 900))
                 tx.event(
                     key,
                     "health_issue",
@@ -448,7 +554,11 @@ class Runtime:
                     "context",
                     context,
                     "🌍 Market context\n"
-                    + str(context.get("reason", "Context updated"))[:1500],
+                    + sanitize_text(
+                        self.service._safe(
+                            str(context.get("reason", "Context updated"))
+                        )
+                    )[:1500],
                 )
 
         await self.store.update(save)
@@ -522,6 +632,11 @@ class Runtime:
                             "last_risk_review": (
                                 previous.get("last_risk_review") if previous else None
                             ),
+                            "per_arm_decisions": (
+                                previous.get("per_arm_decisions", {})
+                                if previous
+                                else {}
+                            ),
                         }
                         tx.state["opportunities"][op.id] = record
                         if not previous or previous["opportunity"]["state"] != op.state:
@@ -529,10 +644,10 @@ class Runtime:
                                 "WAIT",
                                 "READY",
                             }
-                            message = (
-                                f"🔎 {symbol} {'LONG' if op.side=='Buy' else 'SHORT'} · Elliott {op.setup}\n"
-                                f"{op.state}: {op.reason}\nEntry {op.entry:g} · invalidation {op.invalidation:g}\n"
-                                f"Hard stop {op.stop:g} · T1 {op.target1:g} · T2 {op.target2:g}"
+                            message = self.service._safe(
+                                opportunity_alert(
+                                    op, secrets=self._notification_secrets
+                                )
                             )
                             tx.event(
                                 "op:" + op.id + ":" + op.state,
@@ -655,7 +770,9 @@ class Runtime:
                         + str(review.get("evidence_hash", review.get("verdict"))),
                         "candidate_review",
                         review,
-                        f"🧠 {op.symbol} Elliott {op.setup}\nAI: {review['verdict']}\n{review.get('reason','')}",
+                        self.service._safe(
+                            review_alert(op, review, secrets=self._notification_secrets)
+                        ),
                     )
 
                 await self.store.update(save)
@@ -918,12 +1035,18 @@ class Runtime:
                                 trade["id"] + ":pending",
                                 "shadow_order",
                                 trade,
-                                f"👻 {arm.replace('_',' ')} · {op.symbol} {op.side}\n"
-                                "Simulated limit waiting for a subsequent candle. No exchange order.",
+                                self.service._safe(
+                                    shadow_alert(
+                                        trade, secrets=self._notification_secrets
+                                    )
+                                ),
                             )
                         return True
 
                     await self.store.update(create)
+            # Additive observations keep each arm's result even when the legacy
+            # shared decision below is overwritten by another arm/execution path.
+            arm_decisions = {arm: (decision, risk_review)}
             if self.config.mode != "shadow" and review is not None:
                 state = await self.store.read()
                 account = state.get("account", {})
@@ -1023,10 +1146,35 @@ class Runtime:
                     )
                 else:
                     decision = "WAIT: " + "; ".join(reasons)
+                arm_decisions[self.config.mode] = (
+                    decision,
+                    (
+                        risk_review
+                        if risk_review and risk_review["arm"] == self.config.mode
+                        else None
+                    ),
+                )
 
             def record(tx):
                 rec = tx.state["opportunities"].get(op.id)
                 if rec:
+                    if not isinstance(rec.get("per_arm_decisions"), dict):
+                        rec["per_arm_decisions"] = {}
+                    for label, (arm_decision, arm_review) in arm_decisions.items():
+                        previous = rec["per_arm_decisions"].get(label)
+                        rec["per_arm_decisions"][label] = {
+                            "decision": arm_decision,
+                            "updated_at": now,
+                            "last_risk_review": (
+                                arm_review
+                                if arm_review is not None
+                                else (
+                                    previous.get("last_risk_review")
+                                    if isinstance(previous, dict)
+                                    else None
+                                )
+                            ),
+                        }
                     old = rec.get("decision")
                     rec["decision"] = decision
                     if risk_review is not None:
@@ -1042,7 +1190,9 @@ class Runtime:
                             key,
                             "decision",
                             {"id": op.id, "reason": decision},
-                            f"🎯 {op.symbol}\n{decision}",
+                            sanitize_text(
+                                self.service._safe(f"🎯 {op.symbol}\n{decision}")
+                            ),
                         )
 
             await self.store.update(record)
@@ -1133,8 +1283,11 @@ class Runtime:
                             key + ":" + updated["status"],
                             "shadow_state",
                             updated,
-                            f"👻 {symbol} · {t['arm']}\n{updated['status']} · {updated.get('exit_reason') or 'limit filled'}\n"
-                            f"Estimated net before funding ${updated.get('net_pnl_before_funding',0):.2f}",
+                            self.service._safe(
+                                shadow_alert(
+                                    updated, secrets=self._notification_secrets
+                                )
+                            ),
                         )
                     if updated.get("data_error") or updated.get("data_gap"):
                         tx.event(
@@ -1215,7 +1368,9 @@ class Runtime:
             return
         for item in await self.store.pending_notifications():
             try:
-                message = await self.telegram.send(item["text"])
+                message = await self.telegram.send(
+                    sanitize_text(self.service._safe(item["text"]))
+                )
                 await self.store.notification_result(item["key"], message_id=message)
             except Exception as exc:
                 retry = getattr(exc, "retry_after", None) or min(

@@ -643,8 +643,10 @@ def test_dynamic_startup_defers_book_selection_and_reports_awaiting_state(
                 assert state["universe_mode"] == "dynamic"
                 assert worker._entry_symbols(state, h.clock.now) == []
                 text = await worker.service.snapshot("dashboard")
-                assert "0/50 active" in text and "Awaiting selection" in text
-                assert "Selection as of: unavailable" in text
+                assert "Universe: 0/50 eligible symbols" in text
+                detail = await worker.service.snapshot("status")
+                assert "0/50 active" in detail and "Awaiting selection" in detail
+                assert "Selection as of: unavailable" in detail
             finally:
                 await worker.cache.close()
 

@@ -198,12 +198,17 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         ):
             with patch("apex_bot.service.time.time", return_value=self.now):
                 text = await self.service.snapshot("universe")
-                for view in ("dashboard", "status", "start"):
-                    dashboard = await self.service.snapshot(view)
-                    self.assertIn("Universe: 50/50 active · dynamic", dashboard)
-                    self.assertIn("1h 0m ago · fresh", dashboard)
-                    self.assertIn("Draining: 2", dashboard)
-                    self.assertIn("Eligible for entry: 50/50", dashboard)
+                for view in ("status", "universe"):
+                    detail = await self.service.snapshot(view)
+                    self.assertIn("Universe: 50/50 active · dynamic", detail)
+                    self.assertIn("1h 0m ago · fresh", detail)
+                    self.assertIn("Draining: 2", detail)
+                    self.assertIn("Eligible for entry: 50/50", detail)
+                for view in ("dashboard", "start"):
+                    home = await self.service.snapshot(view)
+                    self.assertIn("Universe: 50/50 eligible", home)
+                    self.assertNotIn("Policy (persisted):", home)
+                    self.assertNotIn("Stored liquidity ranges", home)
         self.assertEqual(await self.store.read(), before)
         self.assertEqual(await self.store.pending_notifications(), notifications)
         listing = text.split("Active symbols (stored rank when available):\n")[1].split(
@@ -250,7 +255,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         for universe in (None, {}, "invalid", {"active_symbols": None}):
             await self.write(universe=universe)
-            for view in ("universe", "dashboard", "status"):
+            for view in ("universe", "status"):
                 with self.subTest(universe=universe, view=view):
                     text = await self.service.snapshot(view)
                     self.assertIn("Universe: 0/40 active · dynamic", text)
@@ -258,6 +263,11 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("freshness unknown", text)
                     self.assertNotIn("MANUALUSDT", text)
                     self.assertNotIn("configured · manual", text)
+            for view in ("dashboard", "start"):
+                home = await self.service.snapshot(view)
+                self.assertIn("Universe: 0/40 eligible", home)
+                self.assertNotIn("MANUALUSDT", home)
+                self.assertNotIn("configured · manual", home)
 
     async def test_universe_static_and_legacy_config_are_explicitly_manual(self):
         await self.write(universe={"active_symbols": ["DYNAMICUSDT"], "target": 50})
@@ -281,8 +291,13 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Policy:", text)
             self.assertIn(
                 "Universe: 2 configured · manual (static)",
-                await self.service.snapshot("dashboard"),
+                await self.service.snapshot("status"),
             )
+            for view in ("dashboard", "start"):
+                home = await self.service.snapshot(view)
+                self.assertIn("Universe: 2/2 eligible", home)
+                self.assertNotIn("DYNAMICUSDT", home)
+                self.assertNotIn("Awaiting selection", home)
 
     async def test_universe_draining_is_derived_from_current_ledgers(self):
         self.service.config = replace(self.config, universe_mode="dynamic")
@@ -347,7 +362,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             records[name] = {
                 "opportunity": op.to_dict(),
                 "updated_at": self.now,
-                "decision": "Historical approval",
+                "decision": f"Stored decision for {name}",
             }
         universe = {
             "mode": "dynamic",
@@ -369,26 +384,109 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.write(universe=universe, opportunities=records)
         before = await self.store.read()
         with patch("apex_bot.service.time.time", return_value=self.now):
-            for view in ("dashboard", "status", "start"):
+            for view in ("dashboard", "start"):
                 text = await self.service.snapshot(view)
-                self.assertIn("Candidates: 4 · Ready: 1", text)
-                self.assertIn("Eligible for entry: 1/2", text)
+                self.assertIn("Candidates now: 1", text)
+                self.assertIn("Ready for checks: 1", text)
+                self.assertIn("Universe: 1/50 eligible", text)
+            status = await self.service.snapshot("status")
+            self.assertIn("Current candidates: 1", status)
+            self.assertIn("Ready for risk checks: 1", status)
+            self.assertIn("Historical / inactive records: 3", status)
+            self.assertIn("Eligible for entry: 1/2", status)
             for view in ("opportunities", "why", "waves"):
                 text = await self.service.snapshot(view)
-                self.assertEqual(text.count("WAIT (stored READY)"), 3)
-                self.assertEqual(text.count("outside the current eligible universe"), 2)
-                self.assertIn("WAIT: candidate expired", text)
-                for symbol in ("BTCUSDT", "ETHUSDT", "SOLUSDT"):
-                    self.assertIn(symbol, text)
+                self.assertIn("Current: 1 · Stored history: 4", text)
+                self.assertIn("Stored decision for current", text)
+                for name in ("blocked", "retired", "expired"):
+                    self.assertNotIn(f"Stored decision for {name}", text)
+                for symbol in ("ETHUSDT", "SOLUSDT"):
+                    self.assertNotIn(symbol, text)
+            # Symbol drill-downs retain every excluded record and identify it as
+            # inactive, without changing the saved READY state or decision.
+            for symbol, names in (
+                ("BTCUSDT", ("current", "expired")),
+                ("ETHUSDT", ("blocked",)),
+                ("SOLUSDT", ("retired",)),
+            ):
+                for view in ("why", "waves"):
+                    text = await self.service.snapshot(view, symbol)
+                    self.assertEqual(text.count("Historical / inactive ·"), 1)
+                    for name in names:
+                        self.assertIn(f"Stored decision for {name}", text)
         self.assertEqual(await self.store.read(), before)
         universe["as_of"] = self.now - 86400
         await self.write(universe=universe)
-        self.assertIn("Ready: 0", await self.service.snapshot("dashboard"))
+        self.assertIn("Ready for checks: 0", await self.service.snapshot("dashboard"))
         self.assertIn(
             "Eligible for entry: 0/2", await self.service.snapshot("universe")
         )
         text = await self.service.snapshot("opportunities")
-        self.assertEqual(text.count("WAIT (stored READY)"), 4)
+        self.assertIn("Current: 0 · Stored history: 4", text)
+        self.assertNotIn("Stored decision for", text)
+        self.assertIn(
+            "Historical / inactive records: 4", await self.service.snapshot("status")
+        )
+        for symbol, count in (("BTCUSDT", 2), ("ETHUSDT", 1), ("SOLUSDT", 1)):
+            text = await self.service.snapshot("why", symbol)
+            self.assertEqual(text.count("Historical / inactive ·"), count)
+        self.assertEqual(
+            (await self.store.read())["opportunities"], before["opportunities"]
+        )
+
+    async def test_compact_home_never_counts_496_stale_ready_records_as_current(self):
+        from .test_risk import opportunity
+
+        self.service.config = replace(
+            self.config, universe_mode="static", symbols=("BTCUSDT",)
+        )
+        records = {}
+        for index in range(496):
+            op = replace(
+                opportunity(),
+                id=f"historical-{index}",
+                symbol="BTCUSDT",
+                state="READY",
+                expires_at=self.now + 600,
+            )
+            records[op.id] = {
+                "opportunity": op.to_dict(),
+                "updated_at": self.now - 600,
+                "decision": "Previous risk checks passed",
+            }
+        await self.write(opportunities=records)
+        before = await self.store.read()
+        notifications = await self.store.pending_notifications()
+        self.assertEqual(before["orders"], {})
+        self.assertEqual(before["trades"], {})
+        with patch.object(
+            self.store, "update", side_effect=AssertionError("read-only")
+        ):
+            with patch("apex_bot.service.time.time", return_value=self.now):
+                for view in ("dashboard", "start"):
+                    home = await self.service.snapshot(view)
+                    page = await self.service.render_page(view)
+                    self.assertEqual(page["page"], 0)
+                    self.assertEqual(page["pages"], 1)
+                    self.assertEqual(page["text"], home.strip())
+                    self.assertIn("Universe: 1/1 eligible", home)
+                    self.assertIn("Candidates now: 0", home)
+                    self.assertIn("Ready for checks: 0", home)
+                    self.assertNotIn("496", home)
+                    self.assertNotIn("Matched opportunities", home)
+                    self.assertNotIn("Strategy MTM risk gates", home)
+                    self.assertLessEqual(len(home.encode("utf-16-le")) // 2, 2000)
+                status = await self.service.snapshot("status")
+                self.assertIn("Current candidates: 0", status)
+                self.assertIn("Historical / inactive records: 496", status)
+                radar = await self.service.snapshot("opportunities")
+                self.assertIn("Current: 0 · Stored history: 496", radar)
+                self.assertNotIn("Previous risk checks passed", radar)
+                history = await self.service.snapshot("why", "BTCUSDT")
+                self.assertEqual(history.count("Historical / inactive ·"), 496)
+                self.assertEqual(history.count("Previous risk checks passed"), 496)
+        self.assertEqual(await self.store.read(), before)
+        self.assertEqual(await self.store.pending_notifications(), notifications)
 
     async def test_universe_stale_boundary_retains_members_and_waits_for_entries(self):
         self.service.config = replace(self.config, universe_mode="dynamic")
@@ -401,17 +499,33 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                     "status": "ready",
                     "draining_symbols": [],
                     "snapshot_time": self.now,
+                    "members": {
+                        symbol: {"status": "eligible"}
+                        for symbol in ("BTCUSDT", "ETHUSDT")
+                    },
+                    "policy": {
+                        "target": 50,
+                        "min_turnover_usdt": 20_000_000,
+                        "max_spread_bps": 10,
+                        "min_depth_usdt": 25_000,
+                    },
                 }
             )
             before = await self.store.read()
             with patch("apex_bot.service.time.time", return_value=self.now):
-                for view in ("universe", "dashboard", "status"):
+                for view in ("universe", "status"):
                     with self.subTest(age=age, view=view):
                         text = await self.service.snapshot(view)
                         self.assertIn("Universe: 2/50 active", text)
                         self.assertEqual("STALE · entry wait" in text, stale)
                         self.assertEqual("ago · fresh" in text, not stale)
                         self.assertIn("Draining: 0", text)
+                        self.assertIn(
+                            f"Eligible for entry: {0 if stale else 2}/2", text
+                        )
+                for view in ("dashboard", "start"):
+                    home = await self.service.snapshot(view)
+                    self.assertIn(f"Universe: {0 if stale else 2}/50 eligible", home)
                 self.assertIn(
                     "BTCUSDT · ETHUSDT", await self.service.snapshot("universe")
                 )
@@ -452,16 +566,28 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.write(
                 universe=universe,
                 universe_policy=original_policy,
-                opportunities={op.id: {"opportunity": op.to_dict()}},
+                opportunities={
+                    op.id: {"opportunity": op.to_dict(), "updated_at": self.now}
+                },
             )
             before = await self.store.read()
             self.assertIn(
                 "Eligible for entry: 0/1", await self.service.snapshot("universe")
             )
-            self.assertIn("Ready: 0", await self.service.snapshot("dashboard"))
+            self.assertIn(
+                "Ready for checks: 0", await self.service.snapshot("dashboard")
+            )
             text = await self.service.snapshot("opportunities")
-            self.assertIn("WAIT (stored READY)", text)
-            self.assertIn("outside the current eligible universe", text)
+            self.assertIn("Current: 0 · Stored history: 1", text)
+            self.assertNotIn("BTCUSDT ·", text)
+            history = await self.service.snapshot("why", "BTCUSDT")
+            self.assertIn("Historical / inactive ·", history)
+            self.assertIn("BTCUSDT", history)
+            for view in ("universe", "status"):
+                self.assertIn(
+                    "Settings changed · waiting for liquidity recheck",
+                    await self.service.snapshot(view),
+                )
             self.assertEqual(await self.store.read(), before)
             matching = {**universe, "policy": {**original_policy, key: value}}
             if key == "target":
@@ -470,9 +596,16 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(
                 "Eligible for entry: 1/1", await self.service.snapshot("universe")
             )
-            self.assertIn("Ready: 1", await self.service.snapshot("dashboard"))
+            self.assertIn(
+                "Ready for checks: 1", await self.service.snapshot("dashboard")
+            )
+            self.assertIn(
+                "Current: 1 · Stored history: 1",
+                await self.service.snapshot("opportunities"),
+            )
             self.assertNotIn(
-                "WAIT (stored READY)", await self.service.snapshot("opportunities")
+                "Historical / inactive ·",
+                await self.service.snapshot("why", "BTCUSDT"),
             )
 
     async def test_universe_invalid_time_partial_metrics_and_unknown_policy(self):
@@ -525,7 +658,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 self.store, "update", side_effect=AssertionError("read-only")
             ):
                 with patch("apex_bot.service.time.time", return_value=self.now):
-                    for view in ("universe", "dashboard", "status", "start"):
+                    for view in ("universe", "status"):
                         text = await self.service.snapshot(view)
                         self.assertIn(
                             "Universe refresh error: TimeoutError [redacted]", text
@@ -536,6 +669,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual("STALE · entry wait" in text, age >= 86400)
                         self.assertIn("Draining: 0", text)
                         self.assertNotIn("Awaiting selection", text)
+                    for view in ("dashboard", "start"):
+                        home = await self.service.snapshot(view)
+                        self.assertIn("Universe: 0/50 eligible", home)
+                        self.assertNotIn(self.config.telegram_token, home)
             self.assertEqual(await self.store.read(), before)
         await self.write(health={"scan_at": self.now, "universe_attempt_at": self.now})
         self.assertNotIn(
@@ -554,7 +691,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                     "universe_error": "ValueError",
                 },
             )
-            for view in ("universe", "dashboard", "status"):
+            for view in ("universe", "status"):
                 text = await self.service.snapshot(view)
                 self.assertIn("Universe: 0/50 active", text)
                 self.assertIn("Awaiting selection · entry wait", text)
@@ -564,6 +701,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("ago · fresh", text)
                 if view == "universe" and universe is not None:
                     self.assertIn("Market snapshot: unavailable", text)
+            for view in ("dashboard", "start"):
+                home = await self.service.snapshot(view)
+                self.assertIn("Universe: 0/50 eligible", home)
+                self.assertNotIn("1970", home)
 
     async def test_universe_history_counts_and_blocked_reasons_are_bounded_and_redacted(
         self,
@@ -951,13 +1092,18 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.write(risk_circuits=circuits)
             with self.assertRaises(ValueError):
                 await self.service.propose_change("paused", False, ACTOR)
-            for view in ("risk", "dashboard", "telemetry"):
+            for view in ("risk", "telemetry"):
                 text = await self.service.snapshot(view)
                 self.assertIn("Strategy MTM risk gates", text)
                 self.assertIn("not full-account performance", text)
                 self.assertIn("HALTED", text)
                 self.assertIn("entire current open loss", text)
                 self.assertIn("not exact calendar-period returns", text)
+            for view in ("dashboard", "start"):
+                home = await self.service.snapshot(view)
+                self.assertIn("HALTED", home)
+                self.assertIn("Risk", home)
+                self.assertNotIn("Strategy MTM risk gates", home)
             self.assertEqual((await self.store.read())["risk_circuits"], circuits)
 
     async def test_shared_accounting_open_exchange_loss_blocks_even_with_zero_circuit(
@@ -1173,7 +1319,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.write(trades={r["id"]: r for r in records})
         before = await self.store.read()
         with patch("apex_bot.service.comparison", wraps=comparison) as shared:
-            for view in ("performance", "telemetry", "dashboard"):
+            for view in ("performance", "telemetry", "comparison"):
                 text = await self.service.snapshot(view)
                 self.assertIn("AI decision delay vs baseline: 120–120s", text)
                 self.assertIn("Same entry window: 0/1 pairs", text)
@@ -1181,9 +1327,55 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                     "entry timing 1 · sizing/levels 1 · simulation assumptions 1", text
                 )
                 self.assertIn("Funding incomplete on 1 closed pairs", text)
-                self.assertIn("Management incomplete: 1 · Data gaps/errors: 1", text)
+                if view != "comparison":
+                    self.assertIn(
+                        "Management incomplete: 1 closed · Data gaps/errors: 1", text
+                    )
+                    self.assertIn("Pending/open awaiting processing: 0", text)
+                    self.assertIn(
+                        "All-time closed outcomes · open valuation excluded.", text
+                    )
+                    self.assertIn("P&L and WR are provisional", text)
                 self.assertIn("No causal AI uplift claim", text)
+            for view in ("dashboard", "start"):
+                home = await self.service.snapshot(view)
+                self.assertNotIn("AI decision delay", home)
+                self.assertNotIn("Matched opportunities", home)
             self.assertEqual(shared.call_count, 3)
+        self.assertEqual(await self.store.read(), before)
+
+    async def test_performance_separates_incomplete_closes_from_pending_processing(
+        self,
+    ):
+        records = [
+            shadow_trade("baseline_shadow", "complete", 10),
+            shadow_trade(
+                "baseline_shadow", "incomplete", -3, management_complete=False
+            ),
+            *[
+                shadow_trade(
+                    "baseline_shadow",
+                    status.lower(),
+                    9999,
+                    status=status,
+                    management_complete=False,
+                )
+                for status in ("PENDING", "OPEN", "EXPIRED")
+            ],
+        ]
+        await self.write(trades={r["id"]: r for r in records})
+        before = await self.store.read()
+        for view in ("performance", "telemetry"):
+            text = await self.service.snapshot(view)
+            self.assertIn("All-time closed outcomes · open valuation excluded.", text)
+            self.assertIn(
+                "WR 50.0% (valid closed) · Closed 2 · Open 1 · Pending 1", text
+            )
+            self.assertIn("Expired unfilled 1 · Estimated net 7.00 USDT", text)
+            self.assertIn("Management incomplete: 1 closed · Data gaps/errors: 0", text)
+            self.assertIn("Pending/open awaiting processing: 2", text)
+            self.assertIn("P&L and WR are provisional", text)
+            self.assertNotIn("9,999", text)
         self.assertEqual(await self.store.read(), before)
 
     async def test_universe_prioritizes_blocked_active_members_and_persisted_policy(

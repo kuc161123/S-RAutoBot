@@ -30,6 +30,12 @@ from urllib.parse import urlsplit
 import uuid
 
 from .models import Candle, Opportunity
+from .notifications import (
+    RESEARCH_ERROR_CODES,
+    research_alert,
+    research_failure,
+    research_failure_details,
+)
 
 
 RESPONSES_URL = "https://api.openai.com/v1/responses"
@@ -728,6 +734,13 @@ class AIReviewer:
                 result["usage"] = _clean(raw.get("usage") or {}, self._api_key)
             if status != 200:
                 result["error"] = "HTTP_ERROR"
+                # Persist only a recognized provider code, never its message.
+                # This is diagnostic evidence; it cannot approve a response.
+                provider_error = raw.get("error") if isinstance(raw, dict) else None
+                if isinstance(provider_error, dict):
+                    code = provider_error.get("code")
+                    if isinstance(code, str) and code in RESEARCH_ERROR_CODES:
+                        result["error_code"] = code
                 return result
             value, citations, sources = _output(raw, research="tools" in body)
             # Validate the original shape before redaction: dropping an unknown
@@ -868,19 +881,12 @@ class AIReviewer:
                         status="COMPLETE",
                         reason="Primary-source advisory research",
                     )
+                else:
+                    result.update(research_failure_details(attempt))
+                    result["diagnostic"] = research_failure(attempt)
                 result["citations"] = attempt.get("citations", [])
                 result["sources"] = attempt.get("sources", [])
-                lines = ["Apex daily research (advisory only)", result["asof"]]
-                for fact in result["facts"][:8]:
-                    lines.append(
-                        f"{fact['symbol']}: {fact['fact'][:220]}\n{fact['source_url']}\n"
-                        f"Published: {fact['published'] or 'unknown'}; asof: {fact['asof']}; uncertainty: {fact['uncertainty'][:100]}"
-                    )
-                lines.append(
-                    "No news found does not establish safety. "
-                    + result["uncertainty"][:200]
-                )
-                text = "\n".join(lines)[:3800]
+                text = research_alert(result, secrets=(self._api_key,))
             else:
                 result, text = self._decision(record), None
             record["result"] = result

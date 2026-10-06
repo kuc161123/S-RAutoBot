@@ -39,6 +39,10 @@ CAP_LABELS = {
 ARMS = (("baseline_shadow", "Rules baseline"), ("ai_shadow", "AI-approved shadow"))
 
 
+class ServiceRejection(ValueError):
+    """Explicitly sanitized expected rejection, safe for the Telegram boundary."""
+
+
 def _finite(value):
     try:
         return type(value) in (int, float) and math.isfinite(value)
@@ -430,7 +434,9 @@ class Service:
                 raise ValueError(capital["error"])
             blockers = self._resume_blockers(state, now)
             if key == "paused" and value is False and blockers:
-                raise ValueError("Resume blocked: " + "; ".join(blockers))
+                raise ServiceRejection(
+                    self._safe("Resume blocked: " + "; ".join(blockers))
+                )
             new = dict(state["settings"], **{key: value})
             if key == "profile":
                 new["risk_pct"] = None
@@ -569,8 +575,139 @@ class Service:
     async def assert_leader(self):
         await self.store.assert_leader()
 
-    async def _snapshot(self, view, symbol):
+    async def render_page(self, view, symbol=None, page=0):
+        """One committed snapshot per UI response; page controls do not mutate state."""
+        from .dashboard import pages
+
+        await self.store.assert_leader()
         state, now = await self.store.read(), time.time()
+        text = self._safe(await self._snapshot(view, symbol, state, now, compact=True))
+        # Cards are deliberately shorter than Telegram's transport maximum so
+        # navigation stays reachable on a phone. Paragraphs keep a setup together.
+        limit = {
+            "opportunities": 650,
+            "positions": 800,
+            "why": 1100,
+            "waves": 1100,
+        }.get(view, 2200)
+        chunks = pages(text, limit=limit)
+        requested = page if type(page) is int else 0
+        index = min(max(0, requested), len(chunks) - 1)
+        body = chunks[index].strip()
+        if len(chunks) > 1:
+            heading = text.splitlines()[0]
+            body = (heading + " · continued\n\n" if index else "") + body
+            body += f"\n\nPage {index + 1} of {len(chunks)} · use the arrows below"
+        return {"text": body, "page": index, "pages": len(chunks)}
+
+    async def _snapshot(self, view, symbol, state=None, now=None, compact=False):
+        from .dashboard import Dashboard, GUIDE
+
+        if state is None:
+            state = await self.store.read()
+        if now is None:
+            now = time.time()
+        if view in {"research", "mlpatterns", "system", "telemetry", "debug"}:
+            # Presentation-only enrichment for archives made before safe HTTP
+            # categories were included in the compact research result.
+            import copy
+            from .notifications import RESEARCH_ERROR_CODES, research_failure_details
+
+            data = state.get("research", {})
+            if data.get("status") == "UNAVAILABLE":
+                matched = [
+                    r
+                    for r in state.get("reviews", {}).values()
+                    if r.get("kind") == "research"
+                    and data.get("evidence_hash")
+                    and (r.get("result") or {}).get("evidence_hash")
+                    == data["evidence_hash"]
+                ]
+                if matched:
+                    record = max(
+                        matched,
+                        key=lambda r: (r.get("result") or {}).get("created_at", 0),
+                    )
+                    attempts = [
+                        a
+                        for a in record.get("attempts", [])
+                        if a.get("status") == "completed" and a.get("valid") is False
+                    ]
+                    if attempts:
+                        state = copy.deepcopy(state)
+                        details = research_failure_details(attempts[-1])
+                        lookup = getattr(self.store, "ai_failure_diagnostic", None)
+                        if (
+                            lookup
+                            and record.get("archive_key")
+                            and details.get("error_code") not in RESEARCH_ERROR_CODES
+                        ):
+                            details.update(await lookup(record["archive_key"]))
+                        state["research"].update(details)
+        dashboard = Dashboard(self, state, now)
+        if view in {"dashboard", "start"}:
+            return dashboard.home()
+        if view == "status":
+            return dashboard.status()
+        if view == "settings":
+            from .dashboard import PROFILE_NAMES
+
+            settings = state["settings"]
+            return "\n".join(
+                [
+                    "🎛 APEX · CONTROLS",
+                    f"Mode: {self.config.mode.upper()}",
+                    "Entry control: "
+                    + (
+                        "Paused"
+                        if settings["paused"]
+                        else "Monitoring; per-setup checks apply"
+                    ),
+                    f"Profile: {PROFILE_NAMES.get(settings['profile'], settings['profile'])}",
+                    f"Base risk: {percentage(settings['profile'], settings['risk_pct']):g}%",
+                    "",
+                    "Pause / Resume opens a preview before any change.",
+                    "Pause stops new entry decisions. Existing protection and previously pending entries continue.",
+                    "Risk and profile changes affect future entries; stops are never widened.",
+                    "",
+                    "Use Risk for current caps or Profiles to compare a proposed change.",
+                    "Live execution cannot be enabled from Telegram.",
+                ]
+            )
+        if view == "guide":
+            return GUIDE
+        if view == "help":
+            from .telegram import HELP
+
+            return HELP
+        if view == "comparison":
+            return "📐 PERFORMANCE COMPARISON\n" + "\n".join(
+                self._paired_comparison(list(state["trades"].values()))
+            )
+        if view in {"opportunities", "why", "waves", "radar"}:
+            return dashboard.opportunities(view, symbol)
+        if view in {"positions", "trades"}:
+            return dashboard.positions()
+        if view in {"research", "mlpatterns"}:
+            return dashboard.research()
+        if view in {"system", "telemetry", "debug"}:
+            text = dashboard.system(await self.store.outbox_health())
+            if view == "telemetry":
+                records, current = dashboard.candidates()
+                from collections import Counter
+
+                counts = Counter(
+                    r.get("opportunity", {}).get("state", "unknown") for r in records
+                )
+                text += "\n\nCANDIDATE RECORDS (all history)\n" + " · ".join(
+                    f"{k}: {v}" for k, v in sorted(counts.items())
+                )
+                text += f"\nCurrent eligible candidates: {len(current)}/{len(records)} stored"
+                text += "\n\n" + "\n".join(self._circuit_lines(state, now))
+                text += "\n\n" + self._performance(
+                    state, include_comparison=not compact
+                )
+            return text
         if view == "observer":
             if self.observer is None:
                 return "🔬 Capacity observer is unavailable."
@@ -599,40 +736,40 @@ class Service:
         capital = self._capital(state, now)
         account = state.get("account", {})
         budget = f"{_number(risk)}% ({_cash(capital['equity'], risk)})"
-        if view in {"dashboard", "start", "status"}:
-            opps = list(state["opportunities"].values())
-            eligible = self._universe_entries(state, now)
-            ready = sum(
-                rec["opportunity"]["state"] == "READY"
-                and rec["opportunity"].get("symbol") in eligible
-                and _finite(rec["opportunity"].get("expires_at"))
-                and rec["opportunity"]["expires_at"] > now
-                for rec in opps
-            )
-            blockers = self._resume_blockers(state, now)
-            lines = [
-                "🌊 APEX · ELLIOTT WAVE",
-                f"Mode: {self.config.mode.upper()}",
-                f"New entries: {'⏸ Paused' if settings['paused'] else 'Subject to checks'}",
-                f"Profile: {settings['profile']} · base budget {budget}",
-                self._capital_text(capital),
-                *self._universe_summary(state, now),
-                "Daily structure / 4H entry",
-                f"Last scan: {self._age(health.get('scan_at'))}",
-                f"Candidates: {len(opps)} · Ready: {ready}",
-            ]
-            if self.config.mode == "shadow":
-                lines.append("👻 Hypothetical simulation; exchange execution is off.")
-            from .release import LIVE_APPROVED
-
-            if not LIVE_APPROVED:
-                lines.append("🔬 Strategy validation pending · live release blocked.")
-            if blockers:
-                lines.append("⛔ " + "; ".join(blockers))
-            lines.extend(self._circuit_lines(state, now))
-            lines += ["", self._performance(state)]
-            return "\n".join(lines)
         if view in {"risk", "profile", "settings"}:
+            if compact:
+                from .dashboard import PROFILE_NAMES
+
+                lines = [
+                    "🛡 RISK & CONTROLS",
+                    self._capital_text(capital),
+                    f"Current profile: {PROFILE_NAMES.get(settings['profile'], settings['profile'])}",
+                    f"Base risk per trade: {budget}",
+                    "Custom override: "
+                    + (
+                        "none"
+                        if settings["risk_pct"] is None
+                        else f"{settings['risk_pct']:g}%"
+                    ),
+                    "",
+                    "CURRENT CAPS",
+                    *self._cap_lines(settings["profile"], capital["equity"]),
+                    "",
+                    "PROFILES · BASE RISK",
+                ]
+                for name, policy in risk_policy.PROFILES.items():
+                    lines.append(f"{PROFILE_NAMES[name]}: {policy['risk_pct']:g}%")
+                lines += [
+                    "",
+                    "Choose a profile for its complete prospective caps and cash amounts.",
+                    "Custom percentage: /risk 0.25 means 0.25%.",
+                    "Setup/context reductions still apply; effective risk can be lower or blocked.",
+                    "Pause blocks new decisions; existing protection and pending entries continue.",
+                    "Changes require preview and confirmation. Telegram cannot enable live execution.",
+                    "",
+                    *self._circuit_lines(state, now),
+                ]
+                return "\n".join(lines)
             lines = [
                 "🎚 Risk controls",
                 self._capital_text(capital),
@@ -660,157 +797,8 @@ class Service:
                 lines.append("⛔ " + "; ".join(blockers))
             lines.extend(self._circuit_lines(state, now))
             return "\n".join(lines)
-        if view in {"opportunities", "why", "waves", "radar"}:
-            records = sorted(
-                state["opportunities"].values(),
-                key=lambda r: r.get("updated_at", 0),
-                reverse=True,
-            )
-            if symbol:
-                symbol = symbol.upper()
-                if not symbol.endswith("USDT"):
-                    symbol += "USDT"
-                records = [r for r in records if r["opportunity"]["symbol"] == symbol]
-            lines = ["🔎 Elliott opportunities"]
-            eligible = self._universe_entries(state, now)
-            for rec in records[:8]:
-                op = rec["opportunity"]
-                display_state = op["state"]
-                decision = str(rec.get("decision", op["reason"]))
-                if op["symbol"] not in eligible:
-                    decision = (
-                        "WAIT: symbol outside the current eligible universe. "
-                        + decision
-                    )
-                    if display_state == "READY":
-                        display_state = "WAIT (stored READY)"
-                elif not _finite(op.get("expires_at")) or op["expires_at"] <= now:
-                    decision = (
-                        "WAIT: candidate expired or expiry unavailable. " + decision
-                    )
-                    if display_state == "READY":
-                        display_state = "WAIT (stored READY)"
-                lines.extend(
-                    [
-                        "",
-                        f"{op['symbol']} · {op['side']} · Type {op['setup']} · {display_state}",
-                        f"Entry {op['entry']:g} · stop {op['stop']:g} · T1 {op['target1']:g} · T2 {op['target2']:g}",
-                        "Decision: " + decision[:350],
-                        f"AI: {rec.get('ai', {}).get('verdict', 'Not reviewed')} · {self._age(rec.get('updated_at'))}",
-                    ]
-                )
-                review = rec.get("last_risk_review") or {}
-                sizing = review.get("assessment") or {}
-                if all(
-                    _finite(sizing.get(key))
-                    for key in (
-                        "rr_target1",
-                        "rr_blended",
-                        "rr_required_target1",
-                        "rr_required_blended",
-                    )
-                ):
-                    lines.extend(
-                        [
-                            f"Last sizing review: {review.get('arm', 'unknown')} · {self._age(review.get('assessed_at'))}",
-                            f"📐 Net R:R · T1 {sizing['rr_target1']:.2f}R (need {sizing['rr_required_target1']:g}R)",
-                            f"50/50 targets {sizing['rr_blended']:.2f}R (need {sizing['rr_required_blended']:g}R)",
-                        ]
-                    )
-                    if (
-                        _finite(sizing.get("rr_actual_split"))
-                        and abs(sizing["rr_actual_split"] - sizing["rr_blended"]) > 1e-8
-                    ):
-                        lines.append(
-                            f"Lot-rounded target split: {sizing['rr_actual_split']:.4f}R"
-                        )
-                    if _finite(sizing.get("rr_entry_bound")):
-                        relation = (
-                            "≤"
-                            if sizing.get("rr_entry_relation") == "at_or_below"
-                            else "≥"
-                        )
-                        lines.append(
-                            f"R:R-only entry bound: {relation} {sizing['rr_entry_bound']:g}"
-                        )
-                        lines.append(
-                            "Diagnostic only; a new valid trigger and every risk check are still required."
-                        )
-                    if sizing.get("rr_zone_compatible") is False:
-                        lines.append(
-                            "⚠️ No price in this entry zone meets the nominal R:R hurdles."
-                        )
-                if view == "waves":
-                    evidence = op.get("evidence", {})
-                    lines.append(
-                        f"Trigger: {evidence.get('trigger_kind', 'unavailable')} · "
-                        f"structural validity: {evidence.get('structural_valid', 'unknown')}"
-                    )
-            if not records:
-                lines.append(
-                    "No stored candidate yet; waiting for confirmed structure."
-                )
-            if len(records) > 8:
-                lines.append(f"{len(records) - 8} more; use /why SYMBOL.")
-            return "\n".join(lines)
-        if view in {"positions", "trades"}:
-            lines = ["🏦 Exchange positions"]
-            if self.config.mode == "shadow":
-                lines.append("No private exchange data in SHADOW mode.")
-            elif capital["error"] or not isinstance(account.get("positions"), list):
-                lines.append(
-                    "⚠️ Exchange snapshot unavailable/stale; do not interpret this as flat."
-                )
-            else:
-                lines.append(self._capital_text(capital))
-                for p in account["positions"]:
-                    lines.append(
-                        f"{p['symbol']} {p.get('side')} · qty {p.get('size')}\n"
-                        f"Entry {p.get('avgPrice')} · SL {p.get('stopLoss')} · TP {p.get('takeProfit')}"
-                    )
-                if not account["positions"]:
-                    lines.append("No positions in the last reconciled snapshot.")
-            lines.append("\n👻 Simulated positions")
-            active = [
-                t
-                for t in state["trades"].values()
-                if t["status"] in {"OPEN", "PENDING"}
-            ]
-            for t in active[:12]:
-                lines.append(
-                    f"{t['symbol']} {t['side']} · {t['arm']} · {t['status']}\n"
-                    f"Entry {t.get('entry') or t['limit']:g} · SL {t['stop']:g}"
-                )
-            if not active:
-                lines.append("None.")
-            return "\n".join(lines)
         if view in {"performance", "stats", "shadowstats"}:
-            return self._performance(state)
-        if view in {"research", "mlpatterns"}:
-            research = state.get("research", {})
-            return (
-                "🧠 AI research\n"
-                + str(
-                    research.get("summary", research.get("reason", "No result yet."))
-                )[:2600]
-                + f"\nReviews stored: {len(state['reviews'])}. AI research is advisory, not a measured win probability."
-            )
-        if view in {"system", "telemetry", "debug"}:
-            outbox = await self.store.outbox_health()
-            lines = [
-                f"⚙️ System · {self.config.mode}",
-                f"Database: {'Postgres' if self.config.database_url else 'SQLite (local)'}",
-                f"Scan: {self._age(health.get('scan_at'))} · Reconcile: {self._age(health.get('reconcile_at'))}",
-                f"Telegram pending: {outbox['pending']} · oldest {int(outbox['oldest_age'])}s",
-                f"AI configured: {'yes' if self.config.openai_key and self.config.openai_model else 'no'}",
-                f"Reference documents: {len(state['references'])}",
-                f"Issue recorded: {'yes' if health.get('error') else 'no'}",
-                "UTC accounting days.",
-            ]
-            lines.extend(self._circuit_lines(state, now))
-            if view == "telemetry":
-                lines += ["", self._performance(state)]
-            return "\n".join(lines)
+            return self._performance(state, include_comparison=not compact)
         return "Unknown view. Use /help."
 
     @staticmethod
@@ -1149,11 +1137,24 @@ class Service:
             )
         return lines
 
-    def _performance(self, state):
-        lines = ["📊 Forward performance"]
+    def _performance(self, state, include_comparison=True):
+        lines = [
+            "📊 Forward performance",
+            "All-time closed outcomes · open valuation excluded.",
+        ]
         trades = list(state["trades"].values())
         for arm, label in ARMS:
             result = summary(trades, arm)
+            selected = [t for t in trades if t.get("arm") == arm]
+            incomplete_closed = sum(
+                t.get("status") == "CLOSED" and not t.get("management_complete")
+                for t in selected
+            )
+            processing = sum(
+                t.get("status") in {"OPEN", "PENDING"}
+                and not t.get("management_complete")
+                for t in selected
+            )
             wr = "—" if result["wr"] is None else f"{result['wr']:.1f}%"
             lines += [
                 "",
@@ -1163,8 +1164,13 @@ class Service:
                 f"Expired unfilled {result['expired']} · Estimated net {_cash(result['net_pnl'])}",
                 f"Funding pending on {result['funding_pending']} closed trades",
                 f"Invalid closed outcomes excluded: {result['invalid_outcomes']}",
-                f"Management incomplete: {result['management_incomplete']} · Data gaps/errors: {result['data_gaps']}",
+                f"Management incomplete: {incomplete_closed} closed · Data gaps/errors: {result['data_gaps']}",
+                f"Pending/open awaiting processing: {processing}",
             ]
+            if result["funding_pending"] or incomplete_closed:
+                lines.append(
+                    "⚠️ P&L and WR are provisional while funding or management is incomplete."
+                )
             closed = [
                 t
                 for t in trades
@@ -1174,7 +1180,10 @@ class Service:
                 and not t.get("data_error")
             ]
             lines.extend(self._breakdown(closed, "net_pnl"))
-        lines.extend(self._paired_comparison(trades))
+        if include_comparison:
+            lines.extend(self._paired_comparison(trades))
+        else:
+            lines += ["", "Compare matched opportunities: /comparison"]
         closed = [o for o in state["orders"].values() if o.get("status") == "CLOSED"]
         valid = [
             o

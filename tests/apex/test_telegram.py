@@ -16,6 +16,7 @@ import aiohttp
 
 from apex_bot.telegram import (
     COMMANDS,
+    PROFILE_LABELS,
     PROFILES,
     VIEWS,
     TelegramController,
@@ -318,7 +319,7 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
             data = [
                 b["callback_data"] for row in markup["inline_keyboard"] for b in row
             ]
-            self.assertIn(f"v:{view}:BTCUSDT", data)
+            self.assertIn(f"pg:{view}:0:BTCUSDT", data)
             await self.dispatch(cb=callback(f"v:{view}:BTCUSDT"))
             self.assertEqual(self.service.reads[-1], (view, "BTCUSDT"))
 
@@ -340,15 +341,22 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
         self.assert_no_mutation()
 
     async def test_authorization_for_every_callback_family(self):
-        data = [f"v:{view}" for view in VIEWS] + [
-            *(f"p:profile:{name}" for name in PROFILES),
-            "p:paused:0",
-            "p:paused:1",
-            "custom_risk",
-            "confirm:proposal_1",
-            "cancel:proposal_1",
-            "garbage",
-        ]
+        data = (
+            [f"v:{view}" for view in VIEWS]
+            + [f"pg:{view}:1" for view in VIEWS]
+            + [
+                *(f"p:profile:{name}" for name in PROFILES),
+                "p:paused:0",
+                "p:paused:1",
+                "custom_risk",
+                "profiles",
+                "pg:why:2:BTCUSDT",
+                "pg:waves:2:ETHUSDT",
+                "confirm:proposal_1",
+                "cancel:proposal_1",
+                "garbage",
+            ]
+        )
         for action in data:
             for chat, user in ((1, USER), (-10042, 8), (1, 8), (-10042, True)):
                 await self.dispatch(
@@ -409,15 +417,20 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.reads, [])
         self.assert_no_mutation()
 
-    async def test_risk_menu_lists_every_profile_and_authoritative_values(self):
+    async def test_risk_menu_preserves_values_and_links_to_every_friendly_profile(self):
         for command in ("/risk", "/profile"):
             await self.dispatch(text=command)
             payload = self.session.text_payloads()[-1]
             self.assertIn(self.service.summary, payload["text"])
+            self.assertIn("profiles", json.dumps(payload["reply_markup"]))
+            await self.dispatch(cb=callback("profiles", markup=payload["reply_markup"]))
+            payload = self.session.text_payloads()[-1]
             for name in PROFILES:
-                self.assertIn(name, payload["text"])
                 self.assertIn(
-                    {"text": name, "callback_data": f"p:profile:{name}"},
+                    {
+                        "text": PROFILE_LABELS[name],
+                        "callback_data": f"p:profile:{name}",
+                    },
                     [
                         b
                         for row in payload["reply_markup"]["inline_keyboard"]
@@ -614,13 +627,17 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
             await self.dispatch(text=text)
         self.assert_no_mutation()
 
-    async def test_dashboard_menu_exposes_why_and_uses_read_only_callback(self):
+    async def test_dashboard_reaches_why_through_opportunities_read_only(self):
         await self.dispatch(text="/dashboard")
         markup = self.session.text_payloads()[-1]["reply_markup"]
         data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
-        self.assertIn("v:why", data)
+        self.assertIn("pg:opportunities:0", data)
+        await self.dispatch(cb=callback("pg:opportunities:0", markup=markup))
+        markup = self.session.text_payloads()[-1]["reply_markup"]
+        data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+        self.assertIn("pg:why:0", data)
         before = len(self.session.payloads("answerCallbackQuery"))
-        await self.dispatch(cb=callback("v:why", markup=markup))
+        await self.dispatch(cb=callback("pg:why:0", markup=markup))
         self.assertEqual(self.service.reads[-1], ("why", None))
         self.assertEqual(len(self.session.payloads("answerCallbackQuery")), before + 1)
         self.assert_no_mutation()
@@ -634,7 +651,7 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
         buttons = [b for row in markup["inline_keyboard"] for b in row]
         self.assertTrue(
             any(
-                b["callback_data"] == "v:universe" and "Universe" in b["text"]
+                b["callback_data"] == "pg:universe:0" and "Universe" in b["text"]
                 for b in buttons
             )
         )
@@ -646,7 +663,8 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
         controls = [
             b["callback_data"] for row in markup["inline_keyboard"] for b in row
         ]
-        self.assertEqual(controls, ["v:universe", "v:dashboard"])
+        self.assertIn("pg:universe:0", controls)
+        self.assertIn("pg:dashboard:0", controls)
         await self.dispatch(cb=callback("v:universe", markup=markup))
         await self.dispatch(text="/universe", age=90000)
         self.assertEqual(self.service.reads[-3:], [("universe", None)] * 3)
@@ -923,19 +941,25 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
         self.controller.WRITE_INTERVAL = 0.01
         waits = []
         real_sleep = asyncio.sleep
+        clock = [1000.0]
 
         async def sleep(delay):
             waits.append(delay)
+            clock[0] += delay
             await real_sleep(0)
 
-        with patch("apex_bot.telegram.asyncio.sleep", side_effect=sleep):
+        with patch("apex_bot.telegram.asyncio.sleep", side_effect=sleep), patch(
+            "apex_bot.telegram.time.monotonic", side_effect=lambda: clock[0]
+        ):
             await asyncio.gather(
                 self.controller.send("A" * 8000), self.controller.send("B" * 5000)
             )
         payloads = self.session.payloads("sendMessage")
         self.assertEqual([p["text"][0] for p in payloads], ["A", "A", "A", "B", "B"])
         self.assertEqual(len(waits), 5)
-        self.assertTrue(all(delay > 0 for delay in waits[1:]))
+        self.assertEqual(waits[0], 0)
+        for delay in waits[1:]:
+            self.assertAlmostEqual(delay, self.controller.WRITE_INTERVAL)
 
     async def test_callback_edits_view_in_place_and_acks_before_service_work(self):
         await self.dispatch(cb=callback("v:status"))

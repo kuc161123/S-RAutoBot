@@ -358,8 +358,8 @@ def test_real_scan_blind_ai_pair_simulation_funding_dashboard_and_restart(harnes
             )
             await h.runtime.poll()
             assert (await h.store.read())["telegram_offset"] == 1
-            assert "Mode: SHADOW" in h.runtime.telegram.sent[-1]
-            assert "WR —" in h.runtime.telegram.sent[-1]
+            assert "SHADOW · simulated trades" in h.runtime.telegram.sent[-1]
+            assert "no valid closed trades" in h.runtime.telegram.sent[-1]
 
             trade = next(iter(state["trades"].values()))
             entry, t1, t2, qty, step = (
@@ -401,10 +401,15 @@ def test_real_scan_blind_ai_pair_simulation_funding_dashboard_and_restart(harnes
                     "TP2",
                 ]
             dashboard = await h.runtime.service.snapshot("dashboard")
-            assert "Ready: 1" in dashboard and dashboard.count("WR 100.0%") == 2
-            assert dashboard.count(f"Estimated net {expected_net:.2f} USDT") == 2
-            assert dashboard.count("Funding pending on 0 closed trades") == 2
-            assert "Exchange-confirmed: 0 closed" in dashboard
+            # No rescan occurred after advancing the clock: do not advertise the
+            # old READY candidate as current. Closed results still remain visible.
+            assert (
+                "Ready for checks: 0" in dashboard and dashboard.count("WR 100.0%") == 2
+            )
+            performance = await h.runtime.service.snapshot("performance")
+            assert performance.count(f"Estimated net {expected_net:.2f} USDT") == 2
+            assert performance.count("Funding pending on 0 closed trades") == 2
+            assert "Exchange-confirmed: 0 closed" in performance
             persisted = deepcopy(state["trades"])
             event_keys = [row[0] for row in await events(h.store, "shadow_state")]
             await h.restart()
@@ -420,12 +425,7 @@ def test_real_scan_blind_ai_pair_simulation_funding_dashboard_and_restart(harnes
                 len(h.session.requests) == 2
             ), "Restart must use durable AI decisions, not replay paid calls"
             assert (await h.store.read())["telegram_offset"] == 1
-            assert (
-                dashboard.split("📊 Forward performance")[1]
-                == (await h.runtime.service.snapshot("dashboard")).split(
-                    "📊 Forward performance"
-                )[1]
-            )
+            assert performance == await h.runtime.service.snapshot("performance")
 
     asyncio.run(scenario())
 
@@ -471,7 +471,7 @@ def test_testnet_startup_reconciles_then_records_one_intent_and_no_false_fill(ha
             await reviews(h.runtime)
             assert len(h.market.submissions) == 1
             assert len((await h.store.read())["orders"]) == 1
-            assert "Mode: TESTNET" in await h.runtime.service.snapshot("dashboard")
+            assert "🏦 TESTNET" in await h.runtime.service.snapshot("dashboard")
 
     asyncio.run(scenario())
 

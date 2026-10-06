@@ -105,6 +105,15 @@ No closed trades means no measured win rate, not a fabricated 0% success rate.
 
 Railway setup and safe migration
 
+Deployment update — 2026-10-06
+The earlier staged setup below is historical. The user confirmed the exchange
+account was flat, and Apex shadow mode is now deployed with Postgres, Redis and
+Telegram responding. Live execution remains disabled. The configured model is
+valid, but the latest archived OpenAI response reports billing_not_active;
+activate billing for the API project before expecting validated AI research.
+See CLOUD_AUDIT_20261005.txt and TELEGRAM_DASHBOARD_RELEASE.txt for the current
+operational observations and dashboard release checks.
+
 Inspected service: S-RAutoBot, production, zippy-generosity; Postgres and Redis
 already exist. The existing service is still on the old deployment. Three new
 variable placeholders were STAGED in the UI, not applied/deployed:

@@ -1,0 +1,64 @@
+APEX TELEGRAM CONTROL CENTRE — 2026-10-06
+
+Implementation brief
+TELEGRAM_DASHBOARD_UPGRADE_PROMPT.txt records the audit evidence, scope and the
+extensive prompt used to implement this release.
+
+User-visible changes
+- Compact home overview and eight contextual buttons; full performance and risk
+  explanations live in their respective sections. Status is a separate view.
+- One-message pages with Previous/Next and context-preserving Refresh/Home.
+  Old v: callbacks remain supported. Help describes all registered commands.
+- Current setup counts require eligible membership, unexpired entry windows and
+  a recent observation. Stored history remains accessible through /why SYMBOL.
+  Planned entries, ready triggers, pending fills and open positions are distinct.
+- Plain-language long/short setup alerts, next conditions, targets, invalidation,
+  and readable portfolio names. Per-arm decisions are preserved going forward.
+- Active errors, stale observations and historical/recovered incidents have
+  separate labels. A no-op shadow reconciliation is not a private account check.
+- /research renders validated facts and sources. Configured, unavailable and
+  stale results differ; recognized API failure categories are displayed without
+  raw responses or credentials. Older archives are read without rewriting them.
+- /performance labels all-time closed outcomes, provisional funding/management
+  results and valid-close WR. Open valuation is excluded. /comparison retains
+  cohort/latency limitations. /observer remains a separate observation population.
+- /settings groups pause/resume and profile controls. Existing confirmation,
+  authorization, percentage bounds and hard risk checks remain in force.
+- An unchanged Telegram edit is treated as success instead of sending a duplicate.
+  Redaction happens before truncation; unexpected long transport output splits
+  losslessly at paragraph/line boundaries within Telegram's UTF-16 limit.
+
+Verification approach
+Synthetic ledger fixtures exercise active/history classification, missing/stale/
+future data, per-arm decisions, current/recovered health, research outcomes,
+archive diagnostics, price/quantity display, pagination coverage, UTF-16 limits,
+redaction and read-only behavior. Existing financial/accounting and risk assertions
+remain; text expectations were moved from home to the corresponding detail views.
+Controller tests cover all emitted controls, legacy callbacks, malformed pages,
+unauthorized requests, unchanged edits, and unchanged confirmation protections.
+Local acceptance after independent review: 1,772 passed and three Postgres-specific
+tests skipped. Review regressions also cover transformed-secret redaction, payload
+validity versus loop freshness, AI review ages, provisional closed outcomes and
+portfolio labels on every position card.
+CI runs Python 3.12 with Postgres 16, these integration tests, and a Docker smoke
+check. Local Python 3.9 dependency warnings do not apply to the production image.
+
+Offline layout preview
+dashboard_preview/index.html contains synthetic snapshots from actual rendering
+code. Rebuild with:
+  PYTHONPATH=. python docs/apex/dashboard_preview/build_preview.py
+The preview was inspected with computer use at a 390px content width. It is not
+evidence of native Telegram delivery; verify the deployed bot after rollout.
+
+Operational limits
+Trading policy, risk limits, prices/levels, model validation and shadow-only mode
+are unchanged. No exchange orders are submitted by these UI checks. The worker
+continues to use one cloud lease and one production Telegram poller.
+The existing Telegram outbox is at-least-once: an uncertain transport outcome or
+crash between acknowledgement and persistence can still produce duplicates.
+AI account/billing problems require an account-side remedy; clearer diagnostics
+do not supply billing, model access or research conclusions.
+The observer, historical ledger and legacy records are not deleted or merged.
+
+Reference for the unchanged configured model
+https://developers.openai.com/api/docs/models/gpt-5.4-mini

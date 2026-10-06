@@ -45,7 +45,9 @@ def age(stamp, now):
 def price(value):
     if not finite(value):
         return "unavailable"
-    text = format(Decimal(str(value)), "f")
+    # Ten significant digits remove binary arithmetic tails while retaining
+    # tiny nonzero prices. Expand scientific notation for readable phone cards.
+    text = format(Decimal(format(value, ".10g")), "f")
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
@@ -656,6 +658,11 @@ class Dashboard:
             f"{'✅' if value == 'Available' else '⚠️'} {name}: {value}"
             for name, value in self.data_health().items()
         ]
+        context = self.state.get("context", {})
+        if self.data_health()["Market context data"] != "Available" and context.get(
+            "reason"
+        ):
+            lines.append("Context detail: " + self.words(context["reason"])[:350])
         lines += [
             "",
             f"Telegram pending: {outbox['pending']} · oldest {int(outbox['oldest_age'])}s",

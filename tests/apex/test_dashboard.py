@@ -158,6 +158,17 @@ class DashboardTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("UNVALIDATED CLAIM", text)
         self.assertNotIn("No validated facts returned", text)
 
+    async def test_context_failure_reason_is_readable_and_redacted(self):
+        await self.write(
+            context={
+                "data_complete": False,
+                "reason": "calendar_unavailable " + self.config.openai_key,
+            }
+        )
+        text = await self.service.snapshot("system")
+        self.assertIn("Context detail: calendar unavailable [redacted]", text)
+        self.assertNotIn(self.config.openai_key, text)
+
     async def test_valid_research_renders_facts_sources_and_freshness(self):
         await self.write(
             research={
@@ -342,6 +353,8 @@ class FormattingTests(unittest.TestCase):
     def test_numbers_and_ages_preserve_unknown_and_false(self):
         self.assertEqual(words(False), "False")
         self.assertEqual(price(0), "0")
+        self.assertEqual(price(0.16863199999999998), "0.168632")
+        self.assertEqual(price(4e-9), "0.000000004")
         self.assertEqual(price(float("nan")), "unavailable")
         self.assertEqual(age(1100, 1000), "unavailable")
         self.assertEqual(age(900, 1000), "1m ago")

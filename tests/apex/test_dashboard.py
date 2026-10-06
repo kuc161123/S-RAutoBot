@@ -169,6 +169,23 @@ class DashboardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Context detail: calendar unavailable [redacted]", text)
         self.assertNotIn(self.config.openai_key, text)
 
+    async def test_valid_calendar_blackout_is_a_restriction_not_missing_data(self):
+        context = (await self.store.read())["context"]
+        context.update(event_blackout=True, live_blocked=True)
+        await self.write(context=context)
+        text = await self.service.snapshot("system")
+        self.assertIn("Market context data: Available", text)
+        self.assertIn("Context restriction: event blackout", text)
+
+    async def test_waiting_eligibility_is_not_labeled_as_candle_confirmation(self):
+        await self.write(
+            opportunities={"tier": self.candidate("tier", reason="TIER_NOT_ELIGIBLE")}
+        )
+        text = await self.service.snapshot("opportunities")
+        self.assertIn("Waiting · entry conditions unmet", text)
+        self.assertIn("not eligible for this setup", text)
+        self.assertNotIn("Waiting for confirmation", text)
+
     async def test_valid_research_renders_facts_sources_and_freshness(self):
         await self.write(
             research={

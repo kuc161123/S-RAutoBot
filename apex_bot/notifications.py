@@ -102,7 +102,7 @@ def _number(value) -> str:
 def opportunity_alert(op, *, secrets=()) -> str:
     state = op.state
     status = {
-        "WAIT": "WAIT · Setup spotted; confirmation pending",
+        "WAIT": "WAIT · Candidate not ready; see the next condition",
         "READY": "READY · Candidate ready, not executed",
         "INVALID": "Setup invalidated",
         "EXPIRED": "Candidate expired",

@@ -115,7 +115,6 @@ class Dashboard:
         context = self.state.get("context", {})
         context_ok = (
             context.get("data_complete") is True
-            and context.get("live_blocked") is not True
             and context.get("policy_authority") is not False
             and self.fresh(context.get("as_of"), 21600)
             and finite(context.get("expires_at"))
@@ -321,7 +320,7 @@ class Dashboard:
             f"Last symbol checked: {self.health.get('last_symbol', 'unavailable')}",
             "",
             f"Current candidates: {len(current)}",
-            f"Ready for risk checks: {counts['READY']} · Waiting for confirmation: {counts['WAIT']}",
+            f"Ready for risk checks: {counts['READY']} · Waiting / entry conditions unmet: {counts['WAIT']}",
             f"Historical / inactive records: {len(records)-len(current)}",
             "Historical records are not current signals.",
         ]
@@ -398,7 +397,7 @@ class Dashboard:
             state = op.get("state", "Unknown")
             label = {
                 "READY": "Ready for risk checks",
-                "WAIT": "Waiting for confirmation",
+                "WAIT": "Waiting · entry conditions unmet",
                 "INVALID": "Invalidated",
                 "EXPIRED": "Expired",
             }.get(state, self.words(state))
@@ -659,6 +658,10 @@ class Dashboard:
             for name, value in self.data_health().items()
         ]
         context = self.state.get("context", {})
+        if context.get("event_blackout") is True:
+            lines.append(
+                "Context restriction: event blackout active or required while data is unavailable."
+            )
         if self.data_health()["Market context data"] != "Available" and context.get(
             "reason"
         ):
@@ -716,7 +719,8 @@ Prices drive simulated trades. No exchange orders are placed. Each portfolio
 starts with hypothetical capital; this is not your Bybit balance.
 
 🌊 A setup is not a trade
-Waiting: daily structure exists, but a closed 4H entry confirmation is still needed.
+Waiting: entry conditions are unmet. The decision explains whether this is a
+missing closed 4H confirmation, symbol eligibility, conflicting signals or data.
 Ready: the technical trigger formed; risk checks and the AI portfolio's approvals
 still apply. A planned entry becomes open only after a simulated/confirmed fill.
 Invalidated/expired: the candidate no longer qualifies. /why SYMBOL gives details.

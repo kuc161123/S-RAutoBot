@@ -24,6 +24,7 @@ import asyncio
 import logging
 import math
 import time
+from html import escape
 from datetime import datetime, timezone
 
 from .hl_client import (
@@ -44,7 +45,10 @@ DEFAULT_SETTINGS = {
     "risk_mode": "usd",  # usd | pct
     "risk_usd": 50.0,
     "risk_pct": 1.0,
-    "max_leverage": 10,  # margin only; liquidation-safety and exchange caps still apply
+    # 50 = "Auto": the liquidation-safe level, capped by the exchange maximum. Leverage
+    # only sets margin; dollars at risk come from the stop. In isolated margin a higher
+    # (still liquidation-safe) leverage also caps the gap-through-stop loss at ~1.5R.
+    "max_leverage": 50,
     "symbol_leverage": {},  # coin -> leverage
     "max_positions": 6,
     "daily_loss_usd": 200.0,  # 0 disables
@@ -55,8 +59,11 @@ DEFAULT_SETTINGS = {
     "paused": False,
     "watchlist_alerts": "auto",  # auto | on | off (auto = on only while not live)
     "shadow_alerts": "auto",  # auto | on | off
+    "notify_skips": True,  # message when a signal is not taken
     "fee_rate": 0.00045,
+    "version": 2,  # 2 = max_leverage default moved from 10x to Auto
 }
+AUTO_LEVERAGE = 50
 
 LIMITS = {
     "risk_usd": (1.0, 100000.0),
@@ -126,8 +133,13 @@ def normalize_settings(raw) -> dict:
                 value = default
             elif key == "layer" and value not in ("signal", "book", "all"):
                 value = default
-            elif key == "paused":
+            elif key in ("paused", "notify_skips"):
                 value = bool(value)
+            elif key == "version":
+                try:
+                    value = int(value)
+                except (TypeError, ValueError):
+                    value = 1
             elif key in ("watchlist_alerts", "shadow_alerts"):
                 if value is True:
                     value = "on"
@@ -144,6 +156,10 @@ def normalize_settings(raw) -> dict:
                     value = default
             settings[key] = value
     return settings
+
+
+def leverage_label(value) -> str:
+    return "Auto (safe max)" if int(value) >= AUTO_LEVERAGE else f"max {int(value)}x"
 
 
 def risk_dollars(settings: dict, equity: float) -> float:
@@ -285,17 +301,32 @@ def _utc_day(ts: float) -> str:
 class Desk:
     """Owns the live Hyperliquid book. One instance per leader process."""
 
-    def __init__(self, store, client, *, network: str = "mainnet", clock=time.time, source=None):
+    def __init__(
+        self,
+        store,
+        client,
+        *,
+        network: str = "mainnet",
+        clock=time.time,
+        source=None,
+        engine_books: bool = True,
+        announce: bool = True,
+    ):
         self.store = store
         self.client = client
         self.source = source
         self.network = network
         self.clock = clock
+        # False = desk-only deployment: the Railway engine is off, so the only
+        # signal source is the Shadow Book whatever the stored setting says.
+        self.engine_books = engine_books
+        self.announce = announce
         self.lock = asyncio.Lock()
         self.assets: dict = {}
         self.assets_at = 0.0
         self.snapshot: dict = {"status": "starting" if client else "no_keys"}
         self.announced = False
+        self._online_sent = False
         self._sl_failures: dict = {}
         self._deferred_notified: set = set()
 
@@ -304,9 +335,35 @@ class Desk:
         return self.client is not None
 
     # ------------------------------------------------------------------ helpers
+    def effective(self, raw) -> dict:
+        settings = normalize_settings(raw)
+        if not self.engine_books:
+            settings["book"] = "shadow_book"
+        return settings
+
     async def settings(self) -> dict:
         state = await self.store.read()
-        return normalize_settings(state.get("desk", {}).get("settings"))
+        return self.effective(state.get("desk", {}).get("settings"))
+
+    async def _migrate_settings(self, raw) -> bool:
+        """One-time: the 10x leverage default became Auto (liquidation-safe max)."""
+        if not isinstance(raw, dict) or not raw:
+            return False
+        try:
+            version = int(raw.get("version") or 1)
+        except (TypeError, ValueError):
+            version = 1
+        if version >= 2:
+            return False
+
+        def write(tx):
+            stored = desk_state(tx.state)["settings"]
+            if stored.get("max_leverage") in (10, 10.0):
+                stored["max_leverage"] = AUTO_LEVERAGE
+            stored["version"] = 2
+
+        await self.store.update(write)
+        return True
 
     async def _save(self, trade_id: str, changes: dict | None = None, event: tuple | None = None, new: dict | None = None):
         def write(tx):
@@ -344,8 +401,10 @@ class Desk:
             orders = await self.client.open_orders()
             mids = await self.client.mids()
             state = await self.store.read()
+            if await self._migrate_settings(state.get("desk", {}).get("settings")):
+                state = await self.store.read()
             desk = desk_state(state)
-            settings = normalize_settings(desk.get("settings"))
+            settings = self.effective(desk.get("settings"))
             if self.source is not None and settings["book"] == "shadow_book":
                 await self.source.refresh()
             self.snapshot = {
@@ -354,18 +413,21 @@ class Desk:
                 "equity": account["equity"],
                 "available": account["available"],
                 "margin_used": account["margin_used"],
+                "mode": account.get("mode"),
                 "positions": account["positions"],
                 "orders": orders,
                 "mids": mids,
             }
             if not self.announced:
                 self.announced = True
+            if self.announce and not self._online_sent:
+                self._online_sent = True
                 await self._notify(
                     f"desk:online:{int(self.clock() // 60)}",
                     "🏦 Apex Desk online · Hyperliquid LIVE\n"
                     f"Account {self.client.address[:6]}…{self.client.address[-4:]} · equity ${account['equity']:,.2f}\n"
-                    f"Signals: {BOOKS[settings['book']]} · {self.source_status(settings)}\n"
-                    f"Risk {self._risk_label(settings)} · max leverage {settings['max_leverage']}x · "
+                    f"Signals: {BOOKS[settings['book']]} · {escape(self.source_status(settings))}\n"
+                    f"Risk {self._risk_label(settings)} · leverage {leverage_label(settings['max_leverage'])} · "
                     f"{'⏸ paused' if settings['paused'] else '▶️ taking signals'}\n"
                     + (
                         f"Markets: crypto + {', '.join(d for d in getattr(self.client, 'dexs', ()) if d)} "
@@ -383,7 +445,7 @@ class Desk:
                         LOG.warning("manage %s failed: %s", trade.get("coin"), type(exc).__name__)
                         await self._notify(
                             f"desk:{trade['id']}:fault:{int(self.clock() // 1800)}",
-                            f"⚠️ {trade.get('coin')} management retrying ({exc if isinstance(exc, HLError) else type(exc).__name__}). "
+                            f"⚠️ {escape(str(trade.get('coin')))} management retrying ({escape(str(exc)) if isinstance(exc, HLError) else type(exc).__name__}). "
                             "The exchange stop-loss stays in place.",
                         )
             if not settings["paused"]:
@@ -496,7 +558,7 @@ class Desk:
                 asset = self.assets[coin]
                 plan = plan_entry(signal, settings, asset, coin, account["equity"], account["available"], mids.get(coin))
             except Skip as skip:
-                await self._skip(signal, coin, skip)
+                await self._skip(signal, coin, skip, notify=settings.get("notify_skips", True))
                 continue
             trade = await self._open(signal, plan, settings)
             if trade and trade.get("status") in ACTIVE:
@@ -504,7 +566,7 @@ class Desk:
                 busy.add(coin)
                 account["available"] -= plan["margin"]
 
-    async def _skip(self, signal, coin, skip: Skip):
+    async def _skip(self, signal, coin, skip: Skip, notify: bool = True):
         from .desk_panel import skip_text
 
         trade_id = signal["id"]
@@ -527,7 +589,11 @@ class Desk:
             "created_at": self.clock(),
             "closed_at": self.clock(),
         }
-        await self._save(trade_id, new=record, event=(f"desk:{trade_id}:skip", {"id": trade_id, "reason": skip.reason}, text))
+        await self._save(
+            trade_id,
+            new=record,
+            event=(f"desk:{trade_id}:skip", {"id": trade_id, "reason": skip.reason}, text if notify else None),
+        )
 
     async def _open(self, signal, plan, settings):
         from .desk_panel import signal_card
@@ -593,7 +659,7 @@ class Desk:
             await self._save(
                 trade_id,
                 {"status": "ERROR", "reason": str(exc), "closed_at": self.clock()},
-                (f"desk:{trade_id}:error", {"id": trade_id}, f"⚠️ {plan['coin']} order not placed: {exc}"),
+                (f"desk:{trade_id}:error", {"id": trade_id}, f"⚠️ {escape(plan['coin'])} order not placed: {escape(str(exc))}"),
             )
             return None
         status = statuses[0] if statuses else {"ok": False, "error": "No response"}
@@ -601,7 +667,7 @@ class Desk:
             await self._save(
                 trade_id,
                 {"status": "ERROR", "reason": status["error"], "closed_at": self.clock()},
-                (f"desk:{trade_id}:error", {"id": trade_id}, f"⚠️ {plan['coin']} order rejected: {status['error']}"),
+                (f"desk:{trade_id}:error", {"id": trade_id}, f"⚠️ {escape(plan['coin'])} order rejected: {escape(str(status['error']))}"),
             )
             return None
         changes = {"status": "ORDERED", "entry_oid": status["oid"], "placed_at": self.clock()}
@@ -711,7 +777,7 @@ class Desk:
         if errors:
             await self._notify(
                 f"desk:{trade['id']}:tp-error:{int(self.clock() // 900)}",
-                f"⚠️ {trade['coin']} target order not placed ({errors[0]}). The stop-loss stays active; retrying.",
+                f"⚠️ {escape(trade['coin'])} target order not placed ({escape(str(errors[0]))}). The stop-loss stays active; retrying.",
             )
 
     async def _ensure_stop(self, trade, held, orders, mid):
@@ -926,6 +992,39 @@ class Desk:
                 {"status": "CANCELLED", "reason": why, "closed_at": self.clock()},
             )
             return f"Cancelled the pending {trade['coin']} entry."
+
+    async def breakeven(self, trade_id: str) -> str:
+        """Move an open position's stop to its entry price (tighten only)."""
+        if not self.client:
+            return "Hyperliquid is not connected."
+        async with self.lock:
+            state = await self.store.read()
+            trade = desk_state(state)["trades"].get(trade_id)
+            if not trade or trade.get("status") != "OPEN":
+                return "That position is no longer open."
+            account = await self.client.account()
+            pos = account["positions"].get(trade["coin"])
+            sign = 1 if trade["is_buy"] else -1
+            held = abs(pos["size"]) if pos and pos["size"] * sign > 0 else 0.0
+            if held <= 0:
+                return "That position is no longer open."
+            entry = trade.get("avg_entry") or (pos or {}).get("entry_px") or trade["entry"]
+            if sign * (trade["stop"] - entry) >= 0:
+                return f"{trade['coin']} stop is already at or beyond entry."
+            mid = (await self.client.mids()).get(trade["coin"])
+            if mid is None or sign * (mid - entry) <= 0:
+                return (
+                    f"{trade['coin']} is not in profit, so a stop at entry would close it now. "
+                    "Use Close instead if you want out."
+                )
+            before = trade["stop"]
+            try:
+                await self._move_stop(trade, held, entry, mid, "Moved to entry from Telegram")
+            except HLError as exc:
+                return f"{trade['coin']} stop not moved ({exc}); the old stop stays active."
+            if trade["stop"] == before:
+                return f"{trade['coin']} stop could not be moved; the old stop stays active."
+            return f"{trade['coin']} stop moved to entry ({trade['stop']:g})."
 
     async def close_all(self) -> str:
         state = await self.store.read()

@@ -18,7 +18,7 @@ from .bybit import BybitClient
 from .cache import MarketCache
 from .context import ContextService
 from .desk import Desk
-from .desk_panel import DeskPanel, shadow_alerts_enabled, watchlist_alerts_enabled
+from .desk_panel import PIN_IDLE_SECONDS, DeskPanel, shadow_alerts_enabled, watchlist_alerts_enabled
 from .engine import analyze
 from .evidence import review_context, context_fingerprint, candidate_fingerprint
 from .execution import ExecutionManager, number, client_id
@@ -177,19 +177,30 @@ class Runtime:
             if sheet_id or csv_url
             else None
         )
+        hl_client = (
+            HyperliquidClient(
+                hl_address,
+                hl_key,
+                base_url=getattr(config, "hl_api_url", "https://api.hyperliquid.xyz"),
+                perp_dexs=getattr(config, "hl_perp_dexs", ("xyz",)),
+            )
+            if hl_key and hl_address
+            else None
+        )
+        # Desk-only: Telegram is the Hyperliquid desk and nothing else; the Bybit
+        # signal engine (scans, AI reviews, shadow books, alerts) does not run.
+        # Never in testnet/live engine modes, whose Bybit orders need reconciling.
+        setting = getattr(config, "desk_only", "auto")
+        self.desk_only = config.mode == "shadow" and (
+            setting == "on" or (setting == "auto" and hl_client is not None)
+        )
+        self.ready_loop = "desk" if self.desk_only else "scan"
         self.desk = Desk(
             store,
-            (
-                HyperliquidClient(
-                    hl_address,
-                    hl_key,
-                    base_url=getattr(config, "hl_api_url", "https://api.hyperliquid.xyz"),
-                    perp_dexs=getattr(config, "hl_perp_dexs", ("xyz",)),
-                )
-                if hl_key and hl_address
-                else None
-            ),
+            hl_client,
             source=source,
+            engine_books=not self.desk_only,
+            announce=not self.desk_only,
         )
         self.panel = DeskPanel(store, self.desk)
         self.telegram = (
@@ -205,7 +216,10 @@ class Runtime:
             else None
         )
         if self.telegram is not None and hasattr(self.telegram, "attach_desk"):
-            self.telegram.attach_desk(self.panel)
+            if self.desk_only:
+                self.telegram.attach_desk(self.panel, exclusive=True)
+            else:
+                self.telegram.attach_desk(self.panel)
         self.references = ReferenceReader(
             session, store, config.drive_credentials_json, config.drive_file_ids
         )
@@ -225,6 +239,9 @@ class Runtime:
         await self.store.initialize()
         if not await self.store.lease():
             raise RuntimeError("Another Apex worker holds the database lease")
+        if self.desk_only:
+            self.started = True
+            return
         await self.observer.initialize()
 
         def venue(tx):
@@ -328,6 +345,8 @@ class Runtime:
             raise RuntimeError("Cloud lease lost")
 
     async def refresh_instruments(self):
+        if self.desk_only:
+            return  # Bybit market data is only needed by the engine
         current = await self.client.instruments()
         # Retain current metadata for draining symbols as well as new candidates.
         self.instruments = current
@@ -1426,10 +1445,17 @@ class Runtime:
         if not self.telegram:
             return
         for item in await self.store.pending_notifications():
+            desk_message = item["key"].startswith("desk:")
+            if self.desk_only and not (desk_message or item["key"].startswith("issue:")):
+                # Queued by the engine before this deployment: never shown.
+                await self.store.notification_result(item["key"], message_id="suppressed")
+                continue
             try:
-                message = await self.telegram.send(
-                    sanitize_text(self.service._safe(item["text"]))
-                )
+                text = sanitize_text(self.service._safe(item["text"]))
+                if desk_message:
+                    message = await self.telegram.send(text, html=True)
+                else:
+                    message = await self.telegram.send(text)
                 await self.store.notification_result(item["key"], message_id=message)
             except Exception as exc:
                 retry = getattr(exc, "retry_after", None) or min(
@@ -1448,9 +1474,75 @@ class Runtime:
     async def observe_shadows(self):
         await self.observer.resolve(time.time())
 
+    async def refresh_dashboard(self):
+        """Desk-only: keep one live dashboard pinned at the top of the chat.
+
+        Each boot posts a fresh dashboard and pins it. Afterwards it is edited in
+        place every 30 s while it shows the home screen; if the owner opened another
+        screen on it, it returns home after PIN_IDLE_SECONDS without a tap.
+        """
+        if not self.telegram or not self.desk_only:
+            return
+        if self.desk.snapshot.get("status") != "live":
+            return
+        await self.store.assert_leader()
+        state = await self.store.read()
+        pin = dict(state.get("desk", {}).get("pin") or {})
+        now = time.time()
+        text, keyboard = await self.panel.home()
+        if pin.get("boot") == self.store.owner and pin.get("message_id"):
+            if pin.get("view") != "home" and now - float(pin.get("touched") or 0) < PIN_IDLE_SECONDS:
+                return
+            latest = (await self.store.read()).get("desk", {}).get("pin") or {}
+            if latest.get("touched") != pin.get("touched"):
+                return  # the owner tapped a button meanwhile
+            if await self.telegram.edit(pin["message_id"], text, keyboard, html=True):
+                if pin.get("view") != "home":
+                    await self._save_pin({**pin, "view": "home"})
+                return
+        message_id = int(await self.telegram.send(text, keyboard, html=True))
+        try:
+            await self.telegram.pin(message_id, previous=pin.get("message_id"))
+        except TelegramError:
+            LOG.warning("Dashboard could not be pinned")
+        await self._save_pin(
+            {"message_id": message_id, "boot": self.store.owner, "view": "home", "touched": now, "sent_at": now}
+        )
+
+    async def _save_pin(self, pin):
+        def write(tx):
+            tx.state.setdefault("desk", {})["pin"] = pin
+
+        await self.store.update(write)
+
     async def run(self):
         # All exceptions are supervised. Slow model requests never block stops,
         # Telegram polling, heartbeat or exchange reconciliation.
+        if self.desk_only:
+            loops = [
+                ("lease", self.renew, 20),
+                ("telegram", self.poll, 1),
+                ("desk", self.desk.tick, 4),
+                ("dashboard", self.refresh_dashboard, 30),
+                ("outbox", self.deliver, 2),
+            ]
+            self.worker_tasks = [
+                asyncio.create_task(self._loop(name, fn, seconds), name=name)
+                for name, fn, seconds in loops
+            ]
+            try:
+                await self.stopping.wait()
+            finally:
+                for task in self.worker_tasks:
+                    task.cancel()
+                await asyncio.gather(*self.worker_tasks, return_exceptions=True)
+                try:
+                    await self.cache.close()
+                finally:
+                    await self.store.close()
+            if self._lease_failed:
+                raise RuntimeError("Cloud lease failed; worker restart required")
+            return
         loops = [
             ("lease", self.renew, 20),
             ("context", self.refresh_context, 900),

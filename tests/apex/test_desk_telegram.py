@@ -3,7 +3,7 @@
 import asyncio
 
 from apex_bot.desk import Desk
-from apex_bot.desk_panel import DESK_COMMANDS, DeskPanel
+from apex_bot.desk_panel import DESK_COMMANDS, DeskPanel, plain
 from apex_bot.storage import Store
 from apex_bot.telegram import TelegramController
 
@@ -29,14 +29,16 @@ def test_start_dashboard_and_commands_route_to_desk(tmp_path):
         published = session.payloads("setMyCommands")[0]["commands"]
         assert {c["command"] for c in published} == set(DESK_COMMANDS)
         await ctl._handle_update({"message": message("/start")})
-        text = session.text_payloads()[-1]["text"]
+        payload = session.text_payloads()[-1]
+        assert payload["parse_mode"] == "HTML"
+        text = plain(payload["text"])
         assert text.startswith("🏦 APEX DESK") and "not connected" in text
         await ctl._handle_update({"message": message("/risk 80")})
         assert "$80.00/trade" in session.text_payloads()[-1]["text"]
         # Old engine views still work and their Home button returns to the desk.
-        await ctl._handle_update({"message": message("/status")})
+        await ctl._handle_update({"message": message("/opportunities")})
         payload = session.text_payloads()[-1]
-        assert "status" in payload["text"]
+        assert "parse_mode" not in payload and "opportunities" in payload["text"]
         homes = [b["callback_data"] for row in payload["reply_markup"]["inline_keyboard"] for b in row if "Home" in b["text"]]
         assert homes == ["d:home"]
         await store.close()

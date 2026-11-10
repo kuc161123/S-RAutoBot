@@ -42,7 +42,10 @@ The engine's levels are used unchanged: limit entry, stop, target 1, target 2.
    rounded down. Risk is fixed dollars or % of equity.
 3. **Leverage.** `min(symbol setting or max leverage, exchange max,
    liquidation-safe)`; liquidation-safe keeps the isolated liquidation distance
-   ≥ 1.5× the stop distance. Isolated margin, set before every entry.
+   ≥ 1.5× the stop distance. Isolated margin, set before every entry. Leverage
+   only sets margin: dollars at risk come from the stop. With isolated margin the
+   higher, still liquidation-safe level also bounds a gap-through-the-stop loss
+   at about 1.5R, where a low leverage would put the whole larger margin at risk.
 4. **Entry.** GTC limit at the signal entry. Cancelled at the signal's expiry,
    when the engine closes the signal, or if price crosses the stop or target 1
    first.
@@ -65,25 +68,56 @@ State lives in `apex_state` under `desk` and is written right after every
 exchange action. A trade saved as `PLACING` before a crash is resolved by its
 client order ID on restart.
 
+## Desk-only mode (default once Hyperliquid keys are set)
+
+`APEX_DESK_ONLY=auto` (default) turns the bot into the desk and nothing else as
+soon as `HL_ACCOUNT_ADDRESS`/`HL_API_PRIVATE_KEY` are present and `APEX_MODE` is
+`shadow`. `on` forces it, `off` keeps the old engine running beside the desk.
+
+In desk-only mode:
+
+* only the lease, Telegram, desk, dashboard and outbox loops run — no Bybit
+  scans, AI reviews, shadow books, universe rotation or engine alerts;
+* the only signal source is the Shadow Book (engine books are hidden);
+* engine messages still queued from before are dropped, never sent;
+* old engine commands and buttons open the desk home instead;
+* the bot renames itself **Apex Desk**, rewrites its description and replaces
+  its command menus (default, private-chat and owner-chat scopes);
+* each boot posts a fresh dashboard and pins it; it is edited in place every
+  30 s while showing home, and returns home after 5 idle minutes on another
+  screen;
+* `/readyz` follows the desk loop instead of the engine scan.
+
 ## Telegram
 
-Home: equity, free margin, today's realized P&L, open P&L, positions, pending
-entries, open risk, settings summary. Buttons: Positions, Performance, Risk,
-Leverage, Filters, Alerts, Pause/Resume, Close all, Signal engine, Help.
+Messages and screens are Telegram HTML (anything Telegram cannot parse is
+resent as plain text).
 
-Commands: `/risk 50`, `/risk 1%`, `/lev 5`, `/lev SOL 10`, `/lev SOL auto`,
-`/maxpos 6`, `/dailystop 200|off`, `/direction both|long|short`,
-`/block X`, `/unblock X`, `/pause`, `/resume`, `/close X`, `/closeall`.
+Home: status, equity, free margin, today's realized P&L, open P&L, every open
+and pending trade, open risk, rules summary, signal-source health. Buttons:
+Signals, Positions, Performance, Status, Risk, Leverage, Filters, Alerts,
+Pause/Resume, Close all, Refresh, Help.
+
+Screens: Signals (with SIGNAL/BOOK/BOTH switch), Positions (per trade:
+stop→entry when in profit, close/cancel), Performance, Status (connections,
+counts, recent order errors), Risk (presets + how many more trades fit in free
+margin), Leverage, Filters, Alerts (skipped-signal messages on/off).
+
+Commands: `/risk 50`, `/risk 1%`, `/lev auto`, `/lev 10`, `/lev SOL 5`,
+`/lev SOL auto`, `/maxpos 6`, `/dailystop 200|off`,
+`/direction both|long|short`, `/block X`, `/unblock X`, `/pause`, `/resume`,
+`/be X`, `/close X`, `/closeall`, `/status`.
 Typed changes must be fresh (≤120 s); settings buttons older than 15 minutes
 are refused; closing needs a second tap within 2 minutes by the same user.
 
-Alerts: live trade messages always. Watchlist (WAIT/READY setups, AI reviews)
-and shadow-simulation messages are `auto` (on only while Hyperliquid is not
-connected), `on` or `off`.
+Alerts: live trade messages always; skipped-signal messages on/off. With the
+engine running, watchlist and shadow-simulation messages are `auto` (on only
+while Hyperliquid is not connected), `on` or `off`.
 
 ## Defaults
 
-risk $50 per trade · max leverage 10x (liquidation-safe cap applies) · max 6 positions · daily loss stop $200 ·
+risk $50 per trade · leverage Auto (the liquidation-safe level, capped by the exchange
+maximum; settings saved with the old 10x default migrate to Auto once) · max 6 positions · daily loss stop $200 ·
 both directions · Shadow Book SIGNAL layer · fee estimate 0.045% per side.
 
 ## Railway variables

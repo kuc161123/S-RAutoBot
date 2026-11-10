@@ -40,7 +40,7 @@ async def serve(config):
         async def ready(_):
             try:
                 await store.assert_leader()
-                scan = runtime.last_loop.get("scan", 0)
+                scan = runtime.last_loop.get(getattr(runtime, "ready_loop", "scan"), 0)
                 ready = runtime.started and time.time() - scan < max(
                     180, config.scan_seconds * 3
                 )
@@ -128,6 +128,14 @@ def main():
                         "live_enabled": config.live_enabled,
                         "hyperliquid_desk_configured": bool(
                             config.hl_account_address and config.hl_private_key
+                        ),
+                        "desk_only": config.mode == "shadow"
+                        and (
+                            config.desk_only == "on"
+                            or (
+                                config.desk_only == "auto"
+                                and bool(config.hl_account_address and config.hl_private_key)
+                            )
                         ),
                     },
                     indent=2,

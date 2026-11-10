@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from apex_bot.desk import Desk, desk_state
-from apex_bot.desk_panel import DeskPanel, signal_card
+from apex_bot.desk_panel import DeskPanel, plain, signal_card
 from apex_bot.shadow_book import (
     SourceError,
     ShadowBookSource,
@@ -183,6 +183,7 @@ def test_unavailable_sheet_pauses_intake_and_is_visible(tmp_path):
         assert desk_state(await store.read())["trades"] == {}
         panel = DeskPanel(store, desk, clock=clock)
         text, _ = await panel.home()
+        text = plain(text)
         assert "Shadow Book unavailable: Google denied access" in text
         await store.close()
 
@@ -195,6 +196,7 @@ def test_panel_coin_lookup_accepts_xyz_names(tmp_path):
         await desk.tick()
         panel = DeskPanel(store, desk, clock=clock)
         text, _ = await panel.command("lev", ["gold", "3"], "telegram:1:2")
+        text = plain(text)
         assert "xyz:GOLD 3x" in text
         await store.close()
 
@@ -212,12 +214,15 @@ def test_signals_view_and_setup_checklist(tmp_path):
         store, desk, hl, clock, source = await make(tmp_path, rows)
         panel = DeskPanel(store, desk, clock=clock)
         text, keyboard = await panel.home()
+        text = plain(text)
         assert "🧩 Setup" in text and "Hyperliquid connecting" in text  # keys present, no tick yet
         await desk.tick()
         text, keyboard = await panel.home()
+        text = plain(text)
         assert "🧩 Setup" not in text  # everything connected
         assert "d:sig" in str(keyboard)
         text, _ = await panel.callback("d:sig", "telegram:1:2", {"date": int(clock.now)})
+        text = plain(text)
         assert "S-1" in text and "live limit order" in text
         assert "S-9" in text and "skipped" in text
         assert "S-3" not in text  # BOOK layer not followed

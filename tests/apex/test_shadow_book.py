@@ -63,7 +63,9 @@ def test_exit_reason_classification_and_links():
     assert not is_price_exit("Closed by desk: count invalidated") and not is_price_exit("")
     assert setup_title("") == "Elliott setup"
     assert valid_csv_url("https://docs.google.com/spreadsheets/d/e/2PACX-abc/pub?gid=1&single=true&output=csv")
+    assert valid_csv_url("https://docs.google.com/spreadsheets/d/abc/export?format=csv&gid=123")
     assert not valid_csv_url("https://evil.example/pub?output=csv")
+    assert not valid_csv_url("https://docs.google.com/forms/x?output=csv")
     with pytest.raises(ValueError):
         ShadowBookSource(None, sheet_id="1aCcEcbodqcBzf3eM8THxxTyTww3aoOCE6PXCLtirXe4")  # no Google key
 

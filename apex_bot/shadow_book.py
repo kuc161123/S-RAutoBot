@@ -65,7 +65,13 @@ def valid_csv_url(value) -> bool:
         url = urlparse(value)
     except (TypeError, ValueError):
         return False
-    return url.scheme == "https" and url.hostname == "docs.google.com" and "output=csv" in (url.query or "")
+    query = url.query or ""
+    return (
+        url.scheme == "https"
+        and url.hostname == "docs.google.com"
+        and url.path.startswith("/spreadsheets/")
+        and ("output=csv" in query or "format=csv" in query)
+    )
 
 
 def _number(value):

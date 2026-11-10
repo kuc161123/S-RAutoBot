@@ -562,7 +562,11 @@ class Runtime:
                                 "eligible": sorted(allowed),
                                 "status": selection["status"],
                             },
-                            text,
+                            (
+                                text
+                                if watchlist_alerts_enabled(tx.state, self.desk.configured)
+                                else None
+                            ),
                         )
 
                 await self.store.update(save)

@@ -621,7 +621,7 @@ class DeskPanel:
             "🔔 Alerts",
             "",
             "Always sent: live orders, fills, stop moves, closes, skipped signals and faults.",
-            f"Watchlist alerts (setups forming, AI reviews): {s['watchlist_alerts']}",
+            f"Watchlist alerts (engine setups WAIT/READY/invalidated, AI reviews, universe changes): {s['watchlist_alerts']}",
             f"Shadow simulation alerts: {s['shadow_alerts']}",
             "",
             "auto = on only while Hyperliquid is not connected, so live trading stays uncluttered.",

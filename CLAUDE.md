@@ -1,5 +1,12 @@
 # CLAUDE.md — AutoTrading Bot
 
+> **Read first (2026-11-10).** The live runtime is `apex_bot/` (Apex Elliott Wave
+> engine, `main.py` → `apex_bot`, built by `Dockerfile.apex`) plus the live
+> **Hyperliquid desk** — see `docs/apex/HYPERLIQUID_DESK.md` and
+> `docs/apex/OPERATIONS.txt`. Everything below describes the older Bybit RSI
+> divergence bot under `autobot/`, which no longer runs in production.
+
+
 Working notes for Claude Code. Written 2026-07-25 from a full read of the live code
 tree. Everything below was verified against source, not inferred from docs or commit
 messages. Line refs are `file.py:line` at commit `5cd884f`.

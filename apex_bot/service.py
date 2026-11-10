@@ -551,6 +551,7 @@ class Service:
             "bybit_secret",
             "openai_key",
             "drive_credentials_json",
+            "hl_private_key",
         ):
             value = getattr(self.config, field, "")
             if value:

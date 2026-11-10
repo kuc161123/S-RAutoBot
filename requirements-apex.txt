@@ -5,3 +5,6 @@ redis==5.0.1
 google-auth==2.50.0
 requests==2.32.5
 tzdata==2026.5
+# Hyperliquid order signing and API (live trading desk).
+hyperliquid-python-sdk==0.24.0
+eth-account==0.13.7

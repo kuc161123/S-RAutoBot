@@ -17,9 +17,13 @@ from .ai import AIReviewer
 from .bybit import BybitClient
 from .cache import MarketCache
 from .context import ContextService
+from .desk import Desk
+from .desk_panel import DeskPanel, shadow_alerts_enabled, watchlist_alerts_enabled
 from .engine import analyze
 from .evidence import review_context, context_fingerprint, candidate_fingerprint
 from .execution import ExecutionManager, number, client_id
+from .hl_client import HyperliquidClient
+from .shadow_book import ShadowBookSource
 from .models import Opportunity
 from .notifications import opportunity_alert, review_alert, sanitize_text, shadow_alert
 from .references import ReferenceReader, load_context
@@ -138,6 +142,7 @@ class Runtime:
                 "bybit_secret",
                 "openai_key",
                 "drive_credentials_json",
+                "hl_private_key",
             )
         )
         self.client = BybitClient(
@@ -158,6 +163,35 @@ class Runtime:
             max_output_tokens=config.ai_max_output_tokens,
         )
         self.execution = ExecutionManager(self.client, store, config.mode)
+        hl_key = getattr(config, "hl_private_key", "")
+        hl_address = getattr(config, "hl_account_address", "")
+        sheet_id = getattr(config, "shadow_book_sheet_id", "")
+        csv_url = getattr(config, "shadow_book_csv_url", "")
+        source = (
+            ShadowBookSource(
+                session,
+                sheet_id=sheet_id,
+                credentials_json=getattr(config, "drive_credentials_json", "") if sheet_id else "",
+                csv_url="" if sheet_id else csv_url,
+            )
+            if sheet_id or csv_url
+            else None
+        )
+        self.desk = Desk(
+            store,
+            (
+                HyperliquidClient(
+                    hl_address,
+                    hl_key,
+                    base_url=getattr(config, "hl_api_url", "https://api.hyperliquid.xyz"),
+                    perp_dexs=getattr(config, "hl_perp_dexs", ("xyz",)),
+                )
+                if hl_key and hl_address
+                else None
+            ),
+            source=source,
+        )
+        self.panel = DeskPanel(store, self.desk)
         self.telegram = (
             TelegramController(
                 session,
@@ -170,6 +204,8 @@ class Runtime:
             if config.telegram_token
             else None
         )
+        if self.telegram is not None and hasattr(self.telegram, "attach_desk"):
+            self.telegram.attach_desk(self.panel)
         self.references = ReferenceReader(
             session, store, config.drive_credentials_json, config.drive_file_ids
         )
@@ -218,8 +254,12 @@ class Runtime:
                 "boot:" + self.store.owner,
                 "startup",
                 {"mode": self.config.mode},
-                f"🌊 Apex started · {self.config.mode.upper()}\nDaily Elliott structure → closed 4H confirmation.\n"
-                "Risk controls and account reconciliation govern new entries. Use /dashboard.",
+                f"🌊 Apex started · signal engine {self.config.mode.upper()}\nDaily Elliott structure → closed 4H confirmation.\n"
+                + (
+                    "Hyperliquid desk: connecting for LIVE trading. Use /dashboard."
+                    if self.desk.configured
+                    else "Hyperliquid desk: not connected (add HL keys in Railway). Use /dashboard."
+                ),
             )
 
         await self.store.update(started)
@@ -522,7 +562,11 @@ class Runtime:
                                 "eligible": sorted(allowed),
                                 "status": selection["status"],
                             },
-                            text,
+                            (
+                                text
+                                if watchlist_alerts_enabled(tx.state, self.desk.configured)
+                                else None
+                            ),
                         )
 
                 await self.store.update(save)
@@ -640,10 +684,9 @@ class Runtime:
                         }
                         tx.state["opportunities"][op.id] = record
                         if not previous or previous["opportunity"]["state"] != op.state:
-                            notify = previous is not None or op.state in {
-                                "WAIT",
-                                "READY",
-                            }
+                            notify = (
+                                previous is not None or op.state in {"WAIT", "READY"}
+                            ) and watchlist_alerts_enabled(tx.state, self.desk.configured)
                             message = self.service._safe(
                                 opportunity_alert(
                                     op, secrets=self._notification_secrets
@@ -770,8 +813,12 @@ class Runtime:
                         + str(review.get("evidence_hash", review.get("verdict"))),
                         "candidate_review",
                         review,
-                        self.service._safe(
-                            review_alert(op, review, secrets=self._notification_secrets)
+                        (
+                            self.service._safe(
+                                review_alert(op, review, secrets=self._notification_secrets)
+                            )
+                            if watchlist_alerts_enabled(tx.state, self.desk.configured)
+                            else None
                         ),
                     )
 
@@ -1035,10 +1082,14 @@ class Runtime:
                                 trade["id"] + ":pending",
                                 "shadow_order",
                                 trade,
-                                self.service._safe(
-                                    shadow_alert(
-                                        trade, secrets=self._notification_secrets
+                                (
+                                    self.service._safe(
+                                        shadow_alert(
+                                            trade, secrets=self._notification_secrets
+                                        )
                                     )
+                                    if shadow_alerts_enabled(tx.state, self.desk.configured)
+                                    else None
                                 ),
                             )
                         return True
@@ -1283,10 +1334,14 @@ class Runtime:
                             key + ":" + updated["status"],
                             "shadow_state",
                             updated,
-                            self.service._safe(
-                                shadow_alert(
-                                    updated, secrets=self._notification_secrets
+                            (
+                                self.service._safe(
+                                    shadow_alert(
+                                        updated, secrets=self._notification_secrets
+                                    )
                                 )
+                                if shadow_alerts_enabled(tx.state, self.desk.configured)
+                                else None
                             ),
                         )
                     if updated.get("data_error") or updated.get("data_gap"):
@@ -1294,7 +1349,11 @@ class Runtime:
                             key + ":data:" + str(int(now // 900)),
                             "shadow_data_issue",
                             {"id": key},
-                            f"⚠️ Shadow replay waiting for complete {symbol} candle history; P&L is not final.",
+                            (
+                                f"⚠️ Shadow replay waiting for complete {symbol} candle history; P&L is not final."
+                                if shadow_alerts_enabled(tx.state, self.desk.configured)
+                                else None
+                            ),
                         )
 
             await self.store.update(resolve)
@@ -1404,6 +1463,7 @@ class Runtime:
             ("funding", self.funding, 900),
             ("reconcile", self.reconcile, 10),
             ("telegram", self.poll, 1),
+            ("desk", self.desk.tick, 4),
             ("outbox", self.deliver, 2),
             ("references", self.references.refresh, 1800),
             ("research", self.research, 21600),

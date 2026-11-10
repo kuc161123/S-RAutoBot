@@ -126,6 +126,9 @@ def main():
                             config.openai_key and config.openai_model
                         ),
                         "live_enabled": config.live_enabled,
+                        "hyperliquid_desk_configured": bool(
+                            config.hl_account_address and config.hl_private_key
+                        ),
                     },
                     indent=2,
                 )

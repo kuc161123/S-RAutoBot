@@ -275,6 +275,7 @@ class TelegramController:
         service: TelegramService,
         *,
         bot_username: str | None = "AutotradingBot222_bot",
+        desk_panel=None,
     ):
         # Credentials are supplied by the parent, never loaded from local files.
         if not isinstance(token, str) or not re.fullmatch(
@@ -289,6 +290,7 @@ class TelegramController:
             self._users and re.fullmatch(r"-?[1-9][0-9]*", self.chat_id)
         )
         self._service = service
+        self._desk = desk_panel
         expected = (
             bot_username.lstrip("@") if isinstance(bot_username, str) else bot_username
         )
@@ -336,11 +338,22 @@ class TelegramController:
             {
                 "commands": [
                     {"command": key, "description": value}
-                    for key, value in COMMANDS.items()
+                    for key, value in self._command_menu().items()
                 ],
                 "scope": {"type": "chat", "chat_id": self.chat_id},
             },
         )
+
+    def attach_desk(self, panel) -> None:
+        """Make the Hyperliquid desk panel the home screen and command handler."""
+        self._desk = panel
+
+    def _command_menu(self) -> dict:
+        if self._desk is None:
+            return COMMANDS
+        from .desk_panel import DESK_COMMANDS
+
+        return DESK_COMMANDS
 
     async def poll_once(self, offset: int) -> int:
         """Fetch/process one batch; parent durably checkpoints the returned cursor.
@@ -531,7 +544,10 @@ class TelegramController:
         rows.append(
             [
                 button("🔄 Refresh", self._page_callback(view, page, symbol)),
-                button("🏠 Home", self._page_callback("dashboard")),
+                button(
+                    "🏠 Home",
+                    "d:home" if self._desk is not None else self._page_callback("dashboard"),
+                ),
             ]
         )
         return {"inline_keyboard": rows}
@@ -717,6 +733,20 @@ class TelegramController:
             if self._bot_username is None or username != self._bot_username:
                 return
         args = parts[1:]
+        if self._desk is not None:
+            mutating = {
+                "pause", "resume", "maxpos", "dailystop", "direction",
+                "block", "unblock", "close", "closeall",
+            }
+            if command in mutating or (command in ("risk", "lev") and args):
+                self._fresh(message)
+            result = await asyncio.wait_for(
+                self._desk.command(command, args, actor),
+                timeout=self.SERVICE_TIMEOUT,
+            )
+            if result is not None:
+                await self._render(result[0], result[1], None)
+                return
         if command == "start":
             # Telegram start payloads are navigation, never settings or resume.
             await self._view("dashboard", None, None)
@@ -762,6 +792,13 @@ class TelegramController:
         if not isinstance(data, str) or len(data.encode("utf-8")) > 64:
             raise _CommandError("Invalid control. Open /dashboard for fresh controls.")
         parts = data.split(":")
+        if parts[0] == "d" and self._desk is not None:
+            text, keyboard = await asyncio.wait_for(
+                self._desk.callback(data, actor, message),
+                timeout=self.SERVICE_TIMEOUT,
+            )
+            await self._render(text, keyboard, message)
+            return
         if (
             (parts[0] == "v" and len(parts) in (2, 3))
             or (parts[0] == "pg" and len(parts) in (3, 4))

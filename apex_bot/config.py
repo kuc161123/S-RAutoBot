@@ -2,6 +2,7 @@
 
 import math
 import os
+import re
 from dataclasses import dataclass, field
 
 
@@ -75,6 +76,12 @@ class Config:
     drive_file_ids: tuple[str, ...] = ()
     drive_credentials_json: str = field(default="", repr=False)
     macro_feed_url: str = ""
+    hl_account_address: str = ""
+    hl_private_key: str = field(default="", repr=False)
+    hl_api_url: str = "https://api.hyperliquid.xyz"
+    hl_perp_dexs: tuple[str, ...] = ("xyz",)
+    shadow_book_sheet_id: str = ""
+    shadow_book_csv_url: str = field(default="", repr=False)
 
     @classmethod
     def from_env(cls, env=None):
@@ -143,7 +150,44 @@ class Config:
             ),
             drive_credentials_json=env.get("APEX_GOOGLE_SERVICE_ACCOUNT_JSON", ""),
             macro_feed_url=env.get("APEX_CONTEXT_FEED_URL", ""),
+            hl_account_address=_credential(env, "HL_ACCOUNT_ADDRESS"),
+            hl_private_key=_credential(env, "HL_API_PRIVATE_KEY"),
+            hl_api_url=env.get("HL_API_URL", "https://api.hyperliquid.xyz").rstrip("/"),
+            hl_perp_dexs=tuple(
+                x.strip() for x in env.get("HL_PERP_DEXS", "xyz").split(",") if x.strip()
+            ),
+            shadow_book_sheet_id=env.get("APEX_SHADOW_BOOK_SHEET_ID", "").strip(),
+            shadow_book_csv_url=env.get("APEX_SHADOW_BOOK_CSV_URL", "").strip(),
         )
+        from .shadow_book import valid_csv_url, valid_sheet_id
+
+        if any(not re.fullmatch(r"[a-z0-9]{1,16}", d) for d in cfg.hl_perp_dexs):
+            raise ConfigError("HL_PERP_DEXS must be comma-separated lowercase dex names, e.g. xyz")
+        if cfg.shadow_book_sheet_id and not valid_sheet_id(cfg.shadow_book_sheet_id):
+            raise ConfigError("APEX_SHADOW_BOOK_SHEET_ID must be a Google Sheet ID")
+        if cfg.shadow_book_sheet_id and not cfg.drive_credentials_json:
+            raise ConfigError(
+                "APEX_SHADOW_BOOK_SHEET_ID needs APEX_GOOGLE_SERVICE_ACCOUNT_JSON (or use APEX_SHADOW_BOOK_CSV_URL)"
+            )
+        if cfg.shadow_book_csv_url and not valid_csv_url(cfg.shadow_book_csv_url):
+            raise ConfigError(
+                "APEX_SHADOW_BOOK_CSV_URL must be a docs.google.com 'Publish to the web' CSV link"
+            )
+        from .hl_client import valid_address, valid_private_key
+
+        if bool(cfg.hl_account_address) != bool(cfg.hl_private_key):
+            raise ConfigError(
+                "Hyperliquid needs both HL_ACCOUNT_ADDRESS and HL_API_PRIVATE_KEY"
+            )
+        if cfg.hl_account_address and not valid_address(cfg.hl_account_address):
+            raise ConfigError("HL_ACCOUNT_ADDRESS must be a 0x-prefixed 40-hex address")
+        if cfg.hl_private_key and not valid_private_key(cfg.hl_private_key):
+            raise ConfigError("HL_API_PRIVATE_KEY must be a 64-hex API wallet private key")
+        if cfg.hl_api_url not in (
+            "https://api.hyperliquid.xyz",
+            "https://api.hyperliquid-testnet.xyz",
+        ):
+            raise ConfigError("HL_API_URL must be the Hyperliquid mainnet or testnet API")
         if not math.isfinite(cfg.shadow_equity) or cfg.shadow_equity <= 0:
             raise ConfigError("APEX_SHADOW_EQUITY must be positive and finite")
         if (

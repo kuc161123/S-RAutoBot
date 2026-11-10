@@ -106,26 +106,26 @@ async def make(tmp_path, rows, settings=None):
 ASSETS["xyz:GOLD"] = {"sz_decimals": 4, "max_leverage": 25, "only_isolated": True, "delisted": False, "dex": "xyz"}
 
 
-def test_shadow_book_book_layer_goes_live_with_xyz_markets(tmp_path):
+def test_shadow_book_signal_layer_goes_live_with_xyz_markets(tmp_path):
     async def run():
         rows = [
             HEADER,
-            row("S-1", "SOL", "Short", 100, 105, 95, 90),
-            row("S-2", "xyz:GOLD", "Long", 4060, 4000, 4120, 4200),
-            row("S-3", "BTC", "Short", 70000, 71000, 69000, 68000, layer="SIGNAL"),
-            row("S-4", "SOL", "Short", 100, 105, 95, 90, status="CLOSED", reason="TP2"),
+            row("S-1", "SOL", "Short", 100, 105, 95, 90, layer="SIGNAL"),
+            row("S-2", "xyz:GOLD", "Long", 4060, 4000, 4120, 4200, layer="SIGNAL"),
+            row("S-3", "BTC", "Short", 70000, 71000, 69000, 68000, layer="BOOK"),
+            row("S-4", "SOL", "Short", 100, 105, 95, 90, status="CLOSED", reason="TP2", layer="SIGNAL"),
         ]
         store, desk, hl, clock, source = await make(tmp_path, rows)
         await desk.tick()
         trades = desk_state(await store.read())["trades"]
-        assert set(trades) == {"shadowbook:S-1", "shadowbook:S-2"}  # BOOK layer, PENDING only
+        assert set(trades) == {"shadowbook:S-1", "shadowbook:S-2"}  # SIGNAL layer, PENDING only
         assert {o["coin"] for o in hl.placed} == {"SOL", "xyz:GOLD"}
         assert hl.leverage["xyz:GOLD"][1] is True  # isolated
         cards = [t for t in await outbox(store) if "Apex signal" in t]
-        assert any("Apex Kapital Shadow Book · S-1 · BOOK" in c for c in cards)
+        assert any("Apex Kapital Shadow Book · S-1 · SIGNAL" in c for c in cards)
         assert any("C — sell the retest of a broken floor" in c for c in cards)
 
-        # Switch to BOOK + SIGNAL: the SIGNAL-layer BTC idea is taken next tick.
+        # Switch to SIGNAL + BOOK: the BOOK-layer BTC idea is taken next tick.
         def both(tx):
             desk_state(tx.state)["settings"]["layer"] = "all"
 
@@ -140,7 +140,7 @@ def test_shadow_book_book_layer_goes_live_with_xyz_markets(tmp_path):
 def test_sheet_status_changes_drive_live_management(tmp_path):
     async def run():
         rows = [HEADER, row("S-1", "SOL", "Short", 100, 105, 95, 90), row("S-2", "xyz:GOLD", "Long", 4060, 4000, 4120, 4200)]
-        store, desk, hl, clock, source = await make(tmp_path, rows)
+        store, desk, hl, clock, source = await make(tmp_path, rows, {"layer": "book"})
         await desk.tick()
         # GOLD expires in the Sheet before filling -> live entry cancelled.
         source.rows[2] = row("S-2", "xyz:GOLD", "Long", 4060, 4000, 4120, 4200, status="EXPIRED", reason="EXPIRED unfilled")

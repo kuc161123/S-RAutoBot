@@ -15,9 +15,9 @@ Claude Shadow Desk (3 shifts/day) ─► Apex Kapital Shadow Book (Google Sheet,
                        Telegram (desk_panel.py via telegram.py)
 ```
 
-Default signal source: the **Shadow Book**, BOOK layer (the capped book whose
-equity curve is reported). Filters can add the SIGNAL layer, or switch to the
-Railway engine's own books (`baseline_shadow` / `ai_shadow`).
+Default signal source: the **Shadow Book, SIGNAL layer** (+$533.51 over 17
+closed trades to 10 Nov 2026; the BOOK layer made +$203.36 over 23). Filters can
+switch to BOOK or both, or to the Railway engine's own books.
 
 * `apex_bot/hl_client.py` — Hyperliquid SDK wrapper: price/size precision,
   client order IDs, Bybit→Hyperliquid symbol mapping, sanitized errors.
@@ -84,7 +84,7 @@ connected), `on` or `off`.
 ## Defaults
 
 risk $50 per trade · max leverage 5x · max 6 positions · daily loss stop $200 ·
-both directions · Shadow Book BOOK layer · fee estimate 0.045% per side.
+both directions · Shadow Book SIGNAL layer · fee estimate 0.045% per side.
 
 ## Railway variables
 

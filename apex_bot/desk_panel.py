@@ -28,6 +28,7 @@ from .hl_client import coin_candidates
 from .notifications import setup_label
 
 CONFIRM_SECONDS = 120
+LAYERS = {"signal": "SIGNAL layer", "book": "BOOK layer", "all": "SIGNAL + BOOK"}
 SETTINGS_BUTTON_SECONDS = 900
 
 # ---------------------------------------------------------------- formatting
@@ -354,7 +355,7 @@ class DeskPanel:
             + (f" · {len(s['symbol_leverage'])} symbol settings" if s["symbol_leverage"] else ""),
             f"🧯 Daily stop {money(s['daily_loss_usd']) if s['daily_loss_usd'] else 'off'} · {s['direction']}",
             f"📡 Signals: {BOOKS[s['book']]}"
-            + (f" · {'BOOK layer' if s['layer'] == 'book' else 'BOOK + SIGNAL'}" if s["book"] == "shadow_book" else "")
+            + (f" · {LAYERS[s['layer']]}" if s["book"] == "shadow_book" else "")
             + (f"\n   {self.desk.source_status(s)}" if self.desk else ""),
             "",
             *conn,
@@ -496,10 +497,10 @@ class DeskPanel:
             "",
             f"Direction: {s['direction']}",
             f"Signal source: {BOOKS[s['book']]}"
-            + (f" · {'BOOK layer only' if s['layer'] == 'book' else 'BOOK + SIGNAL layers'}" if s["book"] == "shadow_book" else ""),
+            + (f" · {LAYERS[s['layer']]}" if s["book"] == "shadow_book" else ""),
             "Blocked: " + (", ".join(s["blocked"]) if s["blocked"] else "none"),
             "",
-            "Shadow Book = the Claude Shadow Desk's trades in your Google Sheet (BOOK layer = the capped book behind its equity curve; SIGNAL = every idea it tracks).",
+            "Shadow Book = the Claude Shadow Desk's trades in your Google Sheet. SIGNAL layer = the desk's signal trades; BOOK layer = the capped book it tracks for its equity curve.",
             "Railway engine = the bot's own automated Elliott scanner on Bybit data.",
             "",
             "Type /block DOGE or /unblock DOGE.",
@@ -511,8 +512,8 @@ class DeskPanel:
             _button(("✅ " if s["book"] == "ai_shadow" else "") + "Engine AI", "d:book:a"),
         ]
         layers = [
-            _button(("✅ " if s["layer"] == "book" else "") + "BOOK only", "d:lay:book"),
-            _button(("✅ " if s["layer"] == "all" else "") + "BOOK + SIGNAL", "d:lay:all"),
+            _button(("✅ " if s["layer"] == v else "") + LAYERS[v], f"d:lay:{v}")
+            for v in ("signal", "book", "all")
         ]
         unblock = [_button(f"✖️ {c}", f"d:ub:{c}") for c in s["blocked"][:6]]
         keyboard = [dirs, books, layers] + _rows(unblock, 3) + [_nav("d:flt")]
@@ -629,7 +630,7 @@ class DeskPanel:
             book = {"a": "ai_shadow", "b": "baseline_shadow", "s": "shadow_book"}[arg]
             await self._change(lambda s: s.update(book=book), f"book={book}")
             return await self.filters()
-        if action == "lay" and arg in ("book", "all"):
+        if action == "lay" and arg in ("signal", "book", "all"):
             await self._change(lambda s: s.update(layer=arg), f"layer={arg}")
             return await self.filters()
         if action == "ub" and arg:

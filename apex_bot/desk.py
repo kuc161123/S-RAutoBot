@@ -51,7 +51,7 @@ DEFAULT_SETTINGS = {
     "direction": "both",  # both | long | short
     "blocked": [],  # coins
     "book": "shadow_book",
-    "layer": "book",  # book | all (Shadow Book layers: BOOK only, or BOOK + SIGNAL)
+    "layer": "signal",  # signal | book | all (Shadow Book layer to trade)
     "paused": False,
     "watchlist_alerts": "auto",  # auto | on | off (auto = on only while not live)
     "shadow_alerts": "auto",  # auto | on | off
@@ -124,7 +124,7 @@ def normalize_settings(raw) -> dict:
                 value = default
             elif key == "book" and value not in BOOKS:
                 value = default
-            elif key == "layer" and value not in ("book", "all"):
+            elif key == "layer" and value not in ("signal", "book", "all"):
                 value = default
             elif key == "paused":
                 value = bool(value)
@@ -437,7 +437,7 @@ class Desk:
                 if (
                     signal["status"] == "PENDING"
                     and signal.get("entry_type", "LIMIT") == "LIMIT"
-                    and (settings["layer"] == "all" or signal.get("layer") == "BOOK")
+                    and (settings["layer"] == "all" or signal.get("layer") == settings["layer"].upper())
                     and signal["id"] not in desk["trades"]
                     and signal["expires_at"] > now + 60
                     and signal.get("created_at", 0) > now - 72 * 3600

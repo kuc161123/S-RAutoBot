@@ -112,9 +112,10 @@ def test_plan_sizes_to_fixed_dollar_risk_including_fees():
     # $50 / (5 + 0.00045 * 195) = 9.82..., rounded down to 0.01
     assert plan["size"] == 9.82
     assert 49 < plan["risk_usd"] <= 50
-    assert plan["leverage"] == 5  # default cap
+    # Stop 5% away on a 20x market: liquidation-safe cap is 10x = the default max.
+    assert plan["leverage"] == 10
     assert plan["tp1_size"] == 4.91  # half of 982 lots, odd rounds up
-    assert plan["margin"] == pytest.approx(plan["notional"] / 5)
+    assert plan["margin"] == pytest.approx(plan["notional"] / 10)
 
 
 def test_percent_risk_and_symbol_leverage_and_liquidation_cap():
@@ -305,7 +306,7 @@ def test_full_lifecycle_entry_fill_tp1_breakeven_trail_and_stop(tmp_path):
         store, desk, hl, clock = await make_desk(tmp_path)
         await desk.tick()
         t = await trade(store)
-        assert t["status"] == "ORDERED" and hl.leverage["SOL"] == (5, True)
+        assert t["status"] == "ORDERED" and hl.leverage["SOL"] == (10, True)
         assert hl.kinds("SOL") == ["limit"]
         texts = await outbox(store)
         assert any("Desk online" in x for x in texts)

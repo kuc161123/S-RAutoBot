@@ -44,7 +44,7 @@ DEFAULT_SETTINGS = {
     "risk_mode": "usd",  # usd | pct
     "risk_usd": 50.0,
     "risk_pct": 1.0,
-    "max_leverage": 5,
+    "max_leverage": 10,  # margin only; liquidation-safety and exchange caps still apply
     "symbol_leverage": {},  # coin -> leverage
     "max_positions": 6,
     "daily_loss_usd": 200.0,  # 0 disables

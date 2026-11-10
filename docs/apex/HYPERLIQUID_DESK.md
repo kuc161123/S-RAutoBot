@@ -83,7 +83,7 @@ connected), `on` or `off`.
 
 ## Defaults
 
-risk $50 per trade · max leverage 5x · max 6 positions · daily loss stop $200 ·
+risk $50 per trade · max leverage 10x (liquidation-safe cap applies) · max 6 positions · daily loss stop $200 ·
 both directions · Shadow Book SIGNAL layer · fee estimate 0.045% per side.
 
 ## Railway variables

@@ -82,6 +82,8 @@ class Config:
     hl_perp_dexs: tuple[str, ...] = ("xyz",)
     shadow_book_sheet_id: str = ""
     shadow_book_csv_url: str = field(default="", repr=False)
+    # auto = Telegram shows only the Hyperliquid desk (engine off) once HL keys are set.
+    desk_only: str = "auto"
 
     @classmethod
     def from_env(cls, env=None):
@@ -158,7 +160,10 @@ class Config:
             ),
             shadow_book_sheet_id=env.get("APEX_SHADOW_BOOK_SHEET_ID", "").strip(),
             shadow_book_csv_url=env.get("APEX_SHADOW_BOOK_CSV_URL", "").strip(),
+            desk_only=env.get("APEX_DESK_ONLY", "auto").strip().lower() or "auto",
         )
+        if cfg.desk_only not in ("auto", "on", "off"):
+            raise ConfigError("APEX_DESK_ONLY must be auto, on or off")
         from .shadow_book import valid_csv_url, valid_sheet_id
 
         if any(not re.fullmatch(r"[a-z0-9]{1,16}", d) for d in cfg.hl_perp_dexs):

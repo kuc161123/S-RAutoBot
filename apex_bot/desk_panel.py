@@ -1,24 +1,29 @@
 """Telegram control panel and trade messages for the Hyperliquid desk.
 
-Plain text only (the transport sends no parse_mode). Every view returns
-(text, inline_keyboard). Settings buttons apply immediately and show the result;
-closing positions always needs a second, fresh confirmation tap.
+Views and trade messages are Telegram HTML (sent with parse_mode=HTML): every
+dynamic value goes through h(). Every view returns (text, inline_keyboard).
+Settings buttons apply immediately and show the result; closing positions
+always needs a second, fresh confirmation tap by the same user.
 """
 
 from __future__ import annotations
 
 import math
+import re
 import secrets
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
+from html import escape, unescape
 
 from .desk import (
     ACTIVE,
+    AUTO_LEVERAGE,
     BOOKS,
     DEFAULT_SETTINGS,
     LIMITS,
     desk_state,
+    leverage_label,
     liquidation_safe_leverage,
     normalize_settings,
     risk_dollars,
@@ -30,8 +35,20 @@ from .notifications import setup_label
 CONFIRM_SECONDS = 120
 LAYERS = {"signal": "SIGNAL layer", "book": "BOOK layer", "all": "SIGNAL + BOOK"}
 SETTINGS_BUTTON_SECONDS = 900
+PIN_IDLE_SECONDS = 300  # the pinned dashboard returns home after 5 idle minutes
+VIEWS = ("home", "pos", "risk", "lev", "flt", "alr", "perf", "help", "sig", "st")
 
 # ---------------------------------------------------------------- formatting
+
+
+def h(value) -> str:
+    """Escape one dynamic value for Telegram HTML."""
+    return escape(str(value), quote=False)
+
+
+def plain(text: str) -> str:
+    """HTML message -> plain text (fallback transport and tests)."""
+    return unescape(re.sub(r"</?(b|i|u|s|code|pre)>", "", str(text)))
 
 
 def px(value) -> str:
@@ -63,6 +80,25 @@ def when(ts) -> str:
         return "—"
 
 
+def clock_time(ts) -> str:
+    try:
+        return datetime.fromtimestamp(float(ts), timezone.utc).strftime("%H:%M:%S UTC")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "—"
+
+
+def ago(ts, now) -> str:
+    try:
+        seconds = max(0, int(float(now) - float(ts)))
+    except (TypeError, ValueError):
+        return "—"
+    if seconds < 90:
+        return f"{seconds}s ago"
+    if seconds < 5400:
+        return f"{seconds // 60}m ago"
+    return f"{seconds // 3600}h ago"
+
+
 def held_for(start, end) -> str:
     try:
         seconds = max(0, int(float(end) - float(start)))
@@ -84,7 +120,11 @@ def side_dot(trade) -> str:
 
 
 def tag(trade) -> str:
-    return f"{side_word(trade)} {trade.get('coin') or trade.get('symbol')} #{short_id(trade['id'])}"
+    return h(f"{side_word(trade)} {trade.get('coin') or trade.get('symbol')} #{short_id(trade['id'])}")
+
+
+def _sign_r(value) -> str:
+    return f"{'+' if value >= 0 else '−'}{abs(value):.2f}R"
 
 
 # ----------------------------------------------------------- trade messages
@@ -103,23 +143,23 @@ def signal_card(trade: dict, signal: dict | None = None) -> str:
         if source == "shadow_book"
         else "Apex signal engine"
     )
-    lev_note = f" (capped by {trade['leverage_note']})" if trade.get("leverage_note") else ""
+    lev_note = f" (capped by {h(trade['leverage_note'])})" if trade.get("leverage_note") else ""
     share = round(100 * trade["tp1_size"] / trade["size"]) if trade.get("tp1_size") and trade.get("size") else 0
     t1_note = f" → close {share}%, stop to entry" if share else " → stop to entry"
     lines = [
-        f"{side_dot(trade)} {side_word(trade)} {trade['coin']} · Apex signal #{short_id(trade['id'])}",
-        setup,
-        origin,
+        f"{side_dot(trade)} <b>{side_word(trade)} {h(trade['coin'])}</b> · Apex signal #{short_id(trade['id'])}",
+        f"<i>{h(setup)}</i>",
+        h(origin),
         "",
-        f"📍 Entry: {px(entry)} (limit, valid until {when(trade.get('expires_at'))})",
-        f"🛑 Stop: {px(stop)} ({pct(entry, stop)})",
-        f"🎯 Target 1: {px(t1)} ({pct(entry, t1)}){t1_note}",
-        f"🎯 Target 2: {px(t2)} ({pct(entry, t2)})",
-        f"⚖️ Reward/risk: {r1:.1f}R · {r2:.1f}R",
+        f"📍 Entry <b>{px(entry)}</b> · limit until {when(trade.get('expires_at'))}",
+        f"🛑 Stop {px(stop)} ({pct(entry, stop)})",
+        f"🎯 Target 1 {px(t1)} ({pct(entry, t1)}){t1_note}",
+        f"🎯 Target 2 {px(t2)} ({pct(entry, t2)})",
+        f"⚖️ Reward {r1:.1f}R · {r2:.1f}R",
         "",
-        f"💼 Size {px(trade['size'])} {trade['coin']} ({money(trade['notional'])}) · "
+        f"💼 {px(trade['size'])} {h(trade['coin'])} ({money(trade['notional'])}) · "
         f"{trade['leverage']}x isolated{lev_note} · margin {money(trade['margin'])}",
-        f"💵 Risk {money(trade['risk_usd'])} if the stop is hit",
+        f"💵 Risk <b>{money(trade['risk_usd'])}</b> if the stop is hit",
         "⏳ Limit order live on Hyperliquid",
     ]
     return "\n".join(lines)
@@ -129,9 +169,9 @@ def skip_text(signal: dict, coin, reason: str) -> str:
     name = coin or signal.get("symbol")
     word = "LONG" if signal.get("side") == "Buy" else "SHORT"
     return (
-        f"⏭ Signal not taken · {word} {name} #{short_id(signal['id'])}\n"
-        f"Reason: {reason}\n"
-        f"Levels: entry {px(signal.get('limit'))} · stop {px(signal.get('stop'))} · "
+        f"⏭ <b>Signal not taken</b> · {h(word)} {h(name)} #{short_id(signal['id'])}\n"
+        f"{h(reason)}\n"
+        f"Entry {px(signal.get('limit'))} · stop {px(signal.get('stop'))} · "
         f"targets {px(signal.get('target1'))} / {px(signal.get('target2'))}"
     )
 
@@ -140,12 +180,12 @@ def fill_text(trade: dict, held: float, pos: dict | None) -> str:
     entry = (pos or {}).get("entry_px") or trade["entry"]
     liq = (pos or {}).get("liq_px")
     return (
-        f"✅ FILLED · {tag(trade)}\n"
-        f"Entry {px(entry)} · size {px(held)} {trade['coin']} · {trade['leverage']}x"
+        f"✅ <b>FILLED</b> · {tag(trade)}\n"
+        f"Entry <b>{px(entry)}</b> · size {px(held)} {h(trade['coin'])} · {trade['leverage']}x"
         + (f" · liq {px(liq)}" if liq else "")
         + f"\n🛑 Stop {px(trade['stop'])} is on the exchange\n"
         f"🎯 Targets {px(trade['target1'])} / {px(trade['target2'])}\n"
-        f"Risk {money(trade['risk_usd'])}"
+        f"💵 Risk {money(trade['risk_usd'])}"
     )
 
 
@@ -155,27 +195,27 @@ def stop_text(trade: dict, old: float, new: float, why: str) -> str:
     sign = 1 if trade.get("is_buy") else -1
     locked = sign * (new - entry) * held
     risk_line = (
-        f"Worst case now {money(locked, signed=True)}"
+        f"Worst case now <b>{money(locked, signed=True)}</b>"
         if locked >= -0.005
         else f"Risk now {money(-locked)}"
     )
-    return f"🛡 STOP MOVED · {tag(trade)}\n{px(old)} → {px(new)}\n{why}\n{risk_line}"
+    return f"🛡 <b>STOP MOVED</b> · {tag(trade)}\n{px(old)} → <b>{px(new)}</b>\n{h(why)}\n{risk_line}"
 
 
 def cancel_text(trade: dict, reason: str) -> str:
-    return f"✖️ ENTRY CANCELLED · {tag(trade)}\nReason: {reason}\nNo position was opened."
+    return f"✖️ <b>ENTRY CANCELLED</b> · {tag(trade)}\n{h(reason)}\nNo position was opened."
 
 
 def close_text(trade: dict) -> str:
     pnl = trade.get("pnl", 0.0)
     icon = "🏆" if pnl > 0 else "🔻" if pnl < 0 else "➖"
     r = trade.get("r")
-    r_text = f" ({'+' if r >= 0 else '−'}{abs(r):.2f}R)" if isinstance(r, (int, float)) else ""
+    r_text = f" ({_sign_r(r)})" if isinstance(r, (int, float)) else ""
     note = "" if trade.get("pnl_complete", True) else "\nFill history unavailable; result may be incomplete."
     return (
-        f"{icon} CLOSED · {tag(trade)}\n"
-        f"{trade.get('exit', 'Closed')}\n"
-        f"Result: {money(pnl, signed=True)}{r_text}\n"
+        f"{icon} <b>CLOSED</b> · {tag(trade)}\n"
+        f"{h(trade.get('exit', 'Closed'))}\n"
+        f"Result: <b>{money(pnl, signed=True)}</b>{r_text}\n"
         f"Entry {px(trade.get('avg_entry') or trade.get('entry'))} · held "
         f"{held_for(trade.get('opened_at') or trade.get('created_at'), trade.get('closed_at'))}"
         + note
@@ -185,30 +225,33 @@ def close_text(trade: dict) -> str:
 # ---------------------------------------------------------------- the panel
 
 HELP = (
-    "🏦 Apex Desk · commands\n\n"
-    "/dashboard — home: account, P&L, positions\n"
-    "/signals — Shadow Book signals and what the desk did with each\n"
-    "/positions — open positions and pending entries\n"
-    "/performance — live results\n\n"
-    "Risk\n"
-    "/risk 50 — risk $50 per trade\n"
-    "/risk 1% — risk 1% of equity per trade\n"
+    "🏦 <b>Apex Desk · how it works</b>\n\n"
+    "The Shadow Desk writes trade ideas to the Apex Kapital Shadow Book. "
+    "Every new signal in the layer you follow becomes a live Hyperliquid limit order with "
+    "its stop on the exchange. Target 1 closes half and moves the stop to entry; "
+    "target 2 closes the rest. Everything runs on its own — use this panel only to change "
+    "the rules.\n\n"
+    "<b>Screens</b>\n"
+    "/dashboard — home (also pinned at the top of this chat)\n"
+    "/signals — Shadow Book signals and what the desk did\n"
+    "/positions — open trades with close and break-even buttons\n"
+    "/performance — live results\n"
+    "/status — connections and health\n\n"
+    "<b>Risk</b>\n"
+    "/risk 50 — risk $50 per trade · /risk 1% — 1% of equity\n"
     "/maxpos 6 — max open positions\n"
-    "/dailystop 200 — stop new trades after $200 lost today (/dailystop off)\n\n"
-    "Leverage\n"
-    "/lev 5 — max leverage for all symbols\n"
-    "/lev SOL 10 — fixed leverage for one symbol\n"
-    "/lev SOL auto — remove a symbol setting\n\n"
-    "Filters\n"
-    "/direction both|long|short\n"
-    "/block DOGE · /unblock DOGE\n\n"
-    "Control\n"
-    "/pause · /resume — stop or restart new entries\n"
-    "/close SOL — close one position (asks to confirm)\n"
-    "/closeall — close everything (asks to confirm)\n\n"
-    "Signal engine views: /opportunities /waves /why /status /system\n\n"
-    "Leverage changes margin, not dollars at risk. Risk is set by the stop distance "
-    "and your risk amount. The desk always keeps liquidation well beyond the stop."
+    "/dailystop 200 — no new trades after $200 lost today (off to disable)\n\n"
+    "<b>Leverage</b>\n"
+    "/lev auto — safest maximum per trade (default)\n"
+    "/lev 10 — cap all symbols · /lev SOL 5 — one symbol · /lev SOL auto — clear it\n\n"
+    "<b>Filters</b>\n"
+    "/direction both|long|short · /block DOGE · /unblock DOGE\n\n"
+    "<b>Control</b>\n"
+    "/pause · /resume — stop or restart new entries (open trades stay managed)\n"
+    "/be SOL — move a winning trade's stop to entry\n"
+    "/close SOL · /closeall — close at market (asks to confirm)\n\n"
+    "Leverage changes margin, not dollars at risk: risk comes from the stop distance. "
+    "Liquidation is always kept at least 1.5× the stop distance away."
 )
 
 DESK_COMMANDS = {
@@ -216,8 +259,9 @@ DESK_COMMANDS = {
     "signals": "Shadow Book signals and what the desk did with each",
     "positions": "Open positions and pending entries",
     "performance": "Live trading results",
+    "status": "Connections and health",
     "risk": "Risk per trade: /risk 50 or /risk 1%",
-    "lev": "Leverage: /lev 5 or /lev SOL 10",
+    "lev": "Leverage: /lev auto, /lev 10 or /lev SOL 5",
     "maxpos": "Max open positions: /maxpos 6",
     "dailystop": "Daily loss stop: /dailystop 200 or off",
     "direction": "Trade both, long or short",
@@ -225,12 +269,11 @@ DESK_COMMANDS = {
     "unblock": "Unblock a symbol",
     "pause": "Stop taking new signals",
     "resume": "Start taking signals again",
+    "be": "Move a winning trade's stop to entry: /be SOL",
     "close": "Close one position: /close SOL",
     "closeall": "Close all positions and entries",
     "alerts": "Notification settings",
-    "opportunities": "Signal engine: current setups",
-    "status": "Signal engine status",
-    "help": "All commands",
+    "help": "How the desk works and all commands",
 }
 
 
@@ -242,9 +285,12 @@ def _rows(buttons, width=2):
     return [buttons[i : i + width] for i in range(0, len(buttons), width)]
 
 
-def _nav(*extra):
-    row = [_button("🔄 Refresh", extra[0] if extra else "d:home"), _button("🏠 Home", "d:home")]
-    return row
+def _nav(refresh="d:home"):
+    return [_button("🔄 Refresh", refresh), _button("🏠 Home", "d:home")]
+
+
+def _check(on: bool, label: str) -> str:
+    return ("✅ " if on else "") + label
 
 
 class DeskPanel:
@@ -254,11 +300,18 @@ class DeskPanel:
         self.clock = clock
         self._confirm: dict = {}
 
+    @property
+    def engine(self) -> bool:
+        """False on a desk-only deployment (the Railway engine is switched off)."""
+        return bool(getattr(self.desk, "engine_books", True)) if self.desk else True
+
     # -------------------------------------------------------------- state
     async def _state(self):
         state = await self.store.read()
         desk = desk_state(state)
-        return state, desk, normalize_settings(desk.get("settings"))
+        raw = desk.get("settings")
+        settings = self.desk.effective(raw) if self.desk and hasattr(self.desk, "effective") else normalize_settings(raw)
+        return state, desk, settings
 
     async def _change(self, mutate, note: str):
         def write(tx):
@@ -276,8 +329,8 @@ class DeskPanel:
         await self.store.update(write)
 
     def _coin(self, text: str) -> str | None:
-        """User input (SOL, sol, SOLUSDT, 1000PEPE, kPEPE) -> Hyperliquid coin."""
-        assets = self.desk.assets or {}
+        """User input (SOL, sol, SOLUSDT, 1000PEPE, kPEPE, gold) -> Hyperliquid coin."""
+        assets = (self.desk.assets if self.desk else None) or {}
         raw = text.strip()
         names = {name.lower(): name for name in assets}
         if raw.lower() in names:
@@ -291,6 +344,12 @@ class DeskPanel:
             if candidate.lower() in names:
                 return names[candidate.lower()]
         return None if assets else (upper if upper.isalnum() and len(upper) <= 20 else None)
+
+    def _snap(self) -> dict:
+        return (self.desk.snapshot if self.desk else None) or {}
+
+    def _live(self) -> bool:
+        return bool(self.desk and self.desk.configured and self._snap().get("status") == "live")
 
     # -------------------------------------------------------------- views
     async def render(self, view: str):
@@ -307,30 +366,70 @@ class DeskPanel:
         if view == "perf":
             return await self.performance()
         if view == "help":
-            return HELP, {"inline_keyboard": [_nav("d:help")]}
+            return HELP, {"inline_keyboard": [[_button("📟 Status", "d:st"), _button("🏠 Home", "d:home")]]}
         if view == "sig":
             return await self.signals()
+        if view == "st":
+            return await self.status()
         return await self.home()
 
     def _connection_lines(self):
-        snap = self.desk.snapshot if self.desk else {"status": "no_keys"}
+        snap = self._snap()
         if not self.desk or not self.desk.configured or snap.get("status") == "no_keys":
             return None, [
-                "🔌 Hyperliquid not connected",
+                "🔌 <b>Hyperliquid not connected</b>",
                 "Add HL_ACCOUNT_ADDRESS and HL_API_PRIVATE_KEY in Railway Variables, then redeploy.",
             ]
         if snap.get("status") != "live":
             return snap, ["🔌 Connecting to Hyperliquid…"]
         age = self.clock() - snap.get("at", 0)
-        stale = " (data stale)" if age > 60 else ""
-        return snap, [f"Updated {when(snap.get('at'))}{stale}"]
+        stale = " ⚠️ data stale" if age > 60 else ""
+        return snap, [f"<i>Updated {clock_time(snap.get('at'))}{stale}</i>"]
+
+    def _source_label(self, s) -> str:
+        if s["book"] == "shadow_book":
+            return f"Shadow Book · {LAYERS[s['layer']]}"
+        return BOOKS[s["book"]]
+
+    def _source_line(self, s) -> str:
+        if not self.desk:
+            return ""
+        if s["book"] != "shadow_book":
+            return "✅ engine connected"
+        source = self.desk.source
+        if source is None or not source.configured:
+            return "❌ Shadow Book NOT connected (add APEX_SHADOW_BOOK_CSV_URL)"
+        if source.ok:
+            active = sum(
+                1
+                for sig in source.signals.values()
+                if sig.get("status") in ("PENDING", "OPEN", "TP1") and self._wanted(s)(sig)
+            )
+            read = getattr(source, "fetched_at", 0)
+            return f"✅ read {clock_time(read) if read else 'OK'} · {active} active in your layer"
+        return f"⚠️ Shadow Book unavailable: {h(source.error or 'waiting for first read')}"
+
+    @staticmethod
+    def _wanted(s):
+        if s["layer"] == "all":
+            return lambda sig: True
+        return lambda sig: sig.get("layer") == s["layer"].upper()
+
+    def _lev_text(self, s) -> str:
+        return "Auto (safe max)" if s["max_leverage"] >= AUTO_LEVERAGE else f"{s['max_leverage']}x"
+
+    @staticmethod
+    def _direction_text(s) -> str:
+        return {"both": "longs + shorts", "long": "longs only", "short": "shorts only"}[s["direction"]]
 
     async def home(self):
         state, desk, s = await self._state()
         snap, conn = self._connection_lines()
         trades = desk["trades"].values()
-        open_trades = [t for t in trades if t.get("status") == "OPEN"]
-        pending = [t for t in trades if t.get("status") in ("ORDERED", "PLACING")]
+        open_trades = sorted((t for t in trades if t.get("status") == "OPEN"), key=lambda t: t.get("opened_at") or 0)
+        pending = sorted(
+            (t for t in trades if t.get("status") in ("ORDERED", "PLACING")), key=lambda t: t.get("created_at") or 0
+        )
         day = datetime.fromtimestamp(self.clock(), timezone.utc).strftime("%Y-%m-%d")
         closed_today = [
             t
@@ -341,53 +440,88 @@ class DeskPanel:
         realized = sum(t.get("pnl", 0.0) for t in closed_today)
         wins = sum(1 for t in closed_today if t.get("pnl", 0) > 0)
         losses = sum(1 for t in closed_today if t.get("pnl", 0) < 0)
-        status = "⏸ PAUSED — no new entries" if s["paused"] else "🟢 LIVE — taking signals"
-        lines = ["🏦 APEX DESK · Hyperliquid", status, ""]
+        if not (self.desk and self.desk.configured):
+            status = "🔌 <b>NOT CONNECTED</b> · no trading until Hyperliquid keys are added"
+        elif self._snap().get("status") != "live":
+            status = "⏳ <b>CONNECTING</b> to Hyperliquid…"
+        elif s["paused"]:
+            status = "⏸ <b>PAUSED</b> · no new entries (open trades still managed)"
+        else:
+            status = "🟢 <b>LIVE</b> · taking signals automatically"
+        lines = ["🏦 <b>APEX DESK</b> · Hyperliquid", status]
         if snap and snap.get("status") == "live":
-            upnl = sum(p.get("upnl", 0.0) for p in snap.get("positions", {}).values())
+            positions = snap.get("positions", {}) or {}
+            upnl = sum(p.get("upnl", 0.0) for p in positions.values())
             open_risk = sum(self._live_risk(t, snap) for t in open_trades)
             lines += [
-                f"💰 Equity {money(snap.get('equity'))} · free {money(snap.get('available'))}",
-                f"📅 Today {money(realized, signed=True)} realized ({wins}W {losses}L) · "
-                f"open P&L {money(upnl, signed=True)}",
-                f"📂 {len(open_trades)} open · {len(pending)} pending · open risk {money(open_risk)}",
+                "",
+                f"💰 <b>{money(snap.get('equity'))}</b> equity · {money(snap.get('available'))} free margin",
+                f"📅 Today <b>{money(realized, signed=True)}</b> ({wins}W {losses}L) · open P&amp;L "
+                f"<b>{money(upnl, signed=True)}</b>",
+                "",
+                f"📂 <b>Book</b> · {len(open_trades)} open · {len(pending)} pending",
             ]
+            for t in open_trades[:6]:
+                pos = positions.get(t["coin"], {})
+                pnl = pos.get("upnl")
+                risk = t.get("risk_usd") or 0
+                r_now = f" ({_sign_r(pnl / risk)})" if isinstance(pnl, (int, float)) and risk else ""
+                guard = " · 🛡 stop at entry" if t.get("tp1_done") else ""
+                lines.append(
+                    f"{side_dot(t)} {h(t['coin'])} {side_word(t).lower()} · {money(pnl, signed=True)}{r_now}{guard}"
+                )
+            for t in pending[:4]:
+                lines.append(
+                    f"⏳ {h(t['coin'])} {side_word(t).lower()} · limit {px(t['entry'])} · until {when(t.get('expires_at'))}"
+                )
+            if not open_trades and not pending:
+                lines.append("Flat — waiting for the next signal.")
+            if open_trades:
+                lines.append(f"At risk if every stop hits: {money(open_risk)}")
+            mine = {t["coin"] for t in (*open_trades, *pending)}
+            foreign = sorted(c for c in positions if c not in mine)
+            if foreign:
+                lines.append(f"<i>Also on the account, not managed: {h(', '.join(foreign))}</i>")
         lines += [
             "",
-            f"🛡 Risk {self._risk_text(s, snap)} · max {s['max_positions']} positions",
-            f"⚙️ Leverage max {s['max_leverage']}x"
-            + (f" · {len(s['symbol_leverage'])} symbol settings" if s["symbol_leverage"] else ""),
-            f"🧯 Daily stop {money(s['daily_loss_usd']) if s['daily_loss_usd'] else 'off'} · {s['direction']}",
-            f"📡 Signals: {BOOKS[s['book']]}"
-            + (f" · {LAYERS[s['layer']]}" if s["book"] == "shadow_book" else "")
-            + (f"\n   {self.desk.source_status(s)}" if self.desk else ""),
+            "🛡 <b>Rules</b>",
+            f"{self._risk_text(s, snap)} · max {s['max_positions']} positions · daily stop "
+            f"{money(s['daily_loss_usd']) if s['daily_loss_usd'] else 'off'}",
+            f"Leverage {self._lev_text(s)} · {self._direction_text(s)}"
+            + (f" · {len(s['symbol_leverage'])} symbol settings" if s["symbol_leverage"] else "")
+            + (f" · {len(s['blocked'])} blocked" if s["blocked"] else ""),
+            "",
+            f"📡 <b>Signals</b> · {h(self._source_label(s))}",
+            self._source_line(s),
             "",
             *conn,
         ]
         setup = self._setup_lines(s)
         if setup:
-            lines += ["", "🧩 Setup", *setup]
+            lines += ["", "🧩 <b>Setup</b>", *setup]
         buttons = [
             _button("📡 Signals", "d:sig"),
             _button("📂 Positions", "d:pos"),
             _button("📈 Performance", "d:perf"),
+            _button("📟 Status", "d:st"),
             _button("🛡 Risk", "d:risk"),
             _button("⚙️ Leverage", "d:lev"),
             _button("🎯 Filters", "d:flt"),
             _button("🔔 Alerts", "d:alr"),
-            _button("▶️ Resume" if s["paused"] else "⏸ Pause", "d:resume" if s["paused"] else "d:pause"),
+            _button("▶️ Resume trading" if s["paused"] else "⏸ Pause trading", "d:resume" if s["paused"] else "d:pause"),
             _button("🚨 Close all", "d:ca"),
-            _button("❓ Help", "d:help"),
-            _button("🔬 Signal engine", "pg:dashboard:0"),
         ]
-        keyboard = _rows(buttons) + [_nav("d:home")]
+        keyboard = _rows(buttons)
+        if self.engine:
+            keyboard.append([_button("🔬 Signal engine", "pg:dashboard:0")])
+        keyboard.append([_button("🔄 Refresh", "d:home"), _button("❓ Help", "d:help")])
         return "\n".join(lines), {"inline_keyboard": keyboard}
 
     def _setup_lines(self, s):
         """A checklist only while something still needs doing."""
         desk = self.desk
         hl_ok = bool(desk and desk.configured)
-        live = hl_ok and desk.snapshot.get("status") == "live"
+        live = hl_ok and self._snap().get("status") == "live"
         if s["book"] == "shadow_book":
             source = desk.source if desk else None
             src_ok = bool(source and source.configured and source.ok)
@@ -396,7 +530,7 @@ class DeskPanel:
                 if src_ok
                 else "❌ Shadow Book link — add APEX_SHADOW_BOOK_CSV_URL in Railway"
                 if not (source and source.configured)
-                else f"⚠️ Shadow Book: {source.error or 'connecting…'}"
+                else f"⚠️ Shadow Book: {h(source.error or 'connecting…')}"
             )
         else:
             src_ok, src_line = True, "✅ Railway engine signals"
@@ -415,27 +549,75 @@ class DeskPanel:
             "Trading starts automatically when every line is ✅.",
         ]
 
+    async def status(self):
+        state, desk, s = await self._state()
+        snap = self._snap()
+        now = self.clock()
+        lines = ["📟 <b>System status</b>", ""]
+        if self._live():
+            client = self.desk.client
+            address = getattr(client, "address", "") or ""
+            dexs = [d for d in getattr(client, "dexs", ()) if d]
+            lines += [
+                f"<b>Hyperliquid</b> ✅ live · updated {ago(snap.get('at'), now)}",
+                f"Account {h(address[:6])}…{h(address[-4:])}"
+                + (f" · {h(snap.get('mode'))} margin" if snap.get("mode") else ""),
+                "Markets: crypto" + (f" + {h(', '.join(dexs))}" if dexs else ""),
+                f"Equity {money(snap.get('equity'))} · free {money(snap.get('available'))} · "
+                f"in use {money(snap.get('margin_used'))}",
+            ]
+        else:
+            lines += self._connection_lines()[1]
+        lines += ["", f"<b>Signals</b> · {h(self._source_label(s))}", self._source_line(s)]
+        if s["book"] == "shadow_book":
+            lines.append("New signals arrive with each Shadow Desk shift (3× a day).")
+        trades = desk["trades"].values()
+        counts = {}
+        for t in trades:
+            counts[t.get("status")] = counts.get(t.get("status"), 0) + 1
+        lines += [
+            "",
+            "<b>Desk</b> " + ("⏸ paused" if s["paused"] else "🟢 taking signals") + " · checks every 4 s",
+            "Stops and targets live on the exchange, so open trades stay protected even if this bot restarts.",
+            f"Trades: {counts.get('OPEN', 0)} open · {counts.get('ORDERED', 0) + counts.get('PLACING', 0)} pending · "
+            f"{counts.get('CLOSED', 0)} closed · {counts.get('SKIPPED', 0)} skipped · {counts.get('CANCELLED', 0)} cancelled",
+            f"Running since {when(desk.get('since'))}",
+        ]
+        errors = sorted(
+            (t for t in trades if t.get("status") == "ERROR"), key=lambda t: t.get("closed_at") or 0, reverse=True
+        )[:3]
+        if errors:
+            lines += ["", "<b>Recent order errors</b>"]
+            lines += [f"⚠️ {h(t.get('coin'))}: {h(str(t.get('reason', ''))[:120])}" for t in errors]
+        return "\n".join(lines), {"inline_keyboard": [_nav("d:st")]}
+
     async def signals(self):
         state, desk, s = await self._state()
         trades = desk["trades"]
-        lines = ["📡 Signals"]
+        lines = [f"📡 <b>Signals</b> · {h(self._source_label(s))}"]
+        layer_row = [
+            _button(_check(s["layer"] == v, {"signal": "SIGNAL", "book": "BOOK", "all": "BOTH"}[v]), f"d:lay:{v}:sig")
+            for v in ("signal", "book", "all")
+        ]
+        keyboard = [layer_row] if s["book"] == "shadow_book" else []
+        if self.engine:
+            keyboard.append([_button("🎯 Change source", "d:flt")])
+        keyboard.append(_nav("d:sig"))
         if s["book"] != "shadow_book":
             engine = [
                 t for t in state.get("trades", {}).values()
                 if t.get("arm") == s["book"] and t.get("status") in ("PENDING", "OPEN")
             ]
-            lines += [f"Source: {BOOKS[s['book']]} · {len(engine)} active", ""]
+            lines += [f"{len(engine)} active", ""]
             rows = sorted(engine, key=lambda t: t.get("created_at", 0), reverse=True)[:10]
         else:
             source = self.desk.source if self.desk else None
             if not source or not source.configured:
                 lines += ["", "Shadow Book not connected yet.", "Add APEX_SHADOW_BOOK_CSV_URL in Railway Variables."]
-                return "\n".join(lines), {"inline_keyboard": [_nav("d:sig")]}
-            status = f"read {when(getattr(source, 'fetched_at', 0))}" if source.ok else f"unavailable: {source.error}"
-            lines += [f"Source: Apex Kapital Shadow Book · {LAYERS[s['layer']]} · {status}", ""]
-            wanted = (lambda sig: True) if s["layer"] == "all" else (lambda sig: sig.get("layer") == s["layer"].upper())
+                return "\n".join(lines), {"inline_keyboard": keyboard}
+            lines += [self._source_line(s), ""]
             rows = sorted(
-                (x for x in source.signals.values() if x.get("status") in ("PENDING", "OPEN", "TP1") and wanted(x)),
+                (x for x in source.signals.values() if x.get("status") in ("PENDING", "OPEN", "TP1") and self._wanted(s)(x)),
                 key=lambda x: x.get("created_at", 0),
                 reverse=True,
             )[:10]
@@ -449,7 +631,7 @@ class DeskPanel:
                     if sig.get("status") == "PENDING" and not s["paused"]
                     else "⏸ paused — not taken"
                     if s["paused"] and sig.get("status") == "PENDING"
-                    else "— started before the desk saw it (not taken)"
+                    else "— already running before the desk saw it (not taken)"
                 )
             else:
                 state_text = {
@@ -458,18 +640,19 @@ class DeskPanel:
                     "OPEN": "✅ in position" + (" · TP1 done" if mine.get("tp1_done") else ""),
                     "CLOSED": f"🏁 closed {money(mine.get('pnl'), signed=True)}",
                     "CANCELLED": "✖️ entry cancelled",
-                    "SKIPPED": f"⏭ skipped: {mine.get('reason', '')}",
-                    "ERROR": f"⚠️ {mine.get('reason', 'error')}",
-                }.get(mine.get("status"), mine.get("status", ""))
+                    "SKIPPED": f"⏭ skipped: {h(mine.get('reason', ''))}",
+                    "ERROR": f"⚠️ {h(mine.get('reason', 'error'))}",
+                }.get(mine.get("status"), h(mine.get("status", "")))
             word = "LONG" if sig.get("side") == "Buy" else "SHORT"
             label = sig.get("source_id") or short_id(sig["id"])
             lines += [
-                f"{'🟢' if word == 'LONG' else '🔴'} {word} {sig.get('coin') or sig.get('symbol')} · {label} · sheet {sig.get('status', '').lower()}",
+                f"{'🟢' if word == 'LONG' else '🔴'} <b>{word} {h(sig.get('coin') or sig.get('symbol'))}</b> · "
+                f"{h(label)} · sheet {h(str(sig.get('status', '')).lower())}",
                 f"Entry {px(sig.get('limit'))} · stop {px(sig.get('stop'))} · TP {px(sig.get('target1'))} / {px(sig.get('target2'))}",
                 f"Desk: {state_text}",
                 "",
             ]
-        return "\n".join(lines).rstrip(), {"inline_keyboard": [[_button("🎯 Change source", "d:flt")], _nav("d:sig")]}
+        return "\n".join(lines).rstrip(), {"inline_keyboard": keyboard}
 
     def _risk_text(self, s, snap):
         if s["risk_mode"] == "pct":
@@ -488,7 +671,7 @@ class DeskPanel:
 
     async def positions(self):
         state, desk, s = await self._state()
-        snap = self.desk.snapshot if self.desk else {}
+        snap = self._snap()
         mids = snap.get("mids") or {}
         positions = snap.get("positions") or {}
         active = sorted(
@@ -497,91 +680,125 @@ class DeskPanel:
         )
         open_trades = [t for t in active if t["status"] == "OPEN"]
         pending = [t for t in active if t["status"] != "OPEN"]
-        lines = [f"📂 Positions · {len(open_trades)} open · {len(pending)} pending", ""]
-        buttons = []
+        lines = [f"📂 <b>Positions</b> · {len(open_trades)} open · {len(pending)} pending", ""]
+        keyboard = []
         for t in open_trades:
             pos = positions.get(t["coin"], {})
             entry = pos.get("entry_px") or t.get("avg_entry") or t["entry"]
             mid = mids.get(t["coin"])
             upnl = pos.get("upnl")
             risk = t.get("risk_usd") or 0
-            r_now = f" ({upnl / risk:+.2f}R)" if isinstance(upnl, (int, float)) and risk else ""
+            r_now = f" ({_sign_r(upnl / risk)})" if isinstance(upnl, (int, float)) and risk else ""
+            sign = 1 if t.get("is_buy") else -1
+            at_entry = sign * (t["stop"] - entry) >= 0
             lines += [
-                f"{side_dot(t)} {tag(t)} · {t['leverage']}x",
+                f"{side_dot(t)} <b>{tag(t)}</b> · {t['leverage']}x",
                 f"Entry {px(entry)} → now {px(mid)} ({pct(entry, mid) if mid else '—'})",
-                f"P&L {money(upnl, signed=True)}{r_now} · size {px(abs(pos.get('size', t.get('filled', 0))))}",
-                f"🛑 {px(t['stop'])} · 🎯 "
+                f"P&amp;L <b>{money(upnl, signed=True)}</b>{r_now} · size {px(abs(pos.get('size', t.get('filled', 0))))}",
+                f"🛑 {px(t['stop'])}" + (" (at entry)" if at_entry else "") + " · 🎯 "
                 + ("✅ " if t.get("tp1_done") else "")
                 + f"{px(t['target1'])} / {px(t['target2'])}"
                 + (f" · liq {px(pos.get('liq_px'))}" if pos.get("liq_px") else ""),
                 "",
             ]
-            buttons.append(_button(f"✖️ Close {t['coin']}", f"d:cl:{short_id(t['id'])}"))
+            row = []
+            in_profit = isinstance(mid, (int, float)) and sign * (mid - entry) > 0
+            if not at_entry and in_profit:
+                row.append(_button(f"🛡 Stop→entry {t['coin']}", f"d:be:{short_id(t['id'])}"))
+            row.append(_button(f"✖️ Close {t['coin']}", f"d:cl:{short_id(t['id'])}"))
+            keyboard.append(row)
         for t in pending:
             lines += [
-                f"⏳ {tag(t)} · limit {px(t['entry'])} · stop {px(t['stop'])}",
+                f"⏳ <b>{tag(t)}</b> · limit {px(t['entry'])} · stop {px(t['stop'])}",
                 f"Until {when(t.get('expires_at'))} · risk {money(t.get('risk_usd'))}",
                 "",
             ]
-            buttons.append(_button(f"✖️ Cancel {t['coin']}", f"d:cl:{short_id(t['id'])}"))
+            keyboard.append([_button(f"✖️ Cancel {t['coin']}", f"d:cl:{short_id(t['id'])}")])
         foreign = [c for c in positions if c not in {t["coin"] for t in active}]
         if foreign:
-            lines.append("Not managed by the desk: " + ", ".join(sorted(foreign)))
+            lines.append(f"<i>Not managed by the desk: {h(', '.join(sorted(foreign)))}</i>")
         if not active:
             lines.append("No open positions or pending entries.")
-        keyboard = _rows(buttons[:12]) + [_nav("d:pos")]
+        keyboard = keyboard[:10]
+        if active:
+            keyboard.append([_button("🚨 Close all", "d:ca")])
+        keyboard.append(_nav("d:pos"))
         return "\n".join(lines).rstrip(), {"inline_keyboard": keyboard}
+
+    def _typical_margin(self, s, equity):
+        """Margin a typical trade ties up: 2% stop on a 20x market at current settings."""
+        risk = risk_dollars(s, equity)
+        notional = risk / 0.02
+        leverage = max(1, min(s["max_leverage"], 20, liquidation_safe_leverage(0.02, 20)))
+        return notional / leverage, leverage
 
     async def risk(self):
         state, desk, s = await self._state()
-        snap = self.desk.snapshot if self.desk else {}
+        snap = self._snap()
         equity = snap.get("equity") or 0
         mode = "fixed dollars" if s["risk_mode"] == "usd" else "% of equity"
         lines = [
-            "🛡 Risk settings",
+            "🛡 <b>Risk settings</b>",
             "",
-            f"Per trade: {self._risk_text(s, snap)} ({mode})",
-            f"Max open positions: {s['max_positions']} → worst case "
+            f"Per trade: <b>{self._risk_text(s, snap)}</b> ({mode})",
+            f"Max open positions: <b>{s['max_positions']}</b> → worst case "
             f"{money(risk_dollars(s, equity) * s['max_positions'])} if every stop hits",
-            f"Daily loss stop: {money(s['daily_loss_usd']) if s['daily_loss_usd'] else 'off'} "
-            "(no new entries for the rest of the UTC day)",
-            "",
-            "Tap to change, or type /risk 75 · /risk 1.5% · /maxpos 8 · /dailystop 300",
-            "Stops are exchange stop-market orders: a fast move or gap can lose a little more than the set risk.",
+            f"Daily loss stop: <b>{money(s['daily_loss_usd']) if s['daily_loss_usd'] else 'off'}</b> "
+            "— no new entries for the rest of the UTC day",
         ]
-        ru = [_button(("✅ " if s["risk_mode"] == "usd" and s["risk_usd"] == v else "") + f"${v}", f"d:ru:{v}") for v in (25, 50, 100, 200)]
-        rp = [_button(("✅ " if s["risk_mode"] == "pct" and s["risk_pct"] == v else "") + f"{v:g}%", f"d:rp:{v:g}") for v in (0.5, 1, 2)]
-        mp = [_button(("✅ " if s["max_positions"] == v else "") + f"{v} pos", f"d:mp:{v}") for v in (3, 6, 10)]
-        dl = [_button(("✅ " if s["daily_loss_usd"] == v else "") + (f"Stop ${v}" if v else "Stop off"), f"d:dl:{v}") for v in (100, 200, 500, 0)]
-        keyboard = [ru, rp, mp, dl[:2], dl[2:], _nav("d:risk")]
+        if self._live():
+            margin, lev = self._typical_margin(s, equity)
+            free = snap.get("available") or 0
+            active = sum(1 for t in desk["trades"].values() if t.get("status") in ACTIVE)
+            room = min(int(free * 0.95 // margin) if margin > 0 else 0, max(0, s["max_positions"] - active))
+            lines.append(
+                f"Free margin {money(free)} · a typical trade (2% stop, {lev}x) ties up ≈ {money(margin)} "
+                f"→ room for about <b>{room}</b> more now"
+            )
+        lines += [
+            "",
+            "Tap a preset or type /risk 75 · /risk 1.5% · /maxpos 8 · /dailystop 300",
+            "<i>Stops are stop-market orders on the exchange: a gap can cost a little more than the set risk.</i>",
+        ]
+        usd = s["risk_mode"] == "usd"
+        ru = [_button(_check(usd and s["risk_usd"] == v, f"${v}"), f"d:ru:{v}") for v in (25, 50, 75, 100, 200)]
+        rp = [_button(_check(not usd and s["risk_pct"] == v, f"{v:g}%"), f"d:rp:{v:g}") for v in (0.5, 1, 2, 3)]
+        mp = [_button(_check(s["max_positions"] == v, f"{v} pos"), f"d:mp:{v}") for v in (3, 4, 6, 8, 10)]
+        dl = [
+            _button(_check(s["daily_loss_usd"] == v, f"Stop ${v}" if v else "No stop"), f"d:dl:{v}")
+            for v in (100, 200, 300, 500, 0)
+        ]
+        keyboard = [ru, rp, mp, dl[:3], dl[3:], _nav("d:risk")]
         return "\n".join(lines), {"inline_keyboard": keyboard}
 
     async def leverage(self):
         state, desk, s = await self._state()
         lines = [
-            "⚙️ Leverage",
+            "⚙️ <b>Leverage</b>",
             "",
-            f"Max for all symbols: {s['max_leverage']}x (isolated margin)",
+            f"Max for all symbols: <b>{self._lev_text(s)}</b> (isolated margin)",
         ]
         if s["symbol_leverage"]:
-            lines.append("Symbol settings: " + ", ".join(f"{c} {v}x" for c, v in sorted(s["symbol_leverage"].items())))
+            lines.append("Symbol settings: " + h(", ".join(f"{c} {v}x" for c, v in sorted(s["symbol_leverage"].items()))))
         else:
             lines.append("Symbol settings: none")
         lines += [
             "",
-            "Each trade uses the symbol setting if you set one, otherwise the max above, "
-            "then the lower of the exchange maximum and the liquidation-safe level "
-            "(liquidation kept at least 1.5× the stop distance away).",
-            "Leverage changes the margin a trade uses, not the dollars at risk.",
+            "Each trade uses the symbol setting if there is one, otherwise the max above — never more "
+            "than the exchange maximum or the liquidation-safe level (liquidation at least 1.5× the stop "
+            "distance away).",
+            "Leverage only changes the margin a trade ties up; the dollars at risk come from the stop.",
             "",
-            "Examples: stop 2% away allows up to "
-            f"{liquidation_safe_leverage(0.02, 20)}x · 5% away up to {liquidation_safe_leverage(0.05, 20)}x · "
-            f"10% away up to {liquidation_safe_leverage(0.10, 20)}x (on a 20x market).",
+            "On a 20x market: stop 1% away → up to "
+            f"{min(20, liquidation_safe_leverage(0.01, 20))}x · 2% → {liquidation_safe_leverage(0.02, 20)}x · "
+            f"5% → {liquidation_safe_leverage(0.05, 20)}x",
             "",
-            "Type /lev SOL 10 for one symbol, /lev SOL auto to clear it.",
+            "Type /lev SOL 5 for one symbol, /lev SOL auto to clear it.",
         ]
-        presets = [_button(("✅ " if s["max_leverage"] == v else "") + f"{v}x", f"d:ml:{v}") for v in (1, 2, 3, 5, 10, 20)]
-        keyboard = _rows(presets, 3) + [[_button(("✅ " if s["max_leverage"] == 50 else "") + "Exchange max", "d:ml:50")]]
+        presets = [_button(_check(s["max_leverage"] == v, f"{v}x"), f"d:ml:{v}") for v in (3, 5, 10, 15, 20, 25)]
+        keyboard = _rows(presets, 3) + [
+            [_button(_check(s["max_leverage"] >= AUTO_LEVERAGE, "Auto (safe max)"), f"d:ml:{AUTO_LEVERAGE}")]
+        ]
         clears = [_button(f"✖️ {c}", f"d:lc:{c}") for c in sorted(s["symbol_leverage"])[:6]]
         keyboard += _rows(clears, 3) + [_nav("d:lev")]
         return "\n".join(lines), {"inline_keyboard": keyboard}
@@ -589,48 +806,66 @@ class DeskPanel:
     async def filters(self):
         state, desk, s = await self._state()
         lines = [
-            "🎯 Signal filters",
+            "🎯 <b>Filters</b>",
             "",
-            f"Direction: {s['direction']}",
-            f"Signal source: {BOOKS[s['book']]}"
+            f"Direction: <b>{self._direction_text(s)}</b>",
+            f"Signal source: <b>{h(BOOKS[s['book']])}</b>"
             + (f" · {LAYERS[s['layer']]}" if s["book"] == "shadow_book" else ""),
-            "Blocked: " + (", ".join(s["blocked"]) if s["blocked"] else "none"),
+            "Blocked: " + (h(", ".join(s["blocked"])) if s["blocked"] else "none"),
             "",
-            "Shadow Book = the Claude Shadow Desk's trades in your Google Sheet. SIGNAL layer = the desk's signal trades; BOOK layer = the capped book it tracks for its equity curve.",
-            "Railway engine = the bot's own automated Elliott scanner on Bybit data.",
-            "",
-            "Type /block DOGE or /unblock DOGE.",
+            "SIGNAL layer = every setup the Shadow Desk believes in (the profitable record). "
+            "BOOK layer = its capped, realistic subset. BOTH = everything.",
         ]
-        dirs = [_button(("✅ " if s["direction"] == d else "") + d.capitalize(), f"d:dir:{d}") for d in ("both", "long", "short")]
-        books = [
-            _button(("✅ " if s["book"] == "shadow_book" else "") + "Shadow Book", "d:book:s"),
-            _button(("✅ " if s["book"] == "baseline_shadow" else "") + "Engine rules", "d:book:b"),
-            _button(("✅ " if s["book"] == "ai_shadow" else "") + "Engine AI", "d:book:a"),
+        if self.engine:
+            lines.append("Engine = the Railway bot's own Elliott scanner on Bybit data.")
+        lines += ["", "Type /block DOGE or /unblock DOGE."]
+        dirs = [
+            _button(_check(s["direction"] == d, label), f"d:dir:{d}")
+            for d, label in (("both", "Both"), ("long", "Longs only"), ("short", "Shorts only"))
         ]
         layers = [
-            _button(("✅ " if s["layer"] == v else "") + LAYERS[v], f"d:lay:{v}")
+            _button(_check(s["layer"] == v, {"signal": "SIGNAL", "book": "BOOK", "all": "BOTH"}[v]), f"d:lay:{v}")
             for v in ("signal", "book", "all")
         ]
+        keyboard = [dirs, layers]
+        if self.engine:
+            keyboard.append(
+                [
+                    _button(_check(s["book"] == "shadow_book", "Shadow Book"), "d:book:s"),
+                    _button(_check(s["book"] == "baseline_shadow", "Engine rules"), "d:book:b"),
+                    _button(_check(s["book"] == "ai_shadow", "Engine AI"), "d:book:a"),
+                ]
+            )
         unblock = [_button(f"✖️ {c}", f"d:ub:{c}") for c in s["blocked"][:6]]
-        keyboard = [dirs, books, layers] + _rows(unblock, 3) + [_nav("d:flt")]
+        keyboard += _rows(unblock, 3) + [_nav("d:flt")]
         return "\n".join(lines), {"inline_keyboard": keyboard}
 
     async def alerts(self):
         state, desk, s = await self._state()
         lines = [
-            "🔔 Alerts",
+            "🔔 <b>Alerts</b>",
             "",
-            "Always sent: live orders, fills, stop moves, closes, skipped signals and faults.",
-            f"Watchlist alerts (engine setups WAIT/READY/invalidated, AI reviews, universe changes): {s['watchlist_alerts']}",
-            f"Shadow simulation alerts: {s['shadow_alerts']}",
-            "",
-            "auto = on only while Hyperliquid is not connected, so live trading stays uncluttered.",
+            "Always sent: new orders, fills, stop moves, closes, cancelled entries and faults.",
+            f"Signals not taken (e.g. price already past target): <b>{'on' if s['notify_skips'] else 'off'}</b>",
         ]
         keyboard = [
-            [_button(("✅ " if s["watchlist_alerts"] == v else "") + f"Watchlist {v}", f"d:wl:{v}") for v in ("auto", "on", "off")],
-            [_button(("✅ " if s["shadow_alerts"] == v else "") + f"Shadow {v}", f"d:sa:{v}") for v in ("auto", "on", "off")],
-            _nav("d:alr"),
+            [
+                _button(_check(s["notify_skips"], "Skipped: on"), "d:ns:1"),
+                _button(_check(not s["notify_skips"], "Skipped: off"), "d:ns:0"),
+            ]
         ]
+        if self.engine:
+            lines += [
+                f"Watchlist alerts (engine setups, AI reviews, universe changes): <b>{s['watchlist_alerts']}</b>",
+                f"Shadow simulation alerts: <b>{s['shadow_alerts']}</b>",
+                "",
+                "auto = on only while Hyperliquid is not connected, so live trading stays uncluttered.",
+            ]
+            keyboard += [
+                [_button(_check(s["watchlist_alerts"] == v, f"Watchlist {v}"), f"d:wl:{v}") for v in ("auto", "on", "off")],
+                [_button(_check(s["shadow_alerts"] == v, f"Shadow {v}"), f"d:sa:{v}") for v in ("auto", "on", "off")],
+            ]
+        keyboard.append(_nav("d:alr"))
         return "\n".join(lines), {"inline_keyboard": keyboard}
 
     async def performance(self):
@@ -640,7 +875,7 @@ class DeskPanel:
 
         def block(title, rows):
             if not rows:
-                return [f"{title}: no closed trades"]
+                return [f"<b>{title}</b> · no closed trades"]
             wins = [t for t in rows if t.get("pnl", 0) > 0]
             losses = [t for t in rows if t.get("pnl", 0) < 0]
             net = sum(t.get("pnl", 0) for t in rows)
@@ -648,29 +883,41 @@ class DeskPanel:
             gross_win = sum(t["pnl"] for t in wins)
             gross_loss = -sum(t["pnl"] for t in losses)
             pf = f"{gross_win / gross_loss:.2f}" if gross_loss > 0 else "∞" if gross_win > 0 else "—"
-            return [
-                f"{title}: {money(net, signed=True)} · {len(rows)} trades · "
-                f"{len(wins)}W {len(losses)}L ({len(wins) / len(rows):.0%})",
-                f"   avg {sum(rs) / len(rs):+.2f}R · profit factor {pf}" if rs else "",
+            out = [
+                f"<b>{title}</b> · <b>{money(net, signed=True)}</b> · {len(rows)} trades · "
+                f"{len(wins)}W {len(losses)}L ({len(wins) / len(rows):.0%})"
             ]
+            if rs:
+                out.append(f"   avg {sum(rs) / len(rs):+.2f}R · profit factor {pf}")
+            return out
 
         day = [t for t in closed if now - t.get("closed_at", 0) <= 86400]
         week = [t for t in closed if now - t.get("closed_at", 0) <= 7 * 86400]
-        lines = ["📈 Live performance · Hyperliquid", ""]
+        lines = ["📈 <b>Live performance</b> · Hyperliquid", ""]
         lines += block("24h", day)
         lines += block("7 days", week)
         lines += block("All time", closed)
         if closed:
             best = max(closed, key=lambda t: t.get("pnl", 0))
             worst = min(closed, key=lambda t: t.get("pnl", 0))
-            lines += ["", f"Best {tag(best)} {money(best.get('pnl'), signed=True)}", f"Worst {tag(worst)} {money(worst.get('pnl'), signed=True)}"]
-            lines += ["", "Recent:"]
+            lines += [
+                "",
+                f"Best {tag(best)} {money(best.get('pnl'), signed=True)}",
+                f"Worst {tag(worst)} {money(worst.get('pnl'), signed=True)}",
+                "",
+                "<b>Recent</b>",
+            ]
             for t in sorted(closed, key=lambda t: t.get("closed_at", 0), reverse=True)[:8]:
-                lines.append(f"{'🏆' if t.get('pnl', 0) > 0 else '🔻'} {tag(t)} {money(t.get('pnl'), signed=True)} · {t.get('exit', '')}")
+                lines.append(
+                    f"{'🏆' if t.get('pnl', 0) > 0 else '🔻'} {tag(t)} {money(t.get('pnl'), signed=True)} · {h(t.get('exit', ''))}"
+                )
         skipped = sum(1 for t in desk["trades"].values() if t.get("status") == "SKIPPED")
-        lines += ["", f"Signals not taken: {skipped} · shadow results: Signal engine → Performance"]
-        keyboard = [[_button("🔬 Shadow performance", "pg:performance:0")], _nav("d:perf")]
-        return "\n".join(x for x in lines if x is not None), {"inline_keyboard": keyboard}
+        lines += ["", f"Signals not taken: {skipped}"]
+        keyboard = []
+        if self.engine:
+            keyboard.append([_button("🔬 Shadow performance", "pg:performance:0")])
+        keyboard.append(_nav("d:perf"))
+        return "\n".join(lines), {"inline_keyboard": keyboard}
 
     # ----------------------------------------------------------- actions
     def _fresh(self, message, seconds):
@@ -679,9 +926,28 @@ class DeskPanel:
         stamp = message.get("edit_date") or message.get("date")
         return isinstance(stamp, int) and -5 <= self.clock() - stamp <= seconds
 
+    async def _touch(self, message, view: str):
+        """Remember what the pinned dashboard shows, so auto-refresh never fights a tap."""
+        mid = (message or {}).get("message_id")
+        if not mid:
+            return
+
+        def write(tx):
+            pin = desk_state(tx.state).get("pin")
+            if isinstance(pin, dict) and pin.get("message_id") == mid:
+                pin["view"] = view
+                pin["touched"] = self.clock()
+
+        await self.store.update(write)
+
     async def callback(self, data: str, actor: str, message: dict | None = None):
         parts = data.split(":")
-        if len(parts) == 2 and parts[1] in ("home", "pos", "risk", "lev", "flt", "alr", "perf", "help", "sig"):
+        view = parts[1] if len(parts) == 2 and parts[1] in VIEWS else "other"
+        await self._touch(message, view)
+        return await self._callback(parts, actor, message)
+
+    async def _callback(self, parts, actor, message):
+        if len(parts) == 2 and parts[1] in VIEWS:
             return await self.render(parts[1])
         action = parts[1] if len(parts) > 1 else ""
         if action in ("clok", "caok"):
@@ -692,6 +958,8 @@ class DeskPanel:
             text, keyboard = await self.home()
             return "⌛ Those buttons were old, so nothing changed. Here is a fresh panel.\n\n" + text, keyboard
         arg = parts[2] if len(parts) > 2 else ""
+        back = parts[3] if len(parts) > 3 else ""
+        coin_arg = ":".join(parts[2:])  # builder markets contain a colon, e.g. xyz:GOLD
         if action in ("pause", "resume"):
             paused = action == "pause"
             await self._change(lambda s: s.update(paused=paused), f"paused={paused}")
@@ -716,8 +984,8 @@ class DeskPanel:
         if action == "ml" and arg.isdigit():
             await self._change(lambda s: s.update(max_leverage=int(arg)), f"max_leverage={arg}")
             return await self.leverage()
-        if action == "lc" and arg:
-            await self._change(lambda s: s["symbol_leverage"].pop(arg, None), f"clear_leverage={arg}")
+        if action == "lc" and coin_arg:
+            await self._change(lambda s: s["symbol_leverage"].pop(coin_arg, None), f"clear_leverage={coin_arg}")
             return await self.leverage()
         if action == "dir" and arg in ("both", "long", "short"):
             await self._change(lambda s: s.update(direction=arg), f"direction={arg}")
@@ -728,20 +996,27 @@ class DeskPanel:
             return await self.filters()
         if action == "lay" and arg in ("signal", "book", "all"):
             await self._change(lambda s: s.update(layer=arg), f"layer={arg}")
+            return await (self.signals() if back == "sig" else self.filters())
+        if action == "ub" and coin_arg:
+            await self._change(
+                lambda s: s.update(blocked=[c for c in s["blocked"] if c != coin_arg]), f"unblock={coin_arg}"
+            )
             return await self.filters()
-        if action == "ub" and arg:
-            await self._change(lambda s: s.update(blocked=[c for c in s["blocked"] if c != arg]), f"unblock={arg}")
-            return await self.filters()
+        if action == "ns" and arg in ("0", "1"):
+            await self._change(lambda s: s.update(notify_skips=arg == "1"), f"notify_skips={arg}")
+            return await self.alerts()
         if action == "wl" and arg in ("auto", "on", "off"):
             await self._change(lambda s: s.update(watchlist_alerts=arg), f"watchlist={arg}")
             return await self.alerts()
         if action == "sa" and arg in ("auto", "on", "off"):
             await self._change(lambda s: s.update(shadow_alerts=arg), f"shadow_alerts={arg}")
             return await self.alerts()
+        if action == "be" and arg:
+            return await self._breakeven(arg)
         if action == "cl" and arg:
             return await self._ask_close(arg, actor)
         if action == "ca":
-            return self._ask("caok", "", actor, "🚨 Close ALL desk positions at market and cancel all pending entries?")
+            return self._ask("caok", "", actor, "🚨 <b>Close ALL</b> desk positions at market and cancel all pending entries?")
         return await self.home()
 
     def _ask(self, action, arg, actor, question):
@@ -750,14 +1025,25 @@ class DeskPanel:
         keyboard = [[_button("✅ Yes, do it", f"d:{action}:{nonce}"), _button("✖️ No", "d:x")]]
         return question + f"\n\nConfirm within {CONFIRM_SECONDS // 60} minutes.", {"inline_keyboard": keyboard}
 
-    async def _ask_close(self, sid, actor):
+    async def _find(self, sid, statuses=ACTIVE):
         state, desk, s = await self._state()
-        trade = next((t for t in desk["trades"].values() if short_id(t["id"]) == sid and t.get("status") in ACTIVE), None)
+        return next(
+            (t for t in desk["trades"].values() if short_id(t["id"]) == sid and t.get("status") in statuses), None
+        )
+
+    async def _breakeven(self, sid):
+        trade = await self._find(sid, ("OPEN",))
+        result = await self.desk.breakeven(trade["id"]) if trade and self.desk else "That position is no longer open."
+        text, keyboard = await self.positions()
+        return "🛡 " + h(result) + "\n\n" + text, keyboard
+
+    async def _ask_close(self, sid, actor):
+        trade = await self._find(sid)
         if not trade:
             text, keyboard = await self.positions()
             return "That position is no longer active.\n\n" + text, keyboard
         verb = "Close" if trade["status"] == "OPEN" else "Cancel the pending entry for"
-        return self._ask("clok", f"{sid}", actor, f"{verb} {tag(trade)} at market?")
+        return self._ask("clok", f"{sid}", actor, f"{verb} <b>{tag(trade)}</b> at market?")
 
     async def _confirmed(self, action, nonce, actor, message):
         pending = self._confirm.pop(nonce, None)
@@ -771,11 +1057,11 @@ class DeskPanel:
             trade = next((t for t in desk["trades"].values() if short_id(t["id"]) == pending[1]), None)
             result = await self.desk.close_trade(trade["id"]) if trade else "That position is no longer active."
         text, keyboard = await self.positions()
-        return result + "\n\n" + text, keyboard
+        return h(result) + "\n\n" + text, keyboard
 
     async def command(self, command: str, args: list[str], actor: str):
         """Return (text, keyboard) for desk commands, or None to fall through."""
-        if command in ("start", "dashboard", "desk", "settings"):
+        if command in ("start", "dashboard", "desk", "settings", "home"):
             return await self.home()
         if command == "positions":
             return await self.positions()
@@ -783,10 +1069,12 @@ class DeskPanel:
             return await self.signals()
         if command == "performance":
             return await self.performance()
+        if command == "status":
+            return await self.status()
         if command == "alerts":
             return await self.alerts()
         if command == "help":
-            return HELP, {"inline_keyboard": [_nav("d:help")]}
+            return await self.render("help")
         if command in ("pause", "resume"):
             paused = command == "pause"
             await self._change(lambda s: s.update(paused=paused), f"paused={paused}")
@@ -815,12 +1103,15 @@ class DeskPanel:
             if not args:
                 return await self.leverage()
             if len(args) == 1:
+                if args[0].lower() in ("auto", "max"):
+                    await self._change(lambda s: s.update(max_leverage=AUTO_LEVERAGE), "max_leverage=auto")
+                    return await self.leverage()
                 try:
                     number = int(args[0].lower().rstrip("x"))
                 except ValueError:
-                    return self._error("Use /lev 5 or /lev SOL 10.", "d:lev")
+                    return self._error("Use /lev auto, /lev 5 or /lev SOL 10.", "d:lev")
                 if not 1 <= number <= 50:
-                    return self._error("Leverage must be 1–50.", "d:lev")
+                    return self._error("Leverage must be 1–50 (or auto).", "d:lev")
                 await self._change(lambda s: s.update(max_leverage=number), f"max_leverage={number}")
                 return await self.leverage()
             coin = self._coin(args[0])
@@ -872,22 +1163,25 @@ class DeskPanel:
             else:
                 await self._change(lambda s: s.update(blocked=[c for c in s["blocked"] if c != coin]), f"unblock={coin}")
             return await self.filters()
-        if command == "close":
+        if command in ("close", "be"):
             if len(args) != 1:
-                return self._error("Use /close SOL.", "d:pos")
+                return self._error(f"Use /{command} SOL.", "d:pos")
             coin = self._coin(args[0])
             state, desk, s = await self._state()
-            trade = next((t for t in desk["trades"].values() if t.get("coin") == coin and t.get("status") in ACTIVE), None)
+            statuses = ("OPEN",) if command == "be" else ACTIVE
+            trade = next((t for t in desk["trades"].values() if t.get("coin") == coin and t.get("status") in statuses), None)
             if not trade:
-                return self._error(f"No active desk position on {args[0].upper()}.", "d:pos")
+                return self._error(f"No {'open' if command == 'be' else 'active'} desk position on {args[0].upper()}.", "d:pos")
+            if command == "be":
+                return await self._breakeven(short_id(trade["id"]))
             return await self._ask_close(short_id(trade["id"]), actor)
         if command == "closeall":
-            return self._ask("caok", "", actor, "🚨 Close ALL desk positions at market and cancel all pending entries?")
+            return self._ask("caok", "", actor, "🚨 <b>Close ALL</b> desk positions at market and cancel all pending entries?")
         return None
 
     @staticmethod
     def _error(text, back):
-        return "⚠️ " + text, {"inline_keyboard": [[_button("← Back", back), _button("🏠 Home", "d:home")]]}
+        return "⚠️ " + h(text), {"inline_keyboard": [[_button("← Back", back), _button("🏠 Home", "d:home")]]}
 
 
 def _alert_mode(state: dict, key: str, desk_live: bool) -> bool:
@@ -911,6 +1205,7 @@ __all__ = [
     "DeskPanel",
     "DESK_COMMANDS",
     "HELP",
+    "plain",
     "signal_card",
     "skip_text",
     "fill_text",
@@ -920,4 +1215,5 @@ __all__ = [
     "shadow_alerts_enabled",
     "watchlist_alerts_enabled",
     "DEFAULT_SETTINGS",
+    "leverage_label",
 ]

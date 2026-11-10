@@ -12,7 +12,7 @@ from apex_bot.desk import (
     plan_entry,
     short_id,
 )
-from apex_bot.desk_panel import DeskPanel, signal_card
+from apex_bot.desk_panel import DeskPanel, plain, signal_card
 from apex_bot.hl_client import (
     HLError,
     cloid_for,
@@ -294,7 +294,7 @@ async def make_desk(tmp_path, shadow_trades=None, settings=None):
 
 
 async def outbox(store):
-    return [n["text"] for n in await store.pending_notifications(limit=100)]
+    return [plain(n["text"]) for n in await store.pending_notifications(limit=100)]
 
 
 async def trade(store, tid="baseline_shadow:op1"):
@@ -492,6 +492,7 @@ def test_no_keys_reports_not_connected(tmp_path):
         assert desk.snapshot["status"] == "no_keys"
         panel = DeskPanel(store, desk)
         text, keyboard = await panel.home()
+        text = plain(text)
         assert "not connected" in text and "HL_ACCOUNT_ADDRESS" in text
         await store.close()
 
@@ -508,18 +509,25 @@ def test_panel_commands_change_settings(tmp_path):
         panel = DeskPanel(store, desk, clock=clock)
         actor = "telegram:1:2"
         text, _ = await panel.command("risk", ["75"], actor)
+        text = plain(text)
         assert "$75.00/trade" in text
         text, _ = await panel.command("risk", ["1.5%"], actor)
+        text = plain(text)
         assert "1.5%" in text
         text, _ = await panel.command("risk", ["500%"], actor)
+        text = plain(text)
         assert text.startswith("⚠️")
         text, _ = await panel.command("lev", ["10"], actor)
+        text = plain(text)
         assert "Max for all symbols: 10x" in text
         text, _ = await panel.command("lev", ["sol", "8"], actor)
+        text = plain(text)
         assert "SOL 8x" in text
         text, _ = await panel.command("lev", ["1000pepe", "3"], actor)
+        text = plain(text)
         assert "kPEPE 3x" in text
         text, _ = await panel.command("lev", ["SOL", "auto"], actor)
+        text = plain(text)
         assert "SOL 8x" not in text
         await panel.command("maxpos", ["8"], actor)
         await panel.command("dailystop", ["off"], actor)
@@ -546,22 +554,30 @@ def test_panel_buttons_and_close_confirmation(tmp_path):
         actor = "telegram:1:2"
         fresh = {"date": int(NOW)}
         text, keyboard = await panel.callback("d:home", actor, fresh)
+        text = plain(text)
         assert "APEX DESK" in text and "1 open" in text
         text, _ = await panel.callback("d:ru:100", actor, fresh)
+        text = plain(text)
         assert "$100.00/trade" in text
         text, _ = await panel.callback("d:ml:20", actor, {"date": int(NOW) - 3600})
+        text = plain(text)
         assert "old" in text  # stale settings buttons do nothing
         text, keyboard = await panel.callback("d:pos", actor, fresh)
+        text = plain(text)
         sid = short_id("baseline_shadow:op1")
         assert f"d:cl:{sid}" in str(keyboard)
         text, keyboard = await panel.callback(f"d:cl:{sid}", actor, fresh)
+        text = plain(text)
         confirm = keyboard["inline_keyboard"][0][0]["callback_data"]
         assert confirm.startswith("d:clok:")
         text, _ = await panel.callback(confirm, "telegram:1:999", fresh)
+        text = plain(text)
         assert "expired" in text  # another user cannot confirm
         text, keyboard = await panel.callback(f"d:cl:{sid}", actor, fresh)
+        text = plain(text)
         confirm = keyboard["inline_keyboard"][0][0]["callback_data"]
         text, _ = await panel.callback(confirm, actor, fresh)
+        text = plain(text)
         assert "Closing SOL" in text
         assert "SOL" not in hl.positions
         await desk.tick()
@@ -591,9 +607,10 @@ def test_signal_card_reads_professionally():
         "expires_at": NOW,
         "setup": "2X",
     }
-    card = signal_card(t)
-    assert card.splitlines()[0].startswith("🟢 LONG SOL · Apex signal #")
-    for needle in ("Entry: 100", "Stop: 95 (−5.00%)", "Target 1: 110 (+10.00%)", "Target 2: 125", "2.0R · 5.0R", "Risk $49.98"):
+    html = signal_card(t)
+    assert html.splitlines()[0].startswith("🟢 <b>LONG SOL</b> · Apex signal #")
+    card = plain(html)
+    for needle in ("Entry 100 ·", "Stop 95 (−5.00%)", "Target 1 110 (+10.00%)", "Target 2 125", "2.0R · 5.0R", "Risk $49.98"):
         assert needle in card
 
 

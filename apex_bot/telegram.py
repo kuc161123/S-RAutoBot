@@ -9,7 +9,9 @@ change_setting directly. See docs/apex/TELEGRAM_AUDIT.txt for the service contra
 from __future__ import annotations
 
 import asyncio
+import html as _html
 import json
+import logging
 import math
 import re
 import time
@@ -17,6 +19,8 @@ from decimal import Decimal
 from typing import Protocol, TypedDict
 
 import aiohttp
+
+LOG = logging.getLogger(__name__)
 
 
 PROFILES = ("ultra_cautious", "cautious", "balanced", "aggressive", "extreme")
@@ -210,8 +214,10 @@ class TelegramError(Exception):
         status: int | None = None,
         uncertain: bool = False,
         sent_message_ids: tuple[str, ...] = (),
+        parse_error: bool = False,
     ):
         super().__init__(message)
+        self.parse_error = parse_error
         self.retry_after = retry_after
         self.status = status
         self.uncertain = uncertain
@@ -225,6 +231,21 @@ class _CommandError(Exception):
 
 def _positive_id(value: object) -> bool:
     return type(value) is int and value > 0
+
+
+def _plain(text: str) -> str:
+    """Telegram-HTML text -> plain text, for the parse-error fallback."""
+    return _html.unescape(re.sub(r"</?(b|i|u|s|code|pre)>", "", str(text)))
+
+
+DESK_BOT_NAME = "Apex Desk"
+DESK_BOT_DESCRIPTION = (
+    "Apex Desk trades the Apex Kapital Shadow Book on Hyperliquid automatically: "
+    "every signal becomes a live order with its stop on the exchange, target 1 moves "
+    "the stop to entry, target 2 takes the rest. Live dashboard, positions and full "
+    "risk controls. Private bot — only the owner can use it."
+)
+DESK_BOT_SHORT = "Automated Hyperliquid trading desk for the Apex Kapital Shadow Book."
 
 
 def _chunks(text: str) -> list[str]:
@@ -291,6 +312,7 @@ class TelegramController:
         )
         self._service = service
         self._desk = desk_panel
+        self._exclusive = False
         expected = (
             bot_username.lstrip("@") if isinstance(bot_username, str) else bot_username
         )
@@ -333,20 +355,51 @@ class TelegramController:
         self._identity_failed = False
         if not publish_commands:
             return
+        commands = [
+            {"command": key, "description": value}
+            for key, value in self._command_menu().items()
+        ]
         await self._request(
             "setMyCommands",
-            {
-                "commands": [
-                    {"command": key, "description": value}
-                    for key, value in self._command_menu().items()
-                ],
-                "scope": {"type": "chat", "chat_id": self.chat_id},
-            },
+            {"commands": commands, "scope": {"type": "chat", "chat_id": self.chat_id}},
         )
+        if self._exclusive:
+            await self._refresh_profile(commands)
 
-    def attach_desk(self, panel) -> None:
-        """Make the Hyperliquid desk panel the home screen and command handler."""
+    async def _refresh_profile(self, commands: list) -> None:
+        """Desk-only bot: replace any older command menus and the bot's name/about text.
+
+        Cosmetic and rate limited by Telegram, so failures never block startup.
+        """
+        for scope in ({"type": "default"}, {"type": "all_private_chats"}):
+            try:
+                await self._request("setMyCommands", {"commands": commands, "scope": scope})
+            except TelegramError:
+                LOG.warning("Telegram command menu not refreshed for %s", scope["type"])
+        for getter, setter, key, value in (
+            ("getMyName", "setMyName", "name", DESK_BOT_NAME),
+            ("getMyDescription", "setMyDescription", "description", DESK_BOT_DESCRIPTION),
+            ("getMyShortDescription", "setMyShortDescription", "short_description", DESK_BOT_SHORT),
+        ):
+            try:
+                current = await self._request(getter, {}, get=True)
+                if not isinstance(current, dict) or current.get(key) != value:
+                    await self._request(setter, {key: value})
+            except TelegramError:
+                LOG.warning("Telegram bot %s not refreshed", key)
+
+    def attach_desk(self, panel, *, exclusive: bool = False) -> None:
+        """Make the Hyperliquid desk panel the home screen and command handler.
+
+        exclusive: the bot is the desk and nothing else. Old engine commands and
+        buttons open the desk home instead, and the bot's name/menu are refreshed.
+        """
         self._desk = panel
+        self._exclusive = bool(exclusive)
+
+    @property
+    def exclusive(self) -> bool:
+        return self._exclusive
 
     def _command_menu(self) -> dict:
         if self._desk is None:
@@ -401,7 +454,7 @@ class TelegramController:
                 offset = update["update_id"] + 1
             return offset
 
-    async def send(self, text: str, keyboard: dict | None = None) -> str:
+    async def send(self, text: str, keyboard: dict | None = None, *, html: bool = False) -> str:
         """Send plain text, return the last chunk's message ID as a string.
 
         The caller owns durable delivery, backoff and event/chunk deduplication.
@@ -411,21 +464,33 @@ class TelegramController:
         if not self._enabled or self._identity_failed:
             raise TelegramError("Telegram authorization is not configured")
         async with self._send_lock:
-            return await self._send_chunks(_chunks(self._redact(text)), keyboard)
+            return await self._send_chunks(_chunks(self._redact(text)), keyboard, html=html)
 
     def _redact(self, text: str) -> str:
         if not isinstance(text, str):
             raise ValueError("A plain-text service response is required")
         return text.replace(self._token, "[redacted]")
 
-    async def _send_chunks(self, chunks: list[str], keyboard: dict | None) -> str:
+    async def _text_call(self, method: str, payload: dict, html: bool):
+        """One text request; HTML Telegram cannot parse is resent once as plain text."""
+        try:
+            return await self._request(method, payload)
+        except TelegramError as error:
+            if not (html and error.parse_error):
+                raise
+            fallback = dict(payload)
+            fallback.pop("parse_mode", None)
+            fallback["text"] = _plain(payload["text"])
+            return await self._request(method, fallback)
+
+    async def _send_chunks(self, chunks: list[str], keyboard: dict | None, *, html: bool = False) -> str:
         ids = []
         try:
             for index, chunk in enumerate(chunks):
-                payload = self._text_payload(chunk)
+                payload = self._text_payload(chunk, html)
                 if keyboard is not None and index == len(chunks) - 1:
                     payload["reply_markup"] = keyboard
-                result = await self._request("sendMessage", payload)
+                result = await self._text_call("sendMessage", payload, html)
                 if not isinstance(result, dict) or not _positive_id(
                     result.get("message_id")
                 ):
@@ -438,20 +503,49 @@ class TelegramController:
             raise
         return ids[-1]
 
-    def _text_payload(self, text: str) -> dict:
-        return {
+    def _text_payload(self, text: str, html: bool = False) -> dict:
+        payload = {
             "chat_id": self.chat_id,
             "text": text,
             "link_preview_options": {"is_disabled": True},
         }
+        if html:
+            payload["parse_mode"] = "HTML"
+        return payload
+
+    async def edit(self, message_id: int, text: str, keyboard: dict | None, *, html: bool = True) -> bool:
+        """Edit one message in place; False if Telegram says it is gone or uneditable."""
+        chunk = _chunks(self._redact(text))[0]
+        payload = self._text_payload(chunk, html)
+        payload.update(message_id=message_id, reply_markup=keyboard or {"inline_keyboard": []})
+        async with self._send_lock:
+            try:
+                await self._text_call("editMessageText", payload, html)
+            except TelegramError as error:
+                if error.status in (400, 403) and not error.uncertain:
+                    return False
+                raise
+        return True
+
+    async def pin(self, message_id: int, *, previous: int | None = None) -> None:
+        """Pin the live dashboard quietly, unpinning the previous one first."""
+        if previous:
+            try:
+                await self._request("unpinChatMessage", {"chat_id": self.chat_id, "message_id": previous})
+            except TelegramError:
+                pass
+        await self._request(
+            "pinChatMessage",
+            {"chat_id": self.chat_id, "message_id": message_id, "disable_notification": True},
+        )
 
     async def _render(
-        self, text: str, keyboard: dict | None, message: dict | None
+        self, text: str, keyboard: dict | None, message: dict | None, *, html: bool = False
     ) -> None:
         chunks = _chunks(self._redact(text))
         async with self._send_lock:
             if message is not None and _positive_id(message.get("message_id")):
-                payload = self._text_payload(chunks[0])
+                payload = self._text_payload(chunks[0], html)
                 payload.update(
                     message_id=message["message_id"],
                     reply_markup=(
@@ -461,7 +555,7 @@ class TelegramController:
                     ),
                 )
                 try:
-                    await self._request("editMessageText", payload)
+                    await self._text_call("editMessageText", payload, html)
                 except TelegramError as error:
                     # An explicit uneditable/deleted message can be replaced.
                     # Never duplicate on timeouts, 429s, or server errors.
@@ -469,9 +563,9 @@ class TelegramController:
                         raise
                 else:
                     if len(chunks) > 1:
-                        await self._send_chunks(chunks[1:], keyboard)
+                        await self._send_chunks(chunks[1:], keyboard, html=html)
                     return
-            await self._send_chunks(chunks, keyboard)
+            await self._send_chunks(chunks, keyboard, html=html)
 
     def _authorized(self, message: object, sender: object) -> bool:
         if (
@@ -706,17 +800,28 @@ class TelegramController:
             else:
                 await self._command(message, actor)
         except _CommandError as error:
-            await self._render(str(error), self._keyboard("dashboard"), target)
+            await self._render(str(error), self._error_keyboard(), target)
         except TelegramError:
             raise
         except Exception:
             # Neither service exceptions nor aiohttp URLs may expose credentials.
             # A failed confirmation response may follow a committed change.
             await self._render(
-                "⚠️ Unable to verify the request. Check /status and /risk before requesting a new preview.",
-                self._keyboard("dashboard"),
+                "⚠️ Unable to verify the request. Check /status and /positions before trying again.",
+                self._error_keyboard(),
                 target,
             )
+
+    def _error_keyboard(self) -> dict:
+        if self._exclusive and self._desk is not None:
+            return {"inline_keyboard": [[self._button("🏠 Dashboard", "d:home")]]}
+        return self._keyboard("dashboard")
+
+    async def _desk_home(self, note: str | None, message: dict | None) -> None:
+        text, keyboard = await asyncio.wait_for(self._desk.home(), timeout=self.SERVICE_TIMEOUT)
+        if note:
+            text = note + "\n\n" + text
+        await self._render(text, keyboard, message, html=True)
 
     async def _command(self, message: dict, actor: str) -> None:
         text = message.get("text")
@@ -736,7 +841,7 @@ class TelegramController:
         if self._desk is not None:
             mutating = {
                 "pause", "resume", "maxpos", "dailystop", "direction",
-                "block", "unblock", "close", "closeall",
+                "block", "unblock", "close", "closeall", "be",
             }
             if command in mutating or (command in ("risk", "lev") and args):
                 self._fresh(message)
@@ -745,7 +850,13 @@ class TelegramController:
                 timeout=self.SERVICE_TIMEOUT,
             )
             if result is not None:
-                await self._render(result[0], result[1], None)
+                await self._render(result[0], result[1], None, html=True)
+                return
+            if self._exclusive:
+                await self._desk_home(
+                    f"ℹ️ /{_html.escape(command[:32], quote=False)} is not a desk command — here is your dashboard. /help lists everything.",
+                    None,
+                )
                 return
         if command == "start":
             # Telegram start payloads are navigation, never settings or resume.
@@ -797,7 +908,11 @@ class TelegramController:
                 self._desk.callback(data, actor, message),
                 timeout=self.SERVICE_TIMEOUT,
             )
-            await self._render(text, keyboard, message)
+            await self._render(text, keyboard, message, html=True)
+            return
+        if self._exclusive and self._desk is not None:
+            # Buttons from the old engine's messages open the desk instead.
+            await self._desk_home("ℹ️ That button belonged to the old bot. Here is the desk.", message)
             return
         if (
             (parts[0] == "v" and len(parts) in (2, 3))
@@ -941,9 +1056,15 @@ class TelegramController:
                     retry = None
                 error_code = body.get("error_code") if isinstance(body, dict) else None
                 code = error_code if type(error_code) is int else status
+                description = body.get("description") if isinstance(body, dict) else None
                 raise TelegramError(
                     "Telegram API request rejected",
                     status=code,
+                    parse_error=(
+                        code == 400
+                        and isinstance(description, str)
+                        and "can't parse entities" in description
+                    ),
                     retry_after=retry,
                     uncertain=(
                         status >= 500

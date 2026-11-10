@@ -187,6 +187,7 @@ def close_text(trade: dict) -> str:
 HELP = (
     "🏦 Apex Desk · commands\n\n"
     "/dashboard — home: account, P&L, positions\n"
+    "/signals — Shadow Book signals and what the desk did with each\n"
     "/positions — open positions and pending entries\n"
     "/performance — live results\n\n"
     "Risk\n"
@@ -212,6 +213,7 @@ HELP = (
 
 DESK_COMMANDS = {
     "dashboard": "Home: account, P&L, positions and controls",
+    "signals": "Shadow Book signals and what the desk did with each",
     "positions": "Open positions and pending entries",
     "performance": "Live trading results",
     "risk": "Risk per trade: /risk 50 or /risk 1%",
@@ -306,6 +308,8 @@ class DeskPanel:
             return await self.performance()
         if view == "help":
             return HELP, {"inline_keyboard": [_nav("d:help")]}
+        if view == "sig":
+            return await self.signals()
         return await self.home()
 
     def _connection_lines(self):
@@ -360,7 +364,11 @@ class DeskPanel:
             "",
             *conn,
         ]
+        setup = self._setup_lines(s)
+        if setup:
+            lines += ["", "🧩 Setup", *setup]
         buttons = [
+            _button("📡 Signals", "d:sig"),
             _button("📂 Positions", "d:pos"),
             _button("📈 Performance", "d:perf"),
             _button("🛡 Risk", "d:risk"),
@@ -369,11 +377,99 @@ class DeskPanel:
             _button("🔔 Alerts", "d:alr"),
             _button("▶️ Resume" if s["paused"] else "⏸ Pause", "d:resume" if s["paused"] else "d:pause"),
             _button("🚨 Close all", "d:ca"),
-            _button("🔬 Signal engine", "pg:dashboard:0"),
             _button("❓ Help", "d:help"),
+            _button("🔬 Signal engine", "pg:dashboard:0"),
         ]
         keyboard = _rows(buttons) + [_nav("d:home")]
         return "\n".join(lines), {"inline_keyboard": keyboard}
+
+    def _setup_lines(self, s):
+        """A checklist only while something still needs doing."""
+        desk = self.desk
+        hl_ok = bool(desk and desk.configured)
+        live = hl_ok and desk.snapshot.get("status") == "live"
+        if s["book"] == "shadow_book":
+            source = desk.source if desk else None
+            src_ok = bool(source and source.configured and source.ok)
+            src_line = (
+                "✅ Shadow Book connected"
+                if src_ok
+                else "❌ Shadow Book link — add APEX_SHADOW_BOOK_CSV_URL in Railway"
+                if not (source and source.configured)
+                else f"⚠️ Shadow Book: {source.error or 'connecting…'}"
+            )
+        else:
+            src_ok, src_line = True, "✅ Railway engine signals"
+        if live and src_ok:
+            return []
+        return [
+            "✅ Telegram connected",
+            (
+                "✅ Hyperliquid connected"
+                if live
+                else "⏳ Hyperliquid connecting…"
+                if hl_ok
+                else "❌ Hyperliquid keys — add HL_ACCOUNT_ADDRESS and HL_API_PRIVATE_KEY in Railway"
+            ),
+            src_line,
+            "Trading starts automatically when every line is ✅.",
+        ]
+
+    async def signals(self):
+        state, desk, s = await self._state()
+        trades = desk["trades"]
+        lines = ["📡 Signals"]
+        if s["book"] != "shadow_book":
+            engine = [
+                t for t in state.get("trades", {}).values()
+                if t.get("arm") == s["book"] and t.get("status") in ("PENDING", "OPEN")
+            ]
+            lines += [f"Source: {BOOKS[s['book']]} · {len(engine)} active", ""]
+            rows = sorted(engine, key=lambda t: t.get("created_at", 0), reverse=True)[:10]
+        else:
+            source = self.desk.source if self.desk else None
+            if not source or not source.configured:
+                lines += ["", "Shadow Book not connected yet.", "Add APEX_SHADOW_BOOK_CSV_URL in Railway Variables."]
+                return "\n".join(lines), {"inline_keyboard": [_nav("d:sig")]}
+            status = f"read {when(getattr(source, 'fetched_at', 0))}" if source.ok else f"unavailable: {source.error}"
+            lines += [f"Source: Apex Kapital Shadow Book · {LAYERS[s['layer']]} · {status}", ""]
+            wanted = (lambda sig: True) if s["layer"] == "all" else (lambda sig: sig.get("layer") == s["layer"].upper())
+            rows = sorted(
+                (x for x in source.signals.values() if x.get("status") in ("PENDING", "OPEN", "TP1") and wanted(x)),
+                key=lambda x: x.get("created_at", 0),
+                reverse=True,
+            )[:10]
+        if not rows:
+            lines.append("No active signals right now. New ones arrive with each Shadow Desk shift.")
+        for sig in rows:
+            mine = trades.get(sig["id"])
+            if mine is None:
+                state_text = (
+                    "🆕 new — taking it on the next check"
+                    if sig.get("status") == "PENDING" and not s["paused"]
+                    else "⏸ paused — not taken"
+                    if s["paused"] and sig.get("status") == "PENDING"
+                    else "— started before the desk saw it (not taken)"
+                )
+            else:
+                state_text = {
+                    "PLACING": "⏳ placing order",
+                    "ORDERED": "📍 live limit order",
+                    "OPEN": "✅ in position" + (" · TP1 done" if mine.get("tp1_done") else ""),
+                    "CLOSED": f"🏁 closed {money(mine.get('pnl'), signed=True)}",
+                    "CANCELLED": "✖️ entry cancelled",
+                    "SKIPPED": f"⏭ skipped: {mine.get('reason', '')}",
+                    "ERROR": f"⚠️ {mine.get('reason', 'error')}",
+                }.get(mine.get("status"), mine.get("status", ""))
+            word = "LONG" if sig.get("side") == "Buy" else "SHORT"
+            label = sig.get("source_id") or short_id(sig["id"])
+            lines += [
+                f"{'🟢' if word == 'LONG' else '🔴'} {word} {sig.get('coin') or sig.get('symbol')} · {label} · sheet {sig.get('status', '').lower()}",
+                f"Entry {px(sig.get('limit'))} · stop {px(sig.get('stop'))} · TP {px(sig.get('target1'))} / {px(sig.get('target2'))}",
+                f"Desk: {state_text}",
+                "",
+            ]
+        return "\n".join(lines).rstrip(), {"inline_keyboard": [[_button("🎯 Change source", "d:flt")], _nav("d:sig")]}
 
     def _risk_text(self, s, snap):
         if s["risk_mode"] == "pct":
@@ -585,7 +681,7 @@ class DeskPanel:
 
     async def callback(self, data: str, actor: str, message: dict | None = None):
         parts = data.split(":")
-        if len(parts) == 2 and parts[1] in ("home", "pos", "risk", "lev", "flt", "alr", "perf", "help"):
+        if len(parts) == 2 and parts[1] in ("home", "pos", "risk", "lev", "flt", "alr", "perf", "help", "sig"):
             return await self.render(parts[1])
         action = parts[1] if len(parts) > 1 else ""
         if action in ("clok", "caok"):
@@ -683,6 +779,8 @@ class DeskPanel:
             return await self.home()
         if command == "positions":
             return await self.positions()
+        if command == "signals":
+            return await self.signals()
         if command == "performance":
             return await self.performance()
         if command == "alerts":

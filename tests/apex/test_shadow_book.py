@@ -78,6 +78,7 @@ class FakeSource:
         self.rows = rows
         self.ok = True
         self.error = None
+        self.fetched_at = 0.0
         self.signals = parse_rows(rows)
 
     async def refresh(self, force=False):
@@ -195,6 +196,31 @@ def test_panel_coin_lookup_accepts_xyz_names(tmp_path):
         panel = DeskPanel(store, desk, clock=clock)
         text, _ = await panel.command("lev", ["gold", "3"], "telegram:1:2")
         assert "xyz:GOLD 3x" in text
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_signals_view_and_setup_checklist(tmp_path):
+    async def run():
+        rows = [
+            HEADER,
+            row("S-1", "SOL", "Short", 100, 105, 95, 90, layer="SIGNAL"),
+            row("S-9", "XRP", "Short", 1.2, 1.25, 1.15, 1.1, layer="SIGNAL"),  # not listed -> skipped
+            row("S-3", "BTC", "Short", 70000, 71000, 69000, 68000, layer="BOOK"),
+        ]
+        store, desk, hl, clock, source = await make(tmp_path, rows)
+        panel = DeskPanel(store, desk, clock=clock)
+        text, keyboard = await panel.home()
+        assert "🧩 Setup" in text and "Hyperliquid connecting" in text  # keys present, no tick yet
+        await desk.tick()
+        text, keyboard = await panel.home()
+        assert "🧩 Setup" not in text  # everything connected
+        assert "d:sig" in str(keyboard)
+        text, _ = await panel.callback("d:sig", "telegram:1:2", {"date": int(clock.now)})
+        assert "S-1" in text and "live limit order" in text
+        assert "S-9" in text and "skipped" in text
+        assert "S-3" not in text  # BOOK layer not followed
         await store.close()
 
     asyncio.run(run())

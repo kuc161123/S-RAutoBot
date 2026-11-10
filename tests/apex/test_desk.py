@@ -652,3 +652,31 @@ def test_config_requires_valid_hyperliquid_pair():
     ):
         with pytest.raises(ConfigError):
             Config.from_env(broken)
+
+
+def test_unified_account_counts_spot_usdc_as_free_margin():
+    from apex_bot.hl_client import HyperliquidClient
+
+    class Info:
+        def user_state(self, address, dex=""):
+            if dex:
+                return {"marginSummary": {"accountValue": "0", "totalMarginUsed": "0"}, "withdrawable": "0", "assetPositions": []}
+            return {
+                "marginSummary": {"accountValue": "712.2", "totalMarginUsed": "566.1"},
+                "withdrawable": "31.15",
+                "assetPositions": [{"position": {"coin": "XRP", "szi": "6444", "entryPx": "1.0", "unrealizedPnl": "12.5", "leverage": {"type": "cross", "value": 12}}}],
+            }
+
+        def spot_user_state(self, address):
+            return {"balances": [{"coin": "USDC", "total": "1170.83", "hold": "679.33"}]}
+
+        def query_user_abstraction_state(self, address):
+            return "unifiedAccount"
+
+    client = HyperliquidClient("0x" + "ab" * 20, "0x" + "11" * 32)
+    client._info, client._exchange, client.dexs = Info(), object(), ("", "xyz")
+    account = asyncio.run(client.account())
+    assert account["mode"] == "unifiedAccount"
+    assert account["available"] == pytest.approx(491.5)
+    assert account["equity"] == pytest.approx(1183.33)
+    assert "XRP" in account["positions"]

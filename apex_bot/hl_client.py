@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import math
 import re
+import time
 from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
 
 MAINNET_URL = "https://api.hyperliquid.xyz"
@@ -191,6 +192,8 @@ class HyperliquidClient:
         self.wanted_dexs = tuple(d for d in perp_dexs if d)
         self.dexs = ("",)
         self.dex_abstraction = None  # None = not attempted; "on" or an error note
+        self._abstraction_mode = "unknown"
+        self._abstraction_at = 0.0
 
     def _build(self):
         try:
@@ -260,14 +263,40 @@ class HyperliquidClient:
         return out
 
     async def account(self) -> dict:
-        total = {"equity": 0.0, "margin_used": 0.0, "available": 0.0, "positions": {}}
+        total = {"equity": 0.0, "margin_used": 0.0, "available": 0.0, "positions": {}, "mode": "standard"}
         for dex in self.dexs:
             part = await self._account(dex)
             total["equity"] += part["equity"]
             total["margin_used"] += part["margin_used"]
             total["available"] += part["available"]
             total["positions"].update(part["positions"])
+        mode = await self._abstraction()
+        if mode in ("unifiedAccount", "portfolioMargin"):
+            # Unified/portfolio accounts keep collateral in the spot USDC balance;
+            # the perp clearinghouse's "withdrawable" understates free margin there.
+            spot = await self._call(lambda: self._info.spot_user_state(self.address))
+            usdc = next(
+                (b for b in (spot or {}).get("balances", []) if b.get("coin") == "USDC"),
+                {},
+            )
+            usdc_total, hold = _num(usdc.get("total")), _num(usdc.get("hold"))
+            upnl = sum(p["upnl"] for p in total["positions"].values())
+            total["equity"] = usdc_total + upnl
+            total["available"] = max(total["available"], usdc_total - hold)
+            total["mode"] = mode
         return total
+
+    async def _abstraction(self) -> str:
+        now = time.monotonic()
+        if self._abstraction_at and now - self._abstraction_at < 600:
+            return self._abstraction_mode
+        try:
+            mode = await self._call(lambda: self._info.query_user_abstraction_state(self.address))
+        except HLError:
+            mode = self._abstraction_mode
+        self._abstraction_mode = mode if isinstance(mode, str) else "unknown"
+        self._abstraction_at = now
+        return self._abstraction_mode
 
     async def _account(self, dex: str) -> dict:
         state = await self._call(lambda: self._info.user_state(self.address, dex))

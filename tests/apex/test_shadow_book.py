@@ -60,6 +60,9 @@ def test_parse_rows_reads_the_real_header_layout():
 
 def test_exit_reason_classification_and_links():
     assert is_price_exit("TP2") and is_price_exit("Stop: filled 07:00 UTC") and is_price_exit("EXPIRED unfilled")
+    # Real Shadow Desk wording: the exchange stop already covers these.
+    assert is_price_exit("FILL and STOP on the same 15m bar 14:30 UTC 4 Nov")
+    assert is_price_exit("BE stop after TP1: 10:00 UTC 15m bar") and is_price_exit("TP1 966 then BE STOP 946")
     assert not is_price_exit("Closed by desk: count invalidated") and not is_price_exit("")
     assert setup_title("") == "Elliott setup"
     assert valid_csv_url("https://docs.google.com/spreadsheets/d/e/2PACX-abc/pub?gid=1&single=true&output=csv")

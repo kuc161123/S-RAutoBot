@@ -49,7 +49,7 @@ REQUIRED = ("id", "market", "side", "entry", "stop", "tp1", "tp2", "status")
 PREFIX = "shadowbook:"
 _SHEET_ID = re.compile(r"[A-Za-z0-9_-]{20,128}\Z")
 # Exit reasons the exchange orders already reproduce; anything else is a desk decision.
-_PRICE_EXIT = re.compile(r"^\s*(STOP|TP1|TP2|BE\b|BREAK-?EVEN|EXPIRED|TARGET)", re.I)
+_PRICE_EXIT = re.compile(r"^\s*(FILL\s+(AND|&)\s+STOP|STOP|TP1|TP2|BE\b|BREAK-?EVEN|EXPIRED|TARGET)", re.I)
 
 
 class SourceError(Exception):

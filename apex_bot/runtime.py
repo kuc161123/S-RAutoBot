@@ -22,7 +22,7 @@ from .desk_panel import PIN_IDLE_SECONDS, DeskPanel, shadow_alerts_enabled, watc
 from .engine import analyze
 from .evidence import review_context, context_fingerprint, candidate_fingerprint
 from .execution import ExecutionManager, number, client_id
-from .hl_client import HyperliquidClient
+from .hl_client import HLError, HyperliquidClient
 from .shadow_book import ShadowBookSource
 from .models import Opportunity
 from .notifications import opportunity_alert, review_alert, sanitize_text, shadow_alert
@@ -36,6 +36,9 @@ from .telegram import TelegramController, TelegramError
 from .universe import entry_symbols, refresh_universe
 
 LOG = logging.getLogger(__name__)
+# Desk-only: a component must fail this long before Telegram hears about it, so a
+# single Hyperliquid blip (retried 4 s later) never pages the owner.
+DESK_ALERT_AFTER = 120
 
 
 def _issue_time(value, now):
@@ -229,6 +232,8 @@ class Runtime:
         self._lease_failed = False
         self.started = False
         self.last_loop = {}
+        self._failing_since: dict = {}
+        self._alerted: set = set()
         self.worker_tasks = []
         self.decision_lock = asyncio.Lock()
         self.universe_lock = asyncio.Lock()
@@ -286,6 +291,26 @@ class Runtime:
         now = time.time()
         if error is None:
             self.last_loop[name] = now
+        page = recovered = None
+        if self.desk_only:
+            if error is None:
+                since = self._failing_since.pop(name, None)
+                if name in self._alerted:
+                    self._alerted.discard(name)
+                    minutes = max(1, round((now - (since or now)) / 60))
+                    recovered = f"✅ {name} is back to normal (it was failing for about {minutes} min)."
+            else:
+                since = self._failing_since.setdefault(name, now)
+                if now - since >= DESK_ALERT_AFTER and name not in self._alerted:
+                    self._alerted.add(name)
+                    # HLError text is sanitized by construction (type + HTTP status).
+                    detail = str(error) if isinstance(error, HLError) else type(error).__name__
+                    page = (
+                        f"issue:{name}:down:{int(since)}",
+                        f"⚠️ {name} has been failing for {round((now - since) / 60)} min ({detail}).\n"
+                        "Stops and targets already on Hyperliquid stay active; new entries wait. "
+                        "Retrying every few seconds — you will get a message when it recovers.",
+                    )
 
         def write(tx):
             _health_history(tx.state["health"], name, error, now)
@@ -304,8 +329,14 @@ class Runtime:
                     key,
                     "health_issue",
                     {"component": name, "error_type": type(error).__name__},
-                    f"⚠️ {name} unavailable ({type(error).__name__}).\nNew decisions needing this component wait; retries continue.",
+                    None
+                    if self.desk_only
+                    else f"⚠️ {name} unavailable ({type(error).__name__}).\nNew decisions needing this component wait; retries continue.",
                 )
+            if page:
+                tx.event(page[0], "health_issue", {"component": name, "error_type": type(error).__name__}, page[1])
+            if recovered:
+                tx.event(f"issue:{name}:up:{int(now)}", "health_recovered", {"component": name}, recovered)
 
         await self.store.update(write)
 
@@ -318,7 +349,9 @@ class Runtime:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                LOG.warning("%s unavailable: %s", name, type(exc).__name__)
+                LOG.warning(
+                    "%s unavailable: %s", name, str(exc) if isinstance(exc, HLError) else type(exc).__name__
+                )
                 try:
                     await self._health(name, exc)
                 except Exception:

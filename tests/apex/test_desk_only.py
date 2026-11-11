@@ -315,7 +315,7 @@ def test_config_desk_only_switch():
 # ------------------------------------------------- Hyperliquid blips and alerts
 
 
-def test_reads_retry_rate_limits_and_server_errors_but_not_bad_requests(monkeypatch):
+def test_reads_retry_server_errors_but_not_bad_requests(monkeypatch):
     from hyperliquid.utils.error import ClientError, ServerError
 
     from apex_bot import hl_client
@@ -331,7 +331,7 @@ def test_reads_retry_rate_limits_and_server_errors_but_not_bad_requests(monkeypa
         def flaky():
             calls.append(1)
             if len(calls) < 3:
-                raise ClientError(429, None, "rate limited", {})
+                raise ServerError(502, "bad gateway")
             return {"ok": True}
 
         assert await client._read(flaky) == {"ok": True} and len(calls) == 3

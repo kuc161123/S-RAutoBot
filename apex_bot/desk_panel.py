@@ -176,6 +176,22 @@ def skip_text(signal: dict, coin, reason: str) -> str:
     )
 
 
+def waiting_text(signal: dict, coin, reason: str) -> str:
+    """A signal held back for now (margin, position cap, daily stop) and re-checked
+    every few seconds. Sent once; the normal order card follows if it goes in."""
+    name = coin or signal.get("symbol")
+    word = "LONG" if signal.get("side") == "Buy" else "SHORT"
+    return (
+        f"⏳ <b>Signal waiting</b> · {h(word)} {h(name)} #{short_id(signal['id'])}\n"
+        f"{h(reason)}\n"
+        f"The desk keeps checking and places it automatically once there is room, "
+        f"as long as the Shadow Book still lists it as pending (at the latest until "
+        f"{h(when(signal.get('expires_at')))}) and the trade has not already played out.\n"
+        f"Entry {px(signal.get('limit'))} · stop {px(signal.get('stop'))} · "
+        f"targets {px(signal.get('target1'))} / {px(signal.get('target2'))}"
+    )
+
+
 def fill_text(trade: dict, held: float, pos: dict | None) -> str:
     entry = (pos or {}).get("entry_px") or trade["entry"]
     liq = (pos or {}).get("liq_px")

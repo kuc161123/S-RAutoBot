@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
 import time
 from html import escape
 from datetime import datetime, timezone
@@ -87,10 +88,15 @@ TICK_SECONDS = 4
 
 
 class Skip(Exception):
-    def __init__(self, reason: str, *, retry: bool = False):
+    """retry=True: not taken now, re-checked every tick while the signal is valid.
+    key names the condition, so the user hears about it once per signal even when
+    the numbers in the reason (free margin, prices) change from tick to tick."""
+
+    def __init__(self, reason: str, *, retry: bool = False, key: str = ""):
         super().__init__(reason)
         self.reason = reason
         self.retry = retry
+        self.key = key or re.sub(r"\$?\d[\d.,]*[x%]?", "#", reason.split("(")[0]).strip().lower()
 
 
 def desk_state(state: dict) -> dict:
@@ -266,6 +272,7 @@ def plan_entry(
         raise Skip(
             f"Not enough free margin: needs ${margin:,.2f} at {leverage}x, ${available:,.2f} available",
             retry=True,
+            key="margin",
         )
     lots = int(round(size / size_step(szd)))
     share = float(signal.get("tp1_share") or 50.0)
@@ -671,17 +678,19 @@ class Desk:
                 account["available"] -= plan["margin"]
 
     async def _skip(self, signal, coin, skip: Skip, notify: bool = True):
-        from .desk_panel import skip_text
+        from .desk_panel import skip_text, waiting_text
 
         trade_id = signal["id"]
-        text = skip_text(signal, coin, skip.reason)
         if skip.retry:
-            marker = (trade_id, skip.reason.split("(")[0])
+            # Once per signal and condition: free margin moves every tick, so the
+            # reason text alone would page the chat every few seconds.
+            marker = (trade_id, skip.key)
             if marker in self._deferred_notified:
                 return
             self._deferred_notified.add(marker)
-            await self._notify(f"desk:{trade_id}:defer:{short_id(marker[1])}", text)
+            await self._notify(f"desk:{trade_id}:defer:{short_id(skip.key)}", waiting_text(signal, coin, skip.reason))
             return
+        text = skip_text(signal, coin, skip.reason)
         record = {
             "id": trade_id,
             "shadow_id": trade_id,

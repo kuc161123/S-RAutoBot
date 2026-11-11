@@ -232,3 +232,142 @@ def test_signals_view_and_setup_checklist(tmp_path):
         await store.close()
 
     asyncio.run(run())
+
+
+# --------------------------------------- entry history (Shadow Book fill rules)
+
+from apex_bot.desk import LEGACY_TP1_SKIP, entry_history  # noqa: E402
+from apex_bot.hl_client import HLError  # noqa: E402
+
+
+def test_entry_history_matches_shadow_book_fills():
+    short = dict(is_buy=False, entry=74250, stop=75020, target1=73450)
+    # Never traded the entry: still a valid resting limit, wherever price is now.
+    assert entry_history(**short, bars=[(1, 74033, 73082), (2, 73700, 73300)]) == (False, None)
+    # Entry traded, no stop/target yet: live, may still be entered.
+    assert entry_history(**short, bars=[(1, 74300, 74000)]) == (True, None)
+    # Entry traded, then target 1: already played out.
+    assert entry_history(**short, bars=[(1, 74300, 74000), (2, 73900, 73400)]) == (True, "target")
+    # Same bar touches entry and stop: stop first, like the Shadow Book.
+    assert entry_history(**short, bars=[(1, 75100, 73000)]) == (True, "stop")
+    long = dict(is_buy=True, entry=100, stop=95, target1=110)
+    assert entry_history(**long, bars=[(1, 112, 101)]) == (False, None)  # ran up without the dip to 100
+    assert entry_history(**long, bars=[(1, 104, 99.5), (2, 111, 103)]) == (True, "target")
+
+
+def _ms(ts):
+    return int(ts * 1000)
+
+
+def test_untouched_short_below_target1_is_still_placed(tmp_path):
+    """The 10 Nov BTC case: limit above market, price dipped below TP1, entry never traded."""
+
+    async def run():
+        rows = [HEADER, row("S-BTC", "BTC", "Short", 74250, 75020, 73450, 72535, layer="SIGNAL")]
+        store, desk, hl, clock, source = await make(tmp_path, rows)
+        hl.mid["BTC"] = 73300.0  # below target 1
+        hl.bars["BTC"] = [(_ms(START + 300), 74033.0, 73082.0), (_ms(START + 600), 73600.0, 73250.0)]
+        await desk.tick()
+        trade = desk_state(await store.read())["trades"]["shadowbook:S-BTC"]
+        assert trade["status"] == "ORDERED" and trade["entry"] == 74250
+        assert [o["limit_px"] for o in hl.placed if o["coin"] == "BTC"] == [74250]
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_entry_traded_then_target_is_skipped_as_played_out(tmp_path):
+    """The 10 Nov SOL case: filled and ran to target before the sheet's next update."""
+
+    async def run():
+        rows = [HEADER, row("S-SOL", "SOL", "Short", 100, 101, 98, 96, layer="SIGNAL")]
+        store, desk, hl, clock, source = await make(tmp_path, rows)
+        hl.mid["SOL"] = 99.0
+        hl.bars["SOL"] = [(_ms(START + 300), 100.2, 99.5), (_ms(START + 600), 99.6, 97.8)]
+        await desk.tick()
+        trade = desk_state(await store.read())["trades"]["shadowbook:S-SOL"]
+        assert trade["status"] == "SKIPPED" and trade["rule"] == 2
+        assert trade["reason"].startswith("Already played out on Hyperliquid: entry 100 traded, then target 1")
+        assert not [o for o in hl.placed if o["coin"] == "SOL"]
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_legacy_target1_skips_get_one_recheck_and_history_errors_retry(tmp_path):
+    async def run():
+        rows = [HEADER, row("S-BTC", "BTC", "Short", 74250, 75020, 73450, 72535, layer="SIGNAL")]
+        store, desk, hl, clock, source = await make(tmp_path, rows)
+
+        def legacy(tx):
+            desk_state(tx.state)["trades"]["shadowbook:S-BTC"] = {
+                "id": "shadowbook:S-BTC", "status": "SKIPPED", "reason": LEGACY_TP1_SKIP, "coin": "BTC",
+            }
+
+        await store.update(legacy)
+        hl.mid["BTC"] = 73300.0
+
+        async def down(*args):
+            raise HLError("Hyperliquid request failed (ServerError 502)")
+
+        real = hl.candles
+        hl.candles = down
+        await desk.tick()  # no history: nothing decided, nothing recorded
+        assert desk_state(await store.read())["trades"]["shadowbook:S-BTC"]["reason"] == LEGACY_TP1_SKIP
+        hl.candles = real
+        hl.bars["BTC"] = [(_ms(START + 300), 74033.0, 73082.0)]
+        await desk.tick()
+        assert desk_state(await store.read())["trades"]["shadowbook:S-BTC"]["status"] == "ORDERED"
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_status_shows_how_fresh_the_shadow_book_copy_is(tmp_path):
+    async def run():
+        store, desk, hl, clock, source = await make(tmp_path, [HEADER, row("S-1", "SOL", "Short", 100, 105, 95, 90)])
+        source.ok_at, source.newest_at = clock.now - 30, START
+        await desk.tick()
+        text, _ = await DeskPanel(store, desk, clock=clock).render("st")
+        assert "Last good read 30s ago · newest row in it opened 15 Jan 08:00 UTC" in plain(text)
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_csv_reads_ask_google_for_a_fresh_copy():
+    import csv as _csv
+    import io as _io
+    from types import SimpleNamespace
+
+    out = _io.StringIO()
+    _csv.writer(out).writerows([HEADER, row("S-1", "SOL", "Short", 100, 105, 95, 90)])
+    body = out.getvalue().encode()
+    seen = {}
+
+    class Response:
+        url = SimpleNamespace(host="docs.google.com")
+        status = 200
+        content = SimpleNamespace(read=None)
+
+        async def __aenter__(self):
+            async def read(n):
+                return body
+
+            self.content = SimpleNamespace(read=read)
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class Session:
+        def get(self, url, **kwargs):
+            seen["url"], seen["headers"] = url, kwargs.get("headers")
+            return Response()
+
+    link = "https://docs.google.com/spreadsheets/d/e/2PACX-abc/pub?gid=1&single=true&output=csv"
+    source = ShadowBookSource(Session(), csv_url=link, clock=lambda: START)
+    assert asyncio.run(source.refresh(force=True))
+    assert seen["url"] == link + f"&_ts={int(START)}"
+    assert seen["headers"]["Cache-Control"] == "no-cache"
+    assert source.ok_at == START and source.newest_at == START

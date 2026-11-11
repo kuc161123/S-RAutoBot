@@ -196,6 +196,8 @@ class ShadowBookSource:
         self.ok = False
         self.error: str | None = None
         self.fetched_at = 0.0
+        self.ok_at = 0.0  # last successful read
+        self.newest_at = 0.0  # newest "Opened UTC" in that read
         self._reader = None
 
     @property
@@ -236,8 +238,11 @@ class ShadowBookSource:
     async def _rows_csv(self):
         import aiohttp
 
+        # Ask Google for the newest published copy, never a cached one.
+        url = self.csv_url + ("&" if "?" in self.csv_url else "?") + f"_ts={int(self.clock())}"
         async with self.session.get(
-            self.csv_url,
+            url,
+            headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},
             allow_redirects=True,
             max_redirects=3,
             timeout=aiohttp.ClientTimeout(total=20, connect=5),
@@ -264,6 +269,8 @@ class ShadowBookSource:
             rows = await (self._rows_api() if self.sheet_id else self._rows_csv())
             self.signals = parse_rows(rows)
             self.ok, self.error = True, None
+            self.ok_at = self.clock()
+            self.newest_at = max((sig.get("created_at") or 0 for sig in self.signals.values()), default=0)
         except SourceError as exc:
             self.ok, self.error = False, str(exc)
         except Exception as exc:  # noqa: BLE001 - keep trading loop alive

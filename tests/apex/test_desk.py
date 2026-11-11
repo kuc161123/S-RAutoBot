@@ -166,6 +166,9 @@ def test_settings_are_clamped_and_defaulted():
 class FakeHL:
     address = "0x" + "ab" * 20
 
+    async def candles(self, coin, interval, start_ms, end_ms):
+        return [b for b in self.bars.get(coin, []) if start_ms <= b[0] <= end_ms]
+
     def __init__(self):
         self.mid = {"SOL": 100.0, "BTC": 60000.0}
         self.positions = {}
@@ -176,6 +179,7 @@ class FakeHL:
         self.cancelled = []
         self.oids = itertools.count(100)
         self.reject_next = False
+        self.bars = {}  # coin -> [(t_ms, high, low)] price history for entry checks
         self.equity = 5000.0
 
     async def assets(self):

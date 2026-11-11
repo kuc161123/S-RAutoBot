@@ -416,6 +416,19 @@ class HyperliquidClient:
             )
         return out
 
+    async def candles(self, coin: str, interval: str, start_ms: int, end_ms: int) -> list[tuple]:
+        """[(t_ms, high, low), …] oldest first (Hyperliquid returns up to 5000 bars)."""
+        rows = await self._read(
+            lambda: self._info.candles_snapshot(coin, interval, int(start_ms), int(end_ms))
+        )
+        out = []
+        for c in rows if isinstance(rows, list) else []:
+            high, low = _num(c.get("h"), None), _num(c.get("l"), None)
+            if high is not None and low is not None:
+                out.append((int(_num(c.get("t"))), high, low))
+        out.sort()
+        return out
+
     async def set_leverage(self, coin: str, leverage: int, isolated: bool = True):
         response = await self._call(
             lambda: self._exchange.update_leverage(int(leverage), coin, is_cross=not isolated)

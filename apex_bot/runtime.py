@@ -233,7 +233,6 @@ class Runtime:
         self.started = False
         self.last_loop = {}
         self._failing_since: dict = {}
-        self._alerted: set = set()
         self.worker_tasks = []
         self.decision_lock = asyncio.Lock()
         self.universe_lock = asyncio.Lock()
@@ -291,28 +290,31 @@ class Runtime:
         now = time.time()
         if error is None:
             self.last_loop[name] = now
-        page = recovered = None
         if self.desk_only:
             if error is None:
-                since = self._failing_since.pop(name, None)
-                if name in self._alerted:
-                    self._alerted.discard(name)
-                    minutes = max(1, round((now - (since or now)) / 60))
-                    recovered = f"✅ {name} is back to normal (it was failing for about {minutes} min)."
+                self._failing_since.pop(name, None)
             else:
                 since = self._failing_since.setdefault(name, now)
-                if now - since >= DESK_ALERT_AFTER and name not in self._alerted:
-                    self._alerted.add(name)
-                    # HLError text is sanitized by construction (type + HTTP status).
-                    detail = str(error) if isinstance(error, HLError) else type(error).__name__
-                    page = (
-                        f"issue:{name}:down:{int(since)}",
-                        f"⚠️ {name} has been failing for {round((now - since) / 60)} min ({detail}).\n"
-                        "Stops and targets already on Hyperliquid stay active; new entries wait. "
-                        "Retrying every few seconds — you will get a message when it recovers.",
-                    )
+        # HLError text is sanitized by construction (type + HTTP status).
+        detail = str(error) if isinstance(error, HLError) else type(error).__name__ if error else ""
 
         def write(tx):
+            # Outstanding pages live in the saved state, so a warning sent just before
+            # a restart still gets its "back to normal" (and is not sent twice).
+            paged = tx.state["health"].setdefault("paged", {})
+            page = recovered = None
+            if self.desk_only and error is None and name in paged:
+                began = float(paged.pop(name) or now)
+                minutes = max(1, round((now - began) / 60))
+                recovered = f"✅ {name} is back to normal (it was failing for about {minutes} min)."
+            elif self.desk_only and error is not None and now - since >= DESK_ALERT_AFTER and name not in paged:
+                paged[name] = since
+                page = (
+                    f"issue:{name}:down:{int(since)}",
+                    f"⚠️ {name} has been failing for {round((now - since) / 60)} min ({detail}).\n"
+                    "Stops and targets already on Hyperliquid stay active; new entries wait. "
+                    "Retrying every few seconds — you will get a message when it recovers.",
+                )
             _health_history(tx.state["health"], name, error, now)
             tx.state["health"][name + "_attempt_at"] = now
             if error is None:

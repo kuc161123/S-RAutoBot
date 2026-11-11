@@ -327,6 +327,8 @@ class Desk:
         self.snapshot: dict = {"status": "starting" if client else "no_keys"}
         self.announced = False
         self._online_sent = False
+        self.last_error: dict | None = None
+        self.error_count = 0  # failed Hyperliquid snapshots since this process started
         self._sl_failures: dict = {}
         self._deferred_notified: set = set()
 
@@ -396,10 +398,17 @@ class Desk:
             return
         await self.store.assert_leader()
         async with self.lock:
-            await self._refresh_assets()
-            account = await self.client.account()
-            orders = await self.client.open_orders()
-            mids = await self.client.mids()
+            try:
+                await self._refresh_assets()
+                account = await self.client.account()
+                orders = await self.client.open_orders()
+                mids = await self.client.mids()
+            except HLError as exc:
+                # Shown on /status. Stops and targets keep working on the exchange
+                # meanwhile; the next tick retries.
+                self.last_error = {"at": self.clock(), "text": str(exc)}
+                self.error_count += 1
+                raise
             state = await self.store.read()
             if await self._migrate_settings(state.get("desk", {}).get("settings")):
                 state = await self.store.read()

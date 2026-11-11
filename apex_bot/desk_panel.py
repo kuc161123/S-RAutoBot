@@ -568,6 +568,12 @@ class DeskPanel:
             ]
         else:
             lines += self._connection_lines()[1]
+        last = getattr(self.desk, "last_error", None) if self.desk else None
+        if last:
+            lines.append(
+                f"Last Hyperliquid hiccup: {h(last.get('text', ''))} · {ago(last.get('at'), now)} "
+                f"({getattr(self.desk, 'error_count', 0)} since restart, each retried automatically)"
+            )
         lines += ["", f"<b>Signals</b> · {h(self._source_label(s))}", self._source_line(s)]
         if s["book"] == "shadow_book":
             lines.append("New signals arrive with each Shadow Desk shift (3× a day).")

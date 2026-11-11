@@ -24,6 +24,32 @@ _ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}\Z")
 _KEY = re.compile(r"(0x)?[0-9a-fA-F]{64}\Z")
 
 
+READ_RETRIES = 2
+TRANSIENT_STATUS = {429, 500, 502, 503, 504}
+
+
+def _describe(exc) -> str:
+    """Exception type plus HTTP status: enough to diagnose, never the payload."""
+    code = getattr(exc, "status_code", None)
+    return f"{type(exc).__name__} {code}" if type(code) is int else type(exc).__name__
+
+
+def _transient(exc) -> bool:
+    code = getattr(exc, "status_code", None)
+    if type(code) is int:
+        return code in TRANSIENT_STATUS
+    try:
+        import requests
+    except ImportError:  # pragma: no cover - the SDK depends on requests
+        return False
+    return isinstance(exc, (requests.exceptions.ConnectionError, requests.exceptions.Timeout))
+
+
+def _backoff(exc, attempt: int) -> float:
+    base = 2.0 if getattr(exc, "status_code", None) == 429 else 0.5
+    return base * (attempt + 1)
+
+
 class HLError(Exception):
     """Sanitized exchange failure. Never carries credentials or request payloads."""
 
@@ -233,22 +259,35 @@ class HyperliquidClient:
         if force or self._exchange is None:
             await asyncio.to_thread(self._build)
 
-    async def _call(self, fn, *args, **kwargs):
+    async def _call(self, fn, *args, retries: int = 0, **kwargs):
+        """Run one SDK call off the event loop; errors become sanitized HLErrors.
+
+        retries > 0 is only for read requests: a rate limit (429), a 5xx or a
+        network blip is retried after a short pause. Exchange actions are never
+        retried here — the desk reconciles them by client order ID instead.
+        """
         if self._exchange is None:
             await self.connect()
-        try:
-            return await asyncio.to_thread(fn, *args, **kwargs)
-        except HLError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - never leak payloads/URLs
-            raise HLError(f"Hyperliquid request failed ({type(exc).__name__})") from None
+        for attempt in range(retries + 1):
+            try:
+                return await asyncio.to_thread(fn, *args, **kwargs)
+            except HLError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - never leak payloads/URLs
+                if attempt < retries and _transient(exc):
+                    await asyncio.sleep(_backoff(exc, attempt))
+                    continue
+                raise HLError(f"Hyperliquid request failed ({_describe(exc)})") from None
+
+    async def _read(self, fn):
+        return await self._call(fn, retries=READ_RETRIES)
 
     async def assets(self) -> dict:
         """coin -> {sz_decimals, max_leverage, only_isolated, delisted}."""
         await self.connect(force=True)  # refresh name->asset map for new listings
         out = {}
         for dex in self.dexs:
-            meta = await self._call(lambda d=dex: self._info.meta(dex=d))
+            meta = await self._read(lambda d=dex: self._info.meta(dex=d))
             for item in meta.get("universe", []):
                 name = item.get("name")
                 if not isinstance(name, str):
@@ -274,7 +313,7 @@ class HyperliquidClient:
         if mode in ("unifiedAccount", "portfolioMargin"):
             # Unified/portfolio accounts keep collateral in the spot USDC balance;
             # the perp clearinghouse's "withdrawable" understates free margin there.
-            spot = await self._call(lambda: self._info.spot_user_state(self.address))
+            spot = await self._read(lambda: self._info.spot_user_state(self.address))
             usdc = next(
                 (b for b in (spot or {}).get("balances", []) if b.get("coin") == "USDC"),
                 {},
@@ -291,7 +330,7 @@ class HyperliquidClient:
         if self._abstraction_at and now - self._abstraction_at < 600:
             return self._abstraction_mode
         try:
-            mode = await self._call(lambda: self._info.query_user_abstraction_state(self.address))
+            mode = await self._read(lambda: self._info.query_user_abstraction_state(self.address))
         except HLError:
             mode = self._abstraction_mode
         self._abstraction_mode = mode if isinstance(mode, str) else "unknown"
@@ -299,7 +338,7 @@ class HyperliquidClient:
         return self._abstraction_mode
 
     async def _account(self, dex: str) -> dict:
-        state = await self._call(lambda: self._info.user_state(self.address, dex))
+        state = await self._read(lambda: self._info.user_state(self.address, dex))
         summary = state.get("marginSummary", {}) if isinstance(state, dict) else {}
         positions = {}
         for row in state.get("assetPositions", []) if isinstance(state, dict) else []:
@@ -328,7 +367,7 @@ class HyperliquidClient:
     async def open_orders(self) -> list[dict]:
         rows = []
         for dex in self.dexs:
-            part = await self._call(lambda d=dex: self._info.frontend_open_orders(self.address, d))
+            part = await self._read(lambda d=dex: self._info.frontend_open_orders(self.address, d))
             rows += part if isinstance(part, list) else []
         out = []
         for o in rows if isinstance(rows, list) else []:
@@ -352,12 +391,12 @@ class HyperliquidClient:
     async def mids(self) -> dict:
         out = {}
         for dex in self.dexs:
-            mids = await self._call(lambda d=dex: self._info.all_mids(d))
+            mids = await self._read(lambda d=dex: self._info.all_mids(d))
             out.update({k: _num(v, None) for k, v in (mids or {}).items()})
         return out
 
     async def fills_since(self, start_ms: int) -> list[dict]:
-        rows = await self._call(
+        rows = await self._read(
             lambda: self._info.user_fills_by_time(self.address, int(start_ms))
         )
         out = []
@@ -427,7 +466,7 @@ class HyperliquidClient:
     async def order_status(self, cloid: str) -> dict:
         from hyperliquid.utils.types import Cloid
 
-        result = await self._call(
+        result = await self._read(
             lambda: self._info.query_order_by_cloid(self.address, Cloid.from_str(cloid))
         )
         return result if isinstance(result, dict) else {}

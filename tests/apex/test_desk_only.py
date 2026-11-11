@@ -310,3 +310,133 @@ def test_config_desk_only_switch():
         assert "APEX_DESK_ONLY" in str(exc)
     else:
         raise AssertionError("invalid value accepted")
+
+
+# ------------------------------------------------- Hyperliquid blips and alerts
+
+
+def test_reads_retry_rate_limits_and_server_errors_but_not_bad_requests(monkeypatch):
+    from hyperliquid.utils.error import ClientError, ServerError
+
+    from apex_bot import hl_client
+    from apex_bot.hl_client import HLError, HyperliquidClient
+
+    monkeypatch.setattr(hl_client, "_backoff", lambda exc, attempt: 0)
+    client = HyperliquidClient("0x" + "ab" * 20, "0x" + "cd" * 32)
+    client._exchange = object()  # skip the network build
+
+    async def run():
+        calls = []
+
+        def flaky():
+            calls.append(1)
+            if len(calls) < 3:
+                raise ClientError(429, None, "rate limited", {})
+            return {"ok": True}
+
+        assert await client._read(flaky) == {"ok": True} and len(calls) == 3
+
+        def down():
+            raise ServerError(502, "bad gateway")
+
+        try:
+            await client._read(down)
+        except HLError as exc:
+            assert str(exc) == "Hyperliquid request failed (ServerError 502)"
+        else:
+            raise AssertionError("expected HLError")
+
+        bad = []
+
+        def rejected():
+            bad.append(1)
+            raise ClientError(400, None, "bad request", {})
+
+        try:
+            await client._read(rejected)
+        except HLError:
+            pass
+        assert len(bad) == 1  # a 400 is not retried
+
+        writes = []
+
+        def order():
+            writes.append(1)
+            raise ClientError(429, None, "rate limited", {})
+
+        try:
+            await client._call(order)  # exchange actions are never retried
+        except HLError:
+            pass
+        assert len(writes) == 1
+
+    asyncio.run(run())
+
+
+def test_desk_only_pages_after_two_minutes_of_failure_and_reports_recovery(tmp_path, monkeypatch):
+    from apex_bot import runtime as runtime_module
+    from apex_bot.hl_client import HLError
+
+    from .test_runtime import events
+
+    async def run():
+        store = Store(sqlite_path=str(tmp_path / "h.sqlite"))
+        await store.initialize()
+        await store.lease()
+        import time as real_time
+
+        now = [real_time.time()]
+        monkeypatch.setattr(runtime_module.time, "time", lambda: now[0])
+        await store.lease()  # renew under the patched clock
+        rt = SimpleNamespace(
+            store=store,
+            desk_only=True,
+            last_loop={},
+            _failing_since={},
+            _alerted=set(),
+            cache=SimpleNamespace(status="ok"),
+        )
+        health = types.MethodType(Runtime._health, rt)
+        await health("desk", HLError("Hyperliquid request failed (ClientError 429)"))
+        now[0] += 4
+        await health("desk")  # a single blip: recovered without paging
+        assert await store.pending_notifications() == []
+        for _ in range(35):  # ~140 s of continuous failure
+            now[0] += 4
+            await health("desk", HLError("Hyperliquid request failed (ServerError 502)"))
+            await store.lease()
+        texts = [n["text"] for n in await store.pending_notifications()]
+        assert len(texts) == 1 and "failing for 2 min (Hyperliquid request failed (ServerError 502))" in texts[0]
+        now[0] += 4
+        await health("desk")
+        texts = [n["text"] for n in await store.pending_notifications()]
+        assert len(texts) == 2 and texts[1].startswith("✅ desk is back to normal")
+        # Every failure is still recorded for diagnostics, just not sent.
+        assert len(await events(store, "health_issue")) >= 2
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_status_shows_the_last_hyperliquid_hiccup(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+
+        async def broken():
+            from apex_bot.hl_client import HLError
+
+            raise HLError("Hyperliquid request failed (ClientError 429)")
+
+        hl.open_orders = broken
+        try:
+            await desk.tick()
+        except Exception:
+            pass
+        panel = DeskPanel(store, desk, clock=clock)
+        text, _ = await panel.render("st")
+        assert "Last Hyperliquid hiccup: Hyperliquid request failed (ClientError 429)" in plain(text)
+        assert "1 since restart" in plain(text)
+        await store.close()
+
+    asyncio.run(run())

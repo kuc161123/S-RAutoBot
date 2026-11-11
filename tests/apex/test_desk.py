@@ -333,9 +333,13 @@ def test_full_lifecycle_entry_fill_tp1_breakeven_trail_and_stop(tmp_path):
         hl.mid["SOL"] = 110.5
         await desk.tick()
         t = await trade(store)
-        assert t["tp1_done"] and t["stop"] == 100.0
+        assert t["tp1_done"] and t["stop"] == 100.0 and t["tp1_pnl"] == 48.9
         assert hl.orders[t["sl_oid"]]["trigger_px"] == 100.0
-        assert any("STOP MOVED" in x for x in await outbox(store))
+        msg = next(x for x in await outbox(store) if "TARGET 1 HIT" in x)
+        assert "Sold 4.91 at 110" in msg and "+$48.90 banked after fees" in msg
+        assert "moved 95 → 100 (entry)" in msg
+        assert "Worst case now +$48.90" in msg  # the banked half counts, not +$0.00
+        assert not any("STOP MOVED" in x for x in await outbox(store))  # one message, not two
 
         def ratchet(tx):
             tx.state["trades"]["baseline_shadow:op1"]["stop"] = 104.0
@@ -357,6 +361,50 @@ def test_full_lifecycle_entry_fill_tp1_breakeven_trail_and_stop(tmp_path):
         await store.close()
 
     asyncio.run(run())
+
+
+def test_stop_to_entry_is_retried_when_the_first_attempt_fails(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        hl.fill_entry("SOL")
+        await desk.tick()
+        t = await trade(store)
+        hl.trigger(t["tp1_oid"], pnl=49.0)
+        hl.mid["SOL"] = 110.5
+        hl.reject_next = True  # the exchange refuses the stop-to-entry order
+        await desk.tick()
+        t = await trade(store)
+        assert t["tp1_done"] and t["stop"] == 95.0
+        msg = next(x for x in await outbox(store) if "TARGET 1 HIT" in x)
+        assert "+$48.90 banked" in msg and "retrying every 30 s" in msg
+        clock.now += 4
+        await desk.tick()  # not yet: at most one attempt per 30 s
+        assert (await trade(store))["stop"] == 95.0
+        clock.now += 30
+        await desk.tick()
+        t = await trade(store)
+        assert t["stop"] == 100.0 and hl.orders[t["sl_oid"]]["trigger_px"] == 100.0
+        assert len([o for o in hl.orders.values() if o["kind"] == "sl"]) == 1
+        moved = next(x for x in await outbox(store) if "STOP MOVED" in x)
+        assert "Target 1 hit — stop to entry" in moved and "Worst case now +$48.90" in moved
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_exchange_prices_are_shown_to_six_significant_figures():
+    from apex_bot.desk_panel import fill_text, price
+
+    assert price(497.3843363844) == "497.384"
+    assert price(73955.5) == "73955.5"
+    assert price(1234567.0) == "1234567"
+    assert price(0.000123456789) == "0.000123457"
+    assert price(None) == "—"
+    t = {"id": "shadowbook:S-1", "coin": "xyz:AMD", "side": "Buy", "is_buy": True, "entry": 525.0, "stop": 509.0,
+         "target1": 541.5, "target2": 558.4, "leverage": 10, "risk_usd": 49.99}
+    text = plain(fill_text(t, 3.036, {"entry_px": 525.0, "liq_px": 497.3843363844}))
+    assert "liq 497.384" in text and "3843363844" not in text
 
 
 def test_partial_fill_is_protected_and_expiry_cancels_remainder(tmp_path):

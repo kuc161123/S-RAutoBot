@@ -391,6 +391,7 @@ class Desk:
         self.error_count = 0  # failed Hyperliquid snapshots since this process started
         self._sl_failures: dict = {}
         self._deferred_notified: set = set()
+        self._be_retry: dict = {}  # trade id -> next stop-to-entry retry after target 1
 
     @property
     def configured(self) -> bool:
@@ -947,20 +948,23 @@ class Desk:
             await self.client.cancel(trade["coin"], old)
         return True
 
-    async def _move_stop(self, trade, held, new_stop, mid, why):
+    async def _move_stop(self, trade, held, new_stop, mid, why, tp1=None) -> str:
+        """Tighten the stop. Returns "moved", "kept" (already as tight), "closing"
+        (price is already beyond it) or "failed" (the exchange refused). tp1 = the
+        target-1 sale this move follows, reported in the same message."""
         from .desk_panel import stop_text
 
         sign = 1 if trade["is_buy"] else -1
         new_stop = round_price(new_stop, trade["sz_decimals"])
         if sign * (new_stop - trade["stop"]) <= 0:
-            return  # never loosen
+            return "kept"  # never loosen
         if mid is not None and sign * (mid - new_stop) <= 0:
             await self._close(trade, held, f"{why}: price already beyond the new stop")
-            return
+            return "closing"
         version = trade.get("sl_version", 0) + 1
         statuses = await self.client.place([_stop_order(trade, held, new_stop, version)])
         if not statuses or not statuses[0]["ok"]:
-            return
+            return "failed"
         old = trade.get("sl_oid")
         changes = {"sl_oid": statuses[0]["oid"], "sl_version": version, "stop": new_stop}
         previous = trade["stop"]
@@ -968,10 +972,59 @@ class Desk:
         await self._save(
             trade["id"],
             changes,
-            (f"desk:{trade['id']}:stop:{new_stop}", {"id": trade["id"], "stop": new_stop}, stop_text(trade, previous, new_stop, why)),
+            (
+                f"desk:{trade['id']}:stop:{new_stop}",
+                {"id": trade["id"], "stop": new_stop},
+                stop_text(trade, previous, new_stop, why, tp1=tp1),
+            ),
         )
         if old:
             await self.client.cancel(trade["coin"], old)
+        return "moved"
+
+    async def _tp1_sale(self, trade, held) -> dict:
+        """What the target-1 order sold: size, average price and net P&L. Falls back
+        to an estimate at the target price if the fill history is not readable."""
+        sold = max(0.0, (trade.get("filled") or 0.0) - held)
+        start = int(float(trade.get("placed_at") or trade["created_at"]) * 1000) - 60000
+        try:
+            fills = [f for f in await self.client.fills_since(start) if f.get("oid") == trade.get("tp1_oid")]
+        except HLError:
+            fills = []
+        size = sum(f["size"] for f in fills)
+        if size > 0:
+            return {
+                "size": size,
+                "px": sum(f["px"] * f["size"] for f in fills) / size,
+                "pnl": sum(f["closed_pnl"] - f["fee"] for f in fills),
+                "estimated": False,
+            }
+        sign = 1 if trade["is_buy"] else -1
+        entry = trade.get("avg_entry") or trade["entry"]
+        return {"size": sold, "px": trade["target1"], "pnl": sign * (trade["target1"] - entry) * sold, "estimated": True}
+
+    async def _stop_to_entry(self, trade, held, mid, tp1=None):
+        """After target 1 the stop goes to entry. Retried (at most every 30 s) until
+        it is there: one refused or failed attempt must not leave the full stop."""
+        from .desk_panel import tp1_text
+
+        entry = round_price(trade.get("avg_entry") or trade["entry"], trade["sz_decimals"])
+        sign = 1 if trade["is_buy"] else -1
+        if tp1 is None and sign * (trade["stop"] - entry) >= 0:
+            return
+        now = self.clock()
+        if tp1 is None and now < self._be_retry.get(trade["id"], 0):
+            return
+        self._be_retry[trade["id"]] = now + 30
+        try:
+            result = await self._move_stop(trade, held, entry, mid, "Target 1 hit — stop to entry", tp1=tp1)
+        except HLError:
+            result = "failed"
+        if result == "moved":
+            self._be_retry.pop(trade["id"], None)
+        elif tp1 is not None:
+            # The sale still gets its own message; the stop line says what happened.
+            await self._notify(f"desk:{trade['id']}:tp1{_tag(trade)}", tp1_text(trade, tp1, result), {"id": trade["id"]})
 
     async def _manage_open(self, trade, held, pos, open_oids, orders, shadow, mid):
         tid = trade["id"]
@@ -990,10 +1043,16 @@ class Desk:
             )
         )
         if tp1_filled:
-            trade["tp1_done"] = True
-            trade["filled_after_tp1"] = held
-            await self._save(tid, {"tp1_done": True, "filled_after_tp1": held})
-            await self._move_stop(trade, held, trade.get("avg_entry") or trade["entry"], mid, "Target 1 hit — stop to entry")
+            ours = bool(trade.get("tp1_oid")) and trade["tp1_oid"] not in open_oids and held < trade["filled"] - 1e-12
+            sale = await self._tp1_sale(trade, held) if ours else None
+            changes = {"tp1_done": True, "filled_after_tp1": held}
+            if sale:
+                changes["tp1_pnl"] = round(sale["pnl"], 2)
+            trade.update(changes)
+            await self._save(tid, changes)
+            await self._stop_to_entry(trade, held, mid, tp1=sale or {})
+        elif trade.get("tp1_done"):
+            await self._stop_to_entry(trade, held, mid)
         shadow_stop = shadow.get("stop")
         if isinstance(shadow_stop, (int, float)) and trade.get("tp1_done"):
             sign = 1 if trade["is_buy"] else -1

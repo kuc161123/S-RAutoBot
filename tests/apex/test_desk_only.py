@@ -418,6 +418,45 @@ def test_desk_only_pages_after_two_minutes_of_failure_and_reports_recovery(tmp_p
     asyncio.run(run())
 
 
+def test_a_warning_sent_before_a_restart_still_gets_its_all_clear(tmp_path, monkeypatch):
+    from apex_bot import runtime as runtime_module
+    from apex_bot.hl_client import HLError
+    from apex_bot.runtime import Runtime
+
+    async def run():
+        store = Store(sqlite_path=str(tmp_path / "h2.sqlite"))
+        await store.initialize()
+        import time as real_time
+
+        now = [real_time.time()]
+        monkeypatch.setattr(runtime_module.time, "time", lambda: now[0])
+        await store.lease()
+
+        def process():
+            rt = SimpleNamespace(store=store, desk_only=True, last_loop={}, _failing_since={}, cache=SimpleNamespace(status="ok"))
+            return types.MethodType(Runtime._health, rt)
+
+        old = process()
+        for _ in range(35):
+            now[0] += 4
+            await old("desk", HLError("Hyperliquid request failed (ClientError 429)"))
+            await store.lease()
+        assert len(await store.pending_notifications()) == 1  # paged once
+        new = process()  # restart mid-outage: fresh memory, same saved state
+        for _ in range(35):  # still failing after the restart: no second page
+            now[0] += 4
+            await new("desk", HLError("Hyperliquid request failed (ClientError 429)"))
+            await store.lease()
+        assert len(await store.pending_notifications()) == 1
+        now[0] += 4
+        await new("desk")
+        texts = [n["text"] for n in await store.pending_notifications()]
+        assert len(texts) == 2 and texts[1].startswith("✅ desk is back to normal (it was failing for about 5 min)")
+        await store.close()
+
+    asyncio.run(run())
+
+
 def test_status_shows_the_last_hyperliquid_hiccup(tmp_path):
     async def run():
         store, desk, hl, clock = await make_desk(tmp_path)

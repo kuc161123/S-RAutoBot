@@ -52,6 +52,9 @@ _SHEET_ID = re.compile(r"[A-Za-z0-9_-]{20,128}\Z")
 _PRICE_EXIT = re.compile(r"^\s*(FILL\s+(AND|&)\s+STOP|STOP|TP1|TP2|BE\b|BREAK-?EVEN|EXPIRED|TARGET)", re.I)
 
 
+MAX_CSV_BYTES = 8_000_000
+
+
 class SourceError(Exception):
     pass
 
@@ -286,7 +289,16 @@ class ShadowBookSource:
                 raise SourceError("Shadow Book CSV redirected outside Google")
             if response.status != 200:
                 raise SourceError(f"Shadow Book CSV error HTTP {response.status}")
-            data = await response.content.read(8_000_000)
+            # Read to the end. content.read(n) returns only what has arrived so far
+            # (often the first chunk of a 170 KB sheet), which silently dropped the
+            # newest rows.
+            chunks, size = [], 0
+            async for chunk in response.content.iter_chunked(65536):
+                size += len(chunk)
+                if size > MAX_CSV_BYTES:
+                    raise SourceError("Shadow Book CSV is larger than 8 MB")
+                chunks.append(chunk)
+            data = b"".join(chunks)
         text = data.decode("utf-8-sig", errors="replace")
         if text.lstrip().startswith("<"):
             raise SourceError("Shadow Book link returned a web page, not CSV (publish the Trades tab as CSV)")

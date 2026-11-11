@@ -351,10 +351,11 @@ def test_csv_reads_ask_google_for_a_fresh_copy():
         content = SimpleNamespace(read=None)
 
         async def __aenter__(self):
-            async def read(n):
-                return body
+            async def chunks(size):
+                for i in range(0, len(body), 7):  # many small chunks, like a real socket
+                    yield body[i : i + 7]
 
-            self.content = SimpleNamespace(read=read)
+            self.content = SimpleNamespace(iter_chunked=chunks)
             return self
 
         async def __aexit__(self, *exc):
@@ -394,10 +395,11 @@ def test_live_link_first_published_copy_as_fallback():
             self.url = SimpleNamespace(host="docs.google.com")
             self.status = status["export" if "/export" in url else "pub"]
 
-            async def read(n):
-                return body
+            async def chunks(size):
+                for i in range(0, len(body), 11):
+                    yield body[i : i + 11]
 
-            self.content = SimpleNamespace(read=read)
+            self.content = SimpleNamespace(iter_chunked=chunks)
 
         async def __aenter__(self):
             return self
@@ -420,3 +422,92 @@ def test_live_link_first_published_copy_as_fallback():
     status["export"] = 200
     assert asyncio.run(source.refresh(force=True))
     assert calls[-1] == "export" and source.link_used == "live sheet" and source.link_errors == {}
+
+
+def test_whole_csv_is_read_even_when_it_arrives_in_pieces():
+    """10-11 Nov: content.read(n) returned only the first chunk, so new rows vanished."""
+    import csv as _csv
+    import io as _io
+    from types import SimpleNamespace
+
+    out = _io.StringIO()
+    rows = [HEADER] + [row(f"S-{i}", "SOL", "Short", 100, 105, 95, 90, opened=f"2027-01-{10 + i % 5:02d} 08:00") for i in range(60)]
+    rows.append(row("S-NEW", "BTC", "Short", 74250, 75020, 73450, 72535, layer="SIGNAL", opened="2027-01-15 08:00"))
+    _csv.writer(out).writerows(rows)
+    body = out.getvalue().encode()
+
+    class Response:
+        url = SimpleNamespace(host="docs.google.com")
+        status = 200
+
+        async def __aenter__(self):
+            async def chunks(size):
+                for i in range(0, len(body), 4096):
+                    yield body[i : i + 4096]
+
+            self.content = SimpleNamespace(iter_chunked=chunks)
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class Session:
+        def get(self, url, **kwargs):
+            return Response()
+
+    link = "https://docs.google.com/spreadsheets/d/abc/export?format=csv&gid=1"
+    source = ShadowBookSource(Session(), csv_url=link, clock=lambda: START)
+    assert asyncio.run(source.refresh(force=True))
+    assert len(body) > 2 * 4096 and len(source.signals) == 61
+    assert source.signals["shadowbook:S-NEW"]["status"] == "PENDING" and source.newest_at == START
+
+
+def test_resting_shadow_limit_is_not_cancelled_when_price_passes_target1(tmp_path):
+    """11 Nov oil short: entry 88.1 untouched, price below TP1 86.7 -> keep waiting."""
+
+    async def run():
+        rows = [HEADER, row("S-CL", "SOL", "Short", 100, 101, 98, 96, layer="SIGNAL")]
+        store, desk, hl, clock, source = await make(tmp_path, rows)
+        hl.mid["SOL"] = 99.0
+        await desk.tick()
+        assert desk_state(await store.read())["trades"]["shadowbook:S-CL"]["status"] == "ORDERED"
+        hl.mid["SOL"] = 97.5  # beyond target 1, entry never traded
+        await desk.tick()
+        await desk.tick()
+        trade = desk_state(await store.read())["trades"]["shadowbook:S-CL"]
+        assert trade["status"] == "ORDERED" and not hl.cancelled
+        # The Shadow Book expiring it still cancels it.
+        source.rows[1] = row("S-CL", "SOL", "Short", 100, 101, 98, 96, status="EXPIRED", reason="EXPIRED unfilled", layer="SIGNAL")
+        await desk.tick()
+        trade = desk_state(await store.read())["trades"]["shadowbook:S-CL"]
+        assert trade["status"] == "CANCELLED" and "Shadow Book closed" in trade["reason"]
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_wrongly_cancelled_limit_is_replaced_with_fresh_order_ids(tmp_path):
+    from apex_bot.desk import LEGACY_TP1_CANCEL
+    from apex_bot.hl_client import cloid_for
+
+    async def run():
+        rows = [HEADER, row("S-CL", "SOL", "Short", 100, 101, 98, 96, layer="SIGNAL")]
+        store, desk, hl, clock, source = await make(tmp_path, rows)
+
+        def legacy(tx):
+            desk_state(tx.state)["trades"]["shadowbook:S-CL"] = {
+                "id": "shadowbook:S-CL", "status": "CANCELLED", "reason": LEGACY_TP1_CANCEL, "coin": "SOL",
+                "entry_cloid": cloid_for("shadowbook:S-CL", "entry"),
+            }
+
+        await store.update(legacy)
+        hl.mid["SOL"] = 97.5
+        await desk.tick()
+        trade = desk_state(await store.read())["trades"]["shadowbook:S-CL"]
+        assert trade["status"] == "ORDERED" and trade["attempt"] == 2 and trade["rule"] == 2
+        assert trade["entry_cloid"] == cloid_for("shadowbook:S-CL", "entry#2")
+        cards = [t for t in await outbox(store) if "Apex signal" in t]
+        assert len(cards) == 1
+        await store.close()
+
+    asyncio.run(run())

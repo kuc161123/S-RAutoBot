@@ -180,6 +180,7 @@ def liquidation_safe_leverage(stop_fraction: float, exchange_max: int) -> int:
 
 
 LEGACY_TP1_SKIP = "Price already reached target 1"
+LEGACY_TP1_CANCEL = "Price reached target 1 before the entry filled"
 SKIP_RULE = 2  # skip records written with the entry-history rule
 
 
@@ -296,6 +297,18 @@ def plan_entry(
     }
 
 
+def _role(trade: dict, role: str) -> str:
+    """Client-order-ID role; a re-placed trade (attempt 2+) gets fresh IDs."""
+    attempt = int(trade.get("attempt") or 1)
+    return role if attempt <= 1 else f"{role}#{attempt}"
+
+
+def _tag(trade: dict) -> str:
+    """Event-key suffix so a re-placed trade's messages are not de-duplicated away."""
+    attempt = int(trade.get("attempt") or 1)
+    return "" if attempt <= 1 else f":{attempt}"
+
+
 def _stop_order(trade: dict, size: float, price: float, version: int) -> dict:
     long = trade["is_buy"]
     szd = trade["sz_decimals"]
@@ -308,7 +321,7 @@ def _stop_order(trade: dict, size: float, price: float, version: int) -> dict:
         "trigger_px": round_price(price, szd),
         "kind": "sl",
         "reduce_only": True,
-        "cloid": cloid_for(trade["id"], f"sl{version}"),
+        "cloid": cloid_for(trade["id"], _role(trade, f"sl{version}")),
     }
 
 
@@ -324,7 +337,7 @@ def _target_order(trade: dict, size: float, price: float, role: str) -> dict:
         "trigger_px": round_price(price, szd),
         "kind": "tp",
         "reduce_only": True,
-        "cloid": cloid_for(trade["id"], role),
+        "cloid": cloid_for(trade["id"], _role(trade, role)),
     }
 
 
@@ -543,10 +556,11 @@ class Desk:
         ignored whether the limit price had ever traded. Those get one re-check."""
         if record is None:
             return True
-        return (
-            record.get("status") == "SKIPPED"
-            and record.get("reason") == LEGACY_TP1_SKIP
-            and not record.get("rule")
+        if record.get("rule"):
+            return False
+        return (record.get("status"), record.get("reason")) in (
+            ("SKIPPED", LEGACY_TP1_SKIP),
+            ("CANCELLED", LEGACY_TP1_CANCEL),
         )
 
     def _candidates(self, state: dict, settings: dict) -> list[dict]:
@@ -649,7 +663,8 @@ class Desk:
             except Skip as skip:
                 await self._skip(signal, coin, skip, notify=settings.get("notify_skips", True))
                 continue
-            trade = await self._open(signal, plan, settings)
+            prior = desk["trades"].get(trade_id)
+            trade = await self._open(signal, plan, settings, attempt=int((prior or {}).get("attempt") or 1) + 1 if prior else 1)
             if trade and trade.get("status") in ACTIVE:
                 active.append(trade)
                 busy.add(coin)
@@ -689,12 +704,15 @@ class Desk:
             ),
         )
 
-    async def _open(self, signal, plan, settings):
+    async def _open(self, signal, plan, settings, attempt: int = 1):
         from .desk_panel import signal_card
 
         trade_id = signal["id"]
+        tag = "" if attempt <= 1 else f":{attempt}"
         trade = {
             "id": trade_id,
+            "attempt": attempt,
+            "rule": SKIP_RULE,
             "shadow_id": trade_id,
             "symbol": signal.get("symbol"),
             "setup": signal.get("setup"),
@@ -720,7 +738,7 @@ class Desk:
             "leverage": plan["leverage"],
             "leverage_note": plan["leverage_capped_by"],
             "margin": plan["margin"],
-            "entry_cloid": cloid_for(trade_id, "entry"),
+            "entry_cloid": cloid_for(trade_id, "entry" if attempt <= 1 else f"entry#{attempt}"),
             "entry_oid": None,
             "sl_oid": None,
             "sl_version": 0,
@@ -753,7 +771,7 @@ class Desk:
             await self._save(
                 trade_id,
                 {"status": "ERROR", "reason": str(exc), "closed_at": self.clock()},
-                (f"desk:{trade_id}:error", {"id": trade_id}, f"⚠️ {escape(plan['coin'])} order not placed: {escape(str(exc))}"),
+                (f"desk:{trade_id}:error{tag}", {"id": trade_id}, f"⚠️ {escape(plan['coin'])} order not placed: {escape(str(exc))}"),
             )
             return None
         status = statuses[0] if statuses else {"ok": False, "error": "No response"}
@@ -761,12 +779,14 @@ class Desk:
             await self._save(
                 trade_id,
                 {"status": "ERROR", "reason": status["error"], "closed_at": self.clock()},
-                (f"desk:{trade_id}:error", {"id": trade_id}, f"⚠️ {escape(plan['coin'])} order rejected: {escape(str(status['error']))}"),
+                (f"desk:{trade_id}:error{tag}", {"id": trade_id}, f"⚠️ {escape(plan['coin'])} order rejected: {escape(str(status['error']))}"),
             )
             return None
         changes = {"status": "ORDERED", "entry_oid": status["oid"], "placed_at": self.clock()}
         trade.update(changes)
-        await self._save(trade_id, changes, (f"desk:{trade_id}:placed", {"id": trade_id, "plan": plan}, signal_card(trade, signal)))
+        await self._save(
+            trade_id, changes, (f"desk:{trade_id}:placed{tag}", {"id": trade_id, "plan": plan}, signal_card(trade, signal))
+        )
         return trade
 
     # ------------------------------------------------------------------- manage
@@ -814,11 +834,23 @@ class Desk:
         if self.clock() >= trade["expires_at"]:
             reason = "Entry window expired"
         elif shadow.get("status") in ("EXPIRED", "CLOSED"):
-            reason = "The engine closed this signal before the entry filled"
+            reason = (
+                "The Shadow Book closed this signal before the entry filled"
+                if str(tid).startswith("shadowbook:")
+                else "The engine closed this signal before the entry filled"
+            )
         elif mid is not None and sign * (mid - trade["stop"]) <= 0:
             reason = "Price went through the stop before the entry filled"
-        elif mid is not None and held == 0 and sign * (mid - trade["target1"]) >= 0:
-            reason = "Price reached target 1 before the entry filled"
+        elif (
+            mid is not None
+            and held == 0
+            and sign * (mid - trade["target1"]) >= 0
+            and not str(tid).startswith("shadowbook:")
+        ):
+            # Engine signals only. A Shadow Book limit stays valid until its entry
+            # trades or the sheet expires/closes it — price beyond target 1 with the
+            # entry untouched is exactly a resting limit waiting for its pullback.
+            reason = LEGACY_TP1_CANCEL
         if entry_open and reason:
             await self.client.cancel(trade["coin"], trade["entry_oid"])
             entry_open = False
@@ -834,12 +866,12 @@ class Desk:
             trade.update(changes)
             await self._save(tid, changes)
             await self._place_targets(trade, held, open_oids)
-            await self._notify(f"desk:{tid}:filled", fill_text(trade, held, pos), {"id": tid})
+            await self._notify(f"desk:{tid}:filled{_tag(trade)}", fill_text(trade, held, pos), {"id": tid})
         else:
             await self._save(
                 tid,
                 {"status": "CANCELLED", "reason": reason or "Entry order no longer on the book", "closed_at": self.clock()},
-                (f"desk:{tid}:cancelled", {"id": tid}, cancel_text(trade, reason or "Entry order no longer on the book")),
+                (f"desk:{tid}:cancelled{_tag(trade)}", {"id": tid}, cancel_text(trade, reason or "Entry order no longer on the book")),
             )
 
     async def _place_targets(self, trade, held, open_oids=frozenset()):
@@ -989,7 +1021,7 @@ class Desk:
                     "kind": "limit",
                     "tif": "Ioc",
                     "reduce_only": True,
-                    "cloid": cloid_for(trade["id"], f"close{attempt}"),
+                    "cloid": cloid_for(trade["id"], _role(trade, f"close{attempt}")),
                 }
             ]
         )
@@ -1040,7 +1072,7 @@ class Desk:
             "pnl_complete": fills is not None,
         }
         trade.update(changes)
-        await self._save(tid, changes, (f"desk:{tid}:closed", {"id": tid, "pnl": net}, close_text(trade)))
+        await self._save(tid, changes, (f"desk:{tid}:closed{_tag(trade)}", {"id": tid, "pnl": net}, close_text(trade)))
 
     async def _cleanup_orphans(self, state, orders):
         """Cancel our own leftover orders whose trade is no longer active."""

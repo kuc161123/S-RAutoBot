@@ -474,6 +474,44 @@ def test_max_positions_defers_and_pause_blocks_new_entries(tmp_path):
     asyncio.run(run())
 
 
+def test_margin_wait_notifies_once_while_free_margin_moves_then_places(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        free = iter([40.0, 41.37, 39.02, 44.5, 5000.0])
+        base = hl.account
+
+        async def account():
+            out = await base()
+            out["available"] = current[0]
+            return out
+
+        current = [next(free)]
+        hl.account = account
+        for _ in range(4):
+            await desk.tick()
+            clock.now += 4
+            current[0] = next(free)
+        assert "baseline_shadow:op1" not in desk_state(await store.read())["trades"]
+        texts = await outbox(store)
+        waiting = [x for x in texts if "Signal waiting" in x]
+        assert len(waiting) == 1, texts  # not one per tick as the dollar figures move
+        assert "Not enough free margin" in waiting[0] and "places it automatically" in waiting[0]
+        assert not any("not taken" in x for x in texts)
+        await desk.tick()  # margin freed up: the same signal goes in
+        assert (await trade(store))["status"] == "ORDERED"
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_skip_keys_ignore_changing_numbers():
+    a = Skip("Not enough free margin: needs $98.20 at 10x, $40.00 available", retry=True)
+    b = Skip("Not enough free margin: needs $98.20 at 10x, $41.37 available", retry=True)
+    assert a.key == b.key
+    assert Skip("Max open positions reached (6)", retry=True).key == "max open positions reached"
+    assert Skip("x", retry=True, key="margin").key == "margin"
+
+
 def test_rejected_entry_is_recorded_as_error(tmp_path):
     async def run():
         store, desk, hl, clock = await make_desk(tmp_path)

@@ -126,7 +126,11 @@ both directions · Shadow Book SIGNAL layer · fee estimate 0.045% per side.
 HL_ACCOUNT_ADDRESS        main Hyperliquid wallet address (0x + 40 hex)
 HL_API_PRIVATE_KEY        API wallet private key (app.hyperliquid.xyz → More → API)
 HL_PERP_DEXS              builder markets to trade besides crypto (default xyz)
-APEX_SHADOW_BOOK_CSV_URL  "Publish to the web" CSV link of the Trades tab, OR
+APEX_SHADOW_BOOK_CSV_URL  1–3 CSV links of the Trades tab, space separated, tried in order:
+                          the live export (…/d/<id>/export?format=csv&gid=<Trades gid>,
+                          needs "Anyone with the link: Viewer") first — no delay — then
+                          the "Publish to the web" link as fallback (Google refreshes it
+                          on its own schedule; on 10 Nov that took hours), OR
 APEX_SHADOW_BOOK_SHEET_ID + APEX_GOOGLE_SERVICE_ACCOUNT_JSON (Sheet shared as Viewer)
 ```
 

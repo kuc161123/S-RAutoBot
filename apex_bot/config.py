@@ -164,7 +164,7 @@ class Config:
         )
         if cfg.desk_only not in ("auto", "on", "off"):
             raise ConfigError("APEX_DESK_ONLY must be auto, on or off")
-        from .shadow_book import valid_csv_url, valid_sheet_id
+        from .shadow_book import valid_csv_links, valid_sheet_id
 
         if any(not re.fullmatch(r"[a-z0-9]{1,16}", d) for d in cfg.hl_perp_dexs):
             raise ConfigError("HL_PERP_DEXS must be comma-separated lowercase dex names, e.g. xyz")
@@ -174,9 +174,10 @@ class Config:
             raise ConfigError(
                 "APEX_SHADOW_BOOK_SHEET_ID needs APEX_GOOGLE_SERVICE_ACCOUNT_JSON (or use APEX_SHADOW_BOOK_CSV_URL)"
             )
-        if cfg.shadow_book_csv_url and not valid_csv_url(cfg.shadow_book_csv_url):
+        if cfg.shadow_book_csv_url and not valid_csv_links(cfg.shadow_book_csv_url):
             raise ConfigError(
-                "APEX_SHADOW_BOOK_CSV_URL must be a docs.google.com 'Publish to the web' CSV link"
+                "APEX_SHADOW_BOOK_CSV_URL must be one to three docs.google.com CSV links "
+                "(sheet export and/or 'Publish to the web'), separated by spaces"
             )
         from .hl_client import valid_address, valid_private_key
 

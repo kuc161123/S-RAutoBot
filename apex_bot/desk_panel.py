@@ -58,6 +58,17 @@ def px(value) -> str:
     return text
 
 
+def price(value) -> str:
+    """A price the exchange computed (average fill, liquidation, mark): at most 6
+    significant figures, so 497.3843363844 reads 497.384 and 73955.5 stays whole."""
+    if not isinstance(value, (int, float)) or not math.isfinite(value):
+        return "—"
+    if value == 0:
+        return "0"
+    digits = max(0, 5 - math.floor(math.log10(abs(value))))
+    return px(round(float(value), digits))
+
+
 def money(value, signed=False) -> str:
     if not isinstance(value, (int, float)) or not math.isfinite(value):
         return "—"
@@ -197,25 +208,62 @@ def fill_text(trade: dict, held: float, pos: dict | None) -> str:
     liq = (pos or {}).get("liq_px")
     return (
         f"✅ <b>FILLED</b> · {tag(trade)}\n"
-        f"Entry <b>{px(entry)}</b> · size {px(held)} {h(trade['coin'])} · {trade['leverage']}x"
-        + (f" · liq {px(liq)}" if liq else "")
+        f"Entry <b>{price(entry)}</b> · size {px(held)} {h(trade['coin'])} · {trade['leverage']}x"
+        + (f" · liq {price(liq)}" if liq else "")
         + f"\n🛑 Stop {px(trade['stop'])} is on the exchange\n"
         f"🎯 Targets {px(trade['target1'])} / {px(trade['target2'])}\n"
         f"💵 Risk {money(trade['risk_usd'])}"
     )
 
 
-def stop_text(trade: dict, old: float, new: float, why: str) -> str:
+def _worst_case(trade: dict, stop: float) -> str:
+    """What the trade ends with if the stop on the rest is hit: that plus whatever
+    target 1 already banked."""
     entry = trade.get("avg_entry") or trade["entry"]
     held = trade.get("filled_after_tp1") or trade.get("filled") or trade["size"]
     sign = 1 if trade.get("is_buy") else -1
-    locked = sign * (new - entry) * held
-    risk_line = (
-        f"Worst case now <b>{money(locked, signed=True)}</b>"
-        if locked >= -0.005
-        else f"Risk now {money(-locked)}"
+    locked = sign * (stop - entry) * held + (trade.get("tp1_pnl") or 0.0)
+    if locked >= -0.005:
+        return f"Worst case now <b>{money(locked, signed=True)}</b>"
+    return f"Risk now {money(-locked)}"
+
+
+def _sale_lines(trade: dict, tp1: dict) -> list[str]:
+    if not tp1 or not tp1.get("size"):
+        return [f"🎯 <b>TARGET 1 REACHED</b> · {tag(trade)}"]
+    approx = "≈" if tp1.get("estimated") else ""
+    return [
+        f"🎯 <b>TARGET 1 HIT</b> · {tag(trade)}",
+        f"Sold {px(tp1['size'])} at <b>{price(tp1['px'])}</b> · "
+        f"<b>{approx}{money(tp1['pnl'], signed=True)}</b> banked after fees",
+    ]
+
+
+def stop_text(trade: dict, old: float, new: float, why: str, tp1: dict | None = None) -> str:
+    if tp1 is not None:
+        held = trade.get("filled_after_tp1") or trade.get("filled") or trade["size"]
+        return "\n".join(
+            _sale_lines(trade, tp1)
+            + [
+                f"🛡 Stop on the remaining {px(held)} moved {price(old)} → <b>{price(new)}</b> (entry)",
+                f"{_worst_case(trade, new)} · target 2 {px(trade['target2'])} still working",
+            ]
+        )
+    return f"🛡 <b>STOP MOVED</b> · {tag(trade)}\n{price(old)} → <b>{price(new)}</b>\n{h(why)}\n{_worst_case(trade, new)}"
+
+
+def tp1_text(trade: dict, tp1: dict, result: str) -> str:
+    """Target 1 when the stop did not move with it in the same step."""
+    stop = trade["stop"]
+    line = {
+        "kept": f"🛡 Stop stays at {price(stop)} (already at or past entry) · {_worst_case(trade, stop)}",
+        "closing": "Price is already back through entry — closing the rest at market.",
+    }.get(
+        result,
+        f"⚠️ Moving the stop to entry did not go through; retrying every 30 s. "
+        f"The stop at {price(stop)} stays on the exchange meanwhile.",
     )
-    return f"🛡 <b>STOP MOVED</b> · {tag(trade)}\n{px(old)} → <b>{px(new)}</b>\n{h(why)}\n{risk_line}"
+    return "\n".join(_sale_lines(trade, tp1) + [line])
 
 
 def cancel_text(trade: dict, reason: str) -> str:
@@ -232,7 +280,7 @@ def close_text(trade: dict) -> str:
         f"{icon} <b>CLOSED</b> · {tag(trade)}\n"
         f"{h(trade.get('exit', 'Closed'))}\n"
         f"Result: <b>{money(pnl, signed=True)}</b>{r_text}\n"
-        f"Entry {px(trade.get('avg_entry') or trade.get('entry'))} · held "
+        f"Entry {price(trade.get('avg_entry') or trade.get('entry'))} · held "
         f"{held_for(trade.get('opened_at') or trade.get('created_at'), trade.get('closed_at'))}"
         + note
     )
@@ -726,12 +774,13 @@ class DeskPanel:
             at_entry = sign * (t["stop"] - entry) >= 0
             lines += [
                 f"{side_dot(t)} <b>{tag(t)}</b> · {t['leverage']}x",
-                f"Entry {px(entry)} → now {px(mid)} ({pct(entry, mid) if mid else '—'})",
-                f"P&amp;L <b>{money(upnl, signed=True)}</b>{r_now} · size {px(abs(pos.get('size', t.get('filled', 0))))}",
-                f"🛑 {px(t['stop'])}" + (" (at entry)" if at_entry else "") + " · 🎯 "
+                f"Entry {price(entry)} → now {price(mid)} ({pct(entry, mid) if mid else '—'})",
+                f"P&amp;L <b>{money(upnl, signed=True)}</b>{r_now} · size {px(abs(pos.get('size', t.get('filled', 0))))}"
+                + (f" · banked {money(t['tp1_pnl'], signed=True)}" if t.get("tp1_pnl") else ""),
+                f"🛑 {price(t['stop'])}" + (" (at entry)" if at_entry else "") + " · 🎯 "
                 + ("✅ " if t.get("tp1_done") else "")
                 + f"{px(t['target1'])} / {px(t['target2'])}"
-                + (f" · liq {px(pos.get('liq_px'))}" if pos.get("liq_px") else ""),
+                + (f" · liq {price(pos.get('liq_px'))}" if pos.get("liq_px") else ""),
                 "",
             ]
             row = []

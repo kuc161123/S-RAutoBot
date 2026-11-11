@@ -25,7 +25,15 @@ _KEY = re.compile(r"(0x)?[0-9a-fA-F]{64}\Z")
 
 
 READ_RETRIES = 2
-TRANSIENT_STATUS = {429, 500, 502, 503, 504}
+TRANSIENT_STATUS = {500, 502, 503, 504}
+# Hyperliquid allows 1200 request weight per minute per IP, and Railway's egress IP
+# is shared with other tenants. frontendOpenOrders costs 20 per dex (everything the
+# desk polls every 4 s otherwise costs 2), so open orders are reused for up to
+# ORDERS_TTL seconds unless this client changed them or a position size moved.
+ORDERS_TTL = 20.0
+# After a 429, reads pause instead of retrying into the same exhausted minute.
+COOLDOWN_START = 15.0
+COOLDOWN_MAX = 120.0
 
 
 def _describe(exc) -> str:
@@ -46,8 +54,11 @@ def _transient(exc) -> bool:
 
 
 def _backoff(exc, attempt: int) -> float:
-    base = 2.0 if getattr(exc, "status_code", None) == 429 else 0.5
-    return base * (attempt + 1)
+    return 0.5 * (attempt + 1)
+
+
+def _rate_limited(exc) -> bool:
+    return getattr(exc, "status_code", None) == 429
 
 
 class HLError(Exception):
@@ -220,6 +231,13 @@ class HyperliquidClient:
         self.dex_abstraction = None  # None = not attempted; "on" or an error note
         self._abstraction_mode = "unknown"
         self._abstraction_at = 0.0
+        self._clock = time.monotonic
+        self._orders: list | None = None  # last open-orders snapshot
+        self._orders_at = 0.0
+        self._orders_dirty = True
+        self._positions_sig = None
+        self._cool_until = 0.0  # reads pause until then after a 429
+        self._cool_for = 0.0
 
     def _build(self):
         try:
@@ -259,32 +277,62 @@ class HyperliquidClient:
         if force or self._exchange is None:
             await asyncio.to_thread(self._build)
 
-    async def _call(self, fn, *args, retries: int = 0, **kwargs):
+    async def _call(self, fn, *args, retries: int = 0, read: bool = False, **kwargs):
         """Run one SDK call off the event loop; errors become sanitized HLErrors.
 
-        retries > 0 is only for read requests: a rate limit (429), a 5xx or a
-        network blip is retried after a short pause. Exchange actions are never
-        retried here — the desk reconciles them by client order ID instead.
+        retries > 0 is only for read requests: a 5xx or a network blip is retried
+        after a short pause. A rate limit (429) is not retried — the weight budget
+        is per minute, so reads pause (15 s, doubling to 2 min while it repeats).
+        Exchange actions are never retried or paused here; the desk reconciles
+        them by client order ID.
         """
+        if read and self._clock() < self._cool_until:
+            wait = max(1, int(self._cool_until - self._clock()))
+            raise HLError(f"Hyperliquid rate limit (ClientError 429); reads paused for {wait} s")
         if self._exchange is None:
             await self.connect()
         for attempt in range(retries + 1):
             try:
-                return await asyncio.to_thread(fn, *args, **kwargs)
+                result = await asyncio.to_thread(fn, *args, **kwargs)
+                if read:
+                    self._cool_for = 0.0
+                return result
             except HLError:
                 raise
             except Exception as exc:  # noqa: BLE001 - never leak payloads/URLs
-                if attempt < retries and _transient(exc):
+                if _rate_limited(exc):
+                    self._cool_for = min(COOLDOWN_MAX, self._cool_for * 2 or COOLDOWN_START)
+                    self._cool_until = self._clock() + self._cool_for
+                elif attempt < retries and _transient(exc):
                     await asyncio.sleep(_backoff(exc, attempt))
                     continue
                 raise HLError(f"Hyperliquid request failed ({_describe(exc)})") from None
 
     async def _read(self, fn):
-        return await self._call(fn, retries=READ_RETRIES)
+        return await self._call(fn, retries=READ_RETRIES, read=True)
+
+    async def _act(self, fn):
+        """An exchange action: it changes the open orders, so the snapshot is redone."""
+        self._orders_dirty = True
+        try:
+            return await self._call(fn)
+        finally:
+            self._orders_dirty = True
 
     async def assets(self) -> dict:
         """coin -> {sz_decimals, max_leverage, only_isolated, delisted}."""
-        await self.connect(force=True)  # refresh name->asset map for new listings
+        out = await self._assets()
+        known = getattr(self._info, "name_to_coin", None)
+        if isinstance(known, dict) and any(name not in known for name in out):
+            # A new listing: rebuild the SDK's name -> asset map (~200 weight, so
+            # only when needed, not on every hourly refresh).
+            await self.connect(force=True)
+            out = await self._assets()
+        return out
+
+    async def _assets(self) -> dict:
+        if self._exchange is None:
+            await self.connect()
         out = {}
         for dex in self.dexs:
             meta = await self._read(lambda d=dex: self._info.meta(dex=d))
@@ -323,6 +371,11 @@ class HyperliquidClient:
             total["equity"] = usdc_total + upnl
             total["available"] = max(total["available"], usdc_total - hold)
             total["mode"] = mode
+        # A fill, stop or target changes a position size and the orders with it.
+        signature = tuple(sorted((coin, p["size"]) for coin, p in total["positions"].items()))
+        if signature != self._positions_sig:
+            self._positions_sig = signature
+            self._orders_dirty = True
         return total
 
     async def _abstraction(self) -> str:
@@ -364,11 +417,21 @@ class HyperliquidClient:
             "positions": positions,
         }
 
-    async def open_orders(self) -> list[dict]:
+    async def open_orders(self, max_age: float = ORDERS_TTL) -> list[dict]:
+        """Open orders on every dex. A snapshot is reused for up to max_age seconds
+        unless this client placed/cancelled since or a position size changed."""
+        now = self._clock()
+        if self._orders is not None and not self._orders_dirty and now - self._orders_at < max_age:
+            return [dict(o) for o in self._orders]
+        self._orders_dirty = False  # an action during the fetch sets it again
         rows = []
-        for dex in self.dexs:
-            part = await self._read(lambda d=dex: self._info.frontend_open_orders(self.address, d))
-            rows += part if isinstance(part, list) else []
+        try:
+            for dex in self.dexs:
+                part = await self._read(lambda d=dex: self._info.frontend_open_orders(self.address, d))
+                rows += part if isinstance(part, list) else []
+        except HLError:
+            self._orders_dirty = True
+            raise
         out = []
         for o in rows if isinstance(rows, list) else []:
             out.append(
@@ -386,7 +449,8 @@ class HyperliquidClient:
                     "order_type": o.get("orderType"),
                 }
             )
-        return out
+        self._orders, self._orders_at = out, now
+        return [dict(o) for o in out]
 
     async def mids(self) -> dict:
         out = {}
@@ -430,7 +494,7 @@ class HyperliquidClient:
         return out
 
     async def set_leverage(self, coin: str, leverage: int, isolated: bool = True):
-        response = await self._call(
+        response = await self._act(
             lambda: self._exchange.update_leverage(int(leverage), coin, is_cross=not isolated)
         )
         if not isinstance(response, dict) or response.get("status") != "ok":
@@ -466,11 +530,11 @@ class HyperliquidClient:
 
     async def place(self, orders: list[dict]) -> list[dict]:
         wires = [self._wire(o) for o in orders]
-        response = await self._call(lambda: self._exchange.bulk_orders(wires))
+        response = await self._act(lambda: self._exchange.bulk_orders(wires))
         return parse_statuses(response)
 
     async def cancel(self, coin: str, oid: int) -> bool:
-        response = await self._call(lambda: self._exchange.cancel(coin, int(oid)))
+        response = await self._act(lambda: self._exchange.cancel(coin, int(oid)))
         if not isinstance(response, dict) or response.get("status") != "ok":
             return False
         statuses = response.get("response", {}).get("data", {}).get("statuses", [])

@@ -371,3 +371,52 @@ def test_csv_reads_ask_google_for_a_fresh_copy():
     assert seen["url"] == link + f"&_ts={int(START)}"
     assert seen["headers"]["Cache-Control"] == "no-cache"
     assert source.ok_at == START and source.newest_at == START
+
+
+def test_live_link_first_published_copy_as_fallback():
+    import csv as _csv
+    import io as _io
+    from types import SimpleNamespace
+
+    from apex_bot.config import Config
+    from apex_bot.shadow_book import valid_csv_links
+
+    out = _io.StringIO()
+    _csv.writer(out).writerows([HEADER, row("S-1", "SOL", "Short", 100, 105, 95, 90)])
+    body = out.getvalue().encode()
+    live = "https://docs.google.com/spreadsheets/d/abc/export?format=csv&gid=1"
+    pub = "https://docs.google.com/spreadsheets/d/e/2PACX-abc/pub?gid=1&single=true&output=csv"
+    status = {"export": 429, "pub": 200}
+    calls = []
+
+    class Response:
+        def __init__(self, url):
+            self.url = SimpleNamespace(host="docs.google.com")
+            self.status = status["export" if "/export" in url else "pub"]
+
+            async def read(n):
+                return body
+
+            self.content = SimpleNamespace(read=read)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class Session:
+        def get(self, url, **kwargs):
+            calls.append("export" if "/export" in url else "pub")
+            return Response(url)
+
+    assert valid_csv_links(f"{live} {pub}") and valid_csv_links(f"{live},{pub}")
+    assert not valid_csv_links(f"{live} https://evil.example/x.csv")
+    assert Config.from_env({"APEX_SHADOW_BOOK_CSV_URL": f"{live} {pub}"}).shadow_book_csv_url
+    source = ShadowBookSource(Session(), csv_url=f"{live} {pub}", clock=lambda: START)
+    assert asyncio.run(source.refresh(force=True))
+    assert calls == ["export", "pub"] and source.link_used == "published copy"
+    assert source.link_errors == {"live sheet": "Shadow Book CSV error HTTP 429"}
+    status["export"] = 200
+    assert asyncio.run(source.refresh(force=True))
+    assert calls[-1] == "export" and source.link_used == "live sheet" and source.link_errors == {}

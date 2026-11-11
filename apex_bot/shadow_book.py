@@ -74,6 +74,21 @@ def valid_csv_url(value) -> bool:
     )
 
 
+def csv_links(value) -> list[str]:
+    """APEX_SHADOW_BOOK_CSV_URL may list several links (space or comma separated),
+    tried in order: the live sheet export first, the published copy as fallback."""
+    return [part for part in re.split(r"[\s,]+", str(value or "").strip()) if part]
+
+
+def valid_csv_links(value) -> bool:
+    links = csv_links(value)
+    return bool(links) and len(links) <= 3 and all(valid_csv_url(link) for link in links)
+
+
+def link_kind(url: str) -> str:
+    return "live sheet" if "/export" in url or "/gviz/" in url else "published copy"
+
+
 def _number(value):
     if value is None:
         return None
@@ -182,13 +197,16 @@ class ShadowBookSource:
     def __init__(self, session, *, sheet_id: str = "", credentials_json: str = "", csv_url: str = "", refresh_seconds: int = 60, clock=time.time):
         if sheet_id and not valid_sheet_id(sheet_id):
             raise ValueError("Invalid Shadow Book sheet ID")
-        if csv_url and not valid_csv_url(csv_url):
+        if csv_url and not valid_csv_links(csv_url):
             raise ValueError("Shadow Book CSV link must be a docs.google.com published CSV link")
         if sheet_id and not credentials_json:
             raise ValueError("Shadow Book sheet ID needs a Google service account")
         self.session = session
         self.sheet_id = sheet_id
         self.csv_url = csv_url
+        self.csv_urls = csv_links(csv_url)
+        self.link_used = ""  # "live sheet" / "published copy" on the last good read
+        self.link_errors: dict = {}  # kind -> last error, for links that failed
         self.credentials_json = credentials_json
         self.refresh_seconds = refresh_seconds
         self.clock = clock
@@ -236,10 +254,26 @@ class ShadowBookSource:
         return body.get("values", [])
 
     async def _rows_csv(self):
+        """First link that answers with CSV wins; the others are fallbacks."""
+        first = None
+        for link in self.csv_urls:
+            try:
+                rows = await self._rows_from(link)
+            except Exception as exc:  # noqa: BLE001 - try the next link
+                error = str(exc) if isinstance(exc, SourceError) else f"read failed ({type(exc).__name__})"
+                self.link_errors[link_kind(link)] = error
+                first = first or exc
+                continue
+            self.link_errors.pop(link_kind(link), None)
+            self.link_used = link_kind(link)
+            return rows
+        raise first or SourceError("No Shadow Book link configured")
+
+    async def _rows_from(self, link: str):
         import aiohttp
 
-        # Ask Google for the newest published copy, never a cached one.
-        url = self.csv_url + ("&" if "?" in self.csv_url else "?") + f"_ts={int(self.clock())}"
+        # Ask Google for the newest copy, never a cached one.
+        url = link + ("&" if "?" in link else "?") + f"_ts={int(self.clock())}"
         async with self.session.get(
             url,
             headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},

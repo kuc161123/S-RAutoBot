@@ -580,9 +580,13 @@ class DeskPanel:
             newest = getattr(source, "newest_at", 0) if source else 0
             good = getattr(source, "ok_at", 0) if source else 0
             if good:
+                via = getattr(source, "link_used", "") or ""
                 lines.append(
-                    f"Last good read {ago(good, now)} · newest row in it opened {when(newest) if newest else '—'}"
+                    f"Last good read {ago(good, now)}" + (f" via the {h(via)}" if via else "")
+                    + f" · newest row in it opened {when(newest) if newest else '—'}"
                 )
+            for kind, error in sorted((getattr(source, "link_errors", None) or {}).items()):
+                lines.append(f"⚠️ {h(kind)} link failing ({h(error)}); using the other link")
             lines.append("New signals arrive with each Shadow Desk shift (3× a day).")
         trades = desk["trades"].values()
         counts = {}

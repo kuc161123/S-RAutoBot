@@ -179,8 +179,48 @@ def liquidation_safe_leverage(stop_fraction: float, exchange_max: int) -> int:
     return max(1, int(math.floor(bound)))
 
 
-def plan_entry(signal: dict, settings: dict, asset: dict, coin: str, equity: float, available: float, mid: float | None) -> dict:
-    """Pure sizing and leverage plan. Raises Skip with a readable reason."""
+LEGACY_TP1_SKIP = "Price already reached target 1"
+SKIP_RULE = 2  # skip records written with the entry-history rule
+
+
+def entry_history(is_buy: bool, entry: float, stop: float, target1: float, bars) -> tuple[bool, str | None]:
+    """Replay price bars since a limit signal was written, like the Shadow Book does.
+
+    bars: [(t_ms, high, low), …] oldest first. Returns (touched, outcome):
+    touched = the entry price traded; outcome = "stop" / "target" when, from the
+    touching bar on, the stop or target 1 traded too (same bar: stop first), i.e.
+    the Shadow Book trade has already played out and the sheet just has not been
+    updated yet (it updates 3× a day).
+    """
+    touched = False
+    for _t, high, low in bars:
+        if not touched and (low <= entry if is_buy else high >= entry):
+            touched = True
+        if touched:
+            if low <= stop if is_buy else high >= stop:
+                return True, "stop"
+            if high >= target1 if is_buy else low <= target1:
+                return True, "target"
+    return touched, None
+
+
+def plan_entry(
+    signal: dict,
+    settings: dict,
+    asset: dict,
+    coin: str,
+    equity: float,
+    available: float,
+    mid: float | None,
+    *,
+    entry_untouched: bool = False,
+) -> dict:
+    """Pure sizing and leverage plan. Raises Skip with a readable reason.
+
+    entry_untouched: price history shows the limit price has not traded since the
+    signal was written, so price sitting beyond target 1 does not mean the move
+    happened — the resting limit simply waits, exactly as the Shadow Book does.
+    """
     side = signal.get("side")
     if side not in ("Buy", "Sell"):
         raise Skip("Unknown direction")
@@ -198,8 +238,8 @@ def plan_entry(signal: dict, settings: dict, asset: dict, coin: str, equity: flo
         raise Skip(f"Hyperliquid price {mid:g} is more than {PRICE_SANITY:.0%} from the signal entry")
     if sign * (mid - stop) <= 0:
         raise Skip("Price is already through the stop")
-    if sign * (mid - tp1) >= 0:
-        raise Skip("Price already reached target 1")
+    if sign * (mid - tp1) >= 0 and not entry_untouched:
+        raise Skip(LEGACY_TP1_SKIP)
     risk = risk_dollars(settings, equity)
     if risk <= 0:
         raise Skip("Risk amount is zero (check equity or risk setting)", retry=True)
@@ -497,6 +537,18 @@ class Desk:
         return f"${settings['risk_usd']:,.2f} per trade"
 
     # ------------------------------------------------------------------- intake
+    @staticmethod
+    def _open_to_intake(record) -> bool:
+        """New signal, or one skipped by the old 'already past target 1' rule, which
+        ignored whether the limit price had ever traded. Those get one re-check."""
+        if record is None:
+            return True
+        return (
+            record.get("status") == "SKIPPED"
+            and record.get("reason") == LEGACY_TP1_SKIP
+            and not record.get("rule")
+        )
+
     def _candidates(self, state: dict, settings: dict) -> list[dict]:
         now = self.clock()
         desk = desk_state(state)
@@ -509,7 +561,7 @@ class Desk:
                     signal["status"] == "PENDING"
                     and signal.get("entry_type", "LIMIT") == "LIMIT"
                     and (settings["layer"] == "all" or signal.get("layer") == settings["layer"].upper())
-                    and signal["id"] not in desk["trades"]
+                    and self._open_to_intake(desk["trades"].get(signal["id"]))
                     and signal["expires_at"] > now + 60
                     and signal.get("created_at", 0) > now - 72 * 3600
                 ):
@@ -565,7 +617,35 @@ class Desk:
                         retry=True,
                     )
                 asset = self.assets[coin]
-                plan = plan_entry(signal, settings, asset, coin, account["equity"], account["available"], mids.get(coin))
+                untouched = False
+                if str(trade_id).startswith("shadowbook:") and signal.get("created_at"):
+                    try:
+                        bars = await self.client.candles(
+                            coin, "5m", int(float(signal["created_at"]) * 1000) - 300_000, int(self.clock() * 1000)
+                        )
+                    except HLError as exc:
+                        LOG.warning("Price history for %s unavailable (%s); retrying next tick", coin, exc)
+                        continue
+                    touched, outcome = entry_history(
+                        long, float(signal["limit"]), float(signal["stop"]), float(signal["target1"]), bars
+                    )
+                    if outcome:
+                        raise Skip(
+                            f"Already played out on Hyperliquid: entry {float(signal['limit']):g} traded, then "
+                            + ("the stop" if outcome == "stop" else "target 1")
+                            + " (the Shadow Book updates at its next shift)"
+                        )
+                    untouched = not touched
+                plan = plan_entry(
+                    signal,
+                    settings,
+                    asset,
+                    coin,
+                    account["equity"],
+                    account["available"],
+                    mids.get(coin),
+                    entry_untouched=untouched,
+                )
             except Skip as skip:
                 await self._skip(signal, coin, skip, notify=settings.get("notify_skips", True))
                 continue
@@ -595,13 +675,18 @@ class Desk:
             "side": signal.get("side"),
             "status": "SKIPPED",
             "reason": skip.reason,
+            "rule": SKIP_RULE,
             "created_at": self.clock(),
             "closed_at": self.clock(),
         }
         await self._save(
             trade_id,
             new=record,
-            event=(f"desk:{trade_id}:skip", {"id": trade_id, "reason": skip.reason}, text if notify else None),
+            event=(
+                f"desk:{trade_id}:skip{SKIP_RULE}",
+                {"id": trade_id, "reason": skip.reason},
+                text if notify else None,
+            ),
         )
 
     async def _open(self, signal, plan, settings):

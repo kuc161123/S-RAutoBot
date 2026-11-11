@@ -576,6 +576,13 @@ class DeskPanel:
             )
         lines += ["", f"<b>Signals</b> · {h(self._source_label(s))}", self._source_line(s)]
         if s["book"] == "shadow_book":
+            source = self.desk.source if self.desk else None
+            newest = getattr(source, "newest_at", 0) if source else 0
+            good = getattr(source, "ok_at", 0) if source else 0
+            if good:
+                lines.append(
+                    f"Last good read {ago(good, now)} · newest row in it opened {when(newest) if newest else '—'}"
+                )
             lines.append("New signals arrive with each Shadow Desk shift (3× a day).")
         trades = desk["trades"].values()
         counts = {}

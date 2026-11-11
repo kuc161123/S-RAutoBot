@@ -215,11 +215,13 @@ class FakeHL:
                 continue
             if o["kind"] == "limit" and o.get("tif") == "Ioc":
                 pos = self.positions.get(o["coin"])
+                oid = next(self.oids)
                 if pos:
                     pos["size"] += o["size"] if o["is_buy"] else -o["size"]
                     if abs(pos["size"]) < 1e-9:
                         del self.positions[o["coin"]]
-                out.append({"ok": True, "state": "filled", "oid": next(self.oids), "filled": o["size"], "avg_px": self.mid[o["coin"]], "error": None})
+                    self.fills.append({"coin": o["coin"], "oid": oid, "px": self.mid[o["coin"]], "size": o["size"], "side": "B" if o["is_buy"] else "A", "time": 0, "closed_pnl": 0.0, "fee": 0.0, "dir": "Close Short" if o["is_buy"] else "Close Long"})
+                out.append({"ok": True, "state": "filled", "oid": oid, "filled": o["size"], "avg_px": self.mid[o["coin"]], "error": None})
                 continue
             oid = next(self.oids)
             self.orders[oid] = {
@@ -254,7 +256,9 @@ class FakeHL:
         entry = next(o for o in self.orders.values() if o["coin"] == coin and o["kind"] == "limit")
         size = entry["size"] if size is None else size
         sign = 1 if entry["side"] == "B" else -1
-        self.positions[coin] = {"size": sign * size, "entry_px": px or entry["limit_px"], "liq_px": 50.0, "upnl": 0.0}
+        held = abs(self.positions.get(coin, {}).get("size", 0.0))
+        self.positions[coin] = {"size": sign * (held + size), "entry_px": px or entry["limit_px"], "liq_px": 50.0, "upnl": 0.0}
+        self.fills.append({"coin": coin, "oid": entry["oid"], "px": px or entry["limit_px"], "size": size, "side": entry["side"], "time": 0, "closed_pnl": 0.0, "fee": 0.0, "dir": "Open Long" if sign > 0 else "Open Short"})
         entry["size"] -= size
         if entry["size"] <= 1e-12:
             del self.orders[entry["oid"]]
@@ -388,6 +392,99 @@ def test_stop_to_entry_is_retried_when_the_first_attempt_fails(tmp_path):
         assert len([o for o in hl.orders.values() if o["kind"] == "sl"]) == 1
         moved = next(x for x in await outbox(store) if "STOP MOVED" in x)
         assert "Target 1 hit — stop to entry" in moved and "Worst case now +$48.90" in moved
+        await store.close()
+
+    asyncio.run(run())
+
+
+async def _open_past_tp1(tmp_path):
+    store, desk, hl, clock = await make_desk(tmp_path)
+    await desk.tick()
+    hl.fill_entry("SOL")
+    await desk.tick()
+    t = await trade(store)
+    hl.trigger(t["tp1_oid"], pnl=49.0)
+    hl.mid["SOL"] = 110.5
+    await desk.tick()
+    return store, desk, hl, clock
+
+
+def test_close_waits_for_the_fill_history_before_reporting(tmp_path):
+    async def run():
+        store, desk, hl, clock = await _open_past_tp1(tmp_path)
+        t = await trade(store)
+        hl.mid["SOL"] = 99.0
+        hl.trigger(t["sl_oid"], pnl=-1.0)  # break-even stop fills with a little slippage
+        late = hl.fills.pop()  # ...but Hyperliquid has not listed that fill yet
+        await desk.tick()
+        assert (await trade(store))["status"] == "OPEN"  # no result read from half the fills
+        assert not any("CLOSED" in x for x in await outbox(store))
+        hl.fills.append(late)
+        clock.now += 4
+        await desk.tick()  # retry not due yet (every 8 s)
+        assert (await trade(store))["status"] == "OPEN"
+        clock.now += 5
+        await desk.tick()
+        t = await trade(store)
+        assert t["status"] == "CLOSED" and t["pnl"] == pytest.approx(49 - 1 - 0.2) and t["pnl_complete"]
+        assert t["exit"] == "Stop hit at entry (break-even)"
+        msg = next(x for x in await outbox(store) if "CLOSED" in x)
+        assert "Result: +$47.80" in msg and "may be incomplete" not in msg
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_close_is_reported_as_incomplete_after_a_minute_without_fills(tmp_path):
+    async def run():
+        store, desk, hl, clock = await _open_past_tp1(tmp_path)
+        t = await trade(store)
+        hl.trigger(t["sl_oid"], pnl=-1.0)
+        hl.fills.pop()  # never shows up
+        for _ in range(8):
+            await desk.tick()
+            clock.now += 9
+        t = await trade(store)
+        assert t["status"] == "CLOSED" and not t["pnl_complete"]
+        assert any("may be incomplete" in x for x in await outbox(store))
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_recent_results_read_too_early_are_corrected_once(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path, settings={"paused": True})
+        placed = NOW - 3600
+        record = {
+            "id": "shadowbook:S-261111-02", "coin": "SOL", "side": "Sell", "is_buy": False, "status": "CLOSED",
+            "entry": 100.0, "stop": 100.0, "original_stop": 101.5, "target1": 98.45, "target2": 96.6,
+            "sl_oid": 77, "tp1_oid": 76, "tp2_oid": 78, "tp1_done": True, "sz_decimals": 2, "risk_usd": 24.97,
+            "placed_at": placed, "created_at": placed, "closed_at": NOW - 600, "pnl": 11.86,
+            "exit": "Position closed on the exchange", "pnl_complete": True,
+        }
+
+        def seed(tx):
+            desk_state(tx.state)["trades"][record["id"]] = record
+
+        await store.update(seed)
+        ms = lambda t: int(t * 1000)  # noqa: E731
+        hl.fills = [
+            {"coin": "SOL", "oid": 75, "px": 100.0, "size": 1.57, "time": ms(placed + 60), "closed_pnl": 0.0, "fee": 0.226079, "dir": "Open Short"},
+            {"coin": "SOL", "oid": 76, "px": 98.427, "size": 0.79, "time": ms(placed + 500), "closed_pnl": 12.4267, "fee": 0.335911, "dir": "Close Short"},
+            {"coin": "SOL", "oid": 77, "px": 100.29, "size": 0.35, "time": ms(NOW - 601), "closed_pnl": -1.015, "fee": 0.151638, "dir": "Close Short"},
+            {"coin": "SOL", "oid": 77, "px": 100.31, "size": 0.43, "time": ms(NOW - 601), "closed_pnl": -1.333, "fee": 0.186335, "dir": "Close Short"},
+            {"coin": "SOL", "oid": 90, "px": 100.0, "size": 2.0, "time": ms(NOW + 7200), "closed_pnl": 0.0, "fee": 1.0, "dir": "Open Long"},  # a later trade
+        ]
+        await desk.tick()
+        t = await trade(store, record["id"])
+        assert t["pnl"] == 9.18 and t["exit"] == "Stop hit at entry (break-even)" and t["reconciled"]
+        assert t["r"] == pytest.approx(0.37)
+        fixes = [x for x in await outbox(store) if "RESULT CORRECTED" in x]
+        assert len(fixes) == 1 and "+$9.18" in fixes[0] and "said +$11.86" in fixes[0]
+        desk._reconciled = False  # a restart re-checks, but only what is not yet settled
+        await desk.tick()
+        assert len([x for x in await outbox(store) if "RESULT CORRECTED" in x]) == 1
         await store.close()
 
     asyncio.run(run())

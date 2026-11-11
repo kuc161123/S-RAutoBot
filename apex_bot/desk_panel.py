@@ -286,6 +286,22 @@ def close_text(trade: dict) -> str:
     )
 
 
+def correction_text(trade: dict, previous) -> str:
+    r = trade.get("r")
+    r_text = f" ({_sign_r(r)})" if isinstance(r, (int, float)) else ""
+    why = (
+        f"The first message said {money(previous, signed=True)}: it was read before Hyperliquid had recorded the last fills."
+        if isinstance(previous, (int, float))
+        else "Recorded before Hyperliquid had all the closing fills."
+    )
+    return (
+        f"🧾 <b>RESULT CORRECTED</b> · {tag(trade)}\n"
+        f"{h(trade.get('exit', 'Closed'))}\n"
+        f"Final result: <b>{money(trade.get('pnl', 0.0), signed=True)}</b>{r_text}\n"
+        f"<i>{why}</i>"
+    )
+
+
 # ---------------------------------------------------------------- the panel
 
 HELP = (

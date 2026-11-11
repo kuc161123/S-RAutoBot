@@ -80,6 +80,11 @@ BOOKS = {
     "ai_shadow": "Railway engine · AI book",
 }
 ACTIVE = ("PLACING", "ORDERED", "OPEN")
+# Hyperliquid's fill history lags a closed position by a moment: the result is
+# reported once the closing fills are all there (re-read every FILLS_RETRY s, and
+# reported as possibly incomplete after FILLS_SETTLE s).
+FILLS_SETTLE = 60.0
+FILLS_RETRY = 8.0
 # Shadow exits the exchange orders already cover; anything else is structural.
 PRICE_EXITS = {"STOP", "TP1", "TP2", "UNFILLED", "TARGET_BEFORE_ENTRY"}
 LIQ_BUFFER = 1.5  # liquidation distance must be >= 1.5x the stop distance
@@ -392,6 +397,9 @@ class Desk:
         self._sl_failures: dict = {}
         self._deferred_notified: set = set()
         self._be_retry: dict = {}  # trade id -> next stop-to-entry retry after target 1
+        self._closing: dict = {}  # trade id -> when its position was first seen gone
+        self._closing_next: dict = {}  # trade id -> next fill-history read
+        self._reconciled = False  # recent results re-checked once per process
 
     @property
     def configured(self) -> bool:
@@ -518,6 +526,12 @@ class Desk:
                             f"⚠️ {escape(str(trade.get('coin')))} management retrying ({escape(str(exc)) if isinstance(exc, HLError) else type(exc).__name__}). "
                             "The exchange stop-loss stays in place.",
                         )
+            if not self._reconciled:
+                try:
+                    await self._reconcile_closed(desk)
+                    self._reconciled = True
+                except HLError as exc:  # fill history unreadable: try again next tick
+                    LOG.warning("Result re-check deferred: %s", exc)
             if not settings["paused"]:
                 await self._intake(state, settings, account, orders, mids)
             await self._cleanup_orphans(state, orders)
@@ -1095,52 +1109,122 @@ class Desk:
         )
         return bool(statuses and statuses[0]["ok"])
 
+    @staticmethod
+    def _tally(trade, fills, end_ms=None) -> dict:
+        """This trade's fills: size opened and closed, P&L, fees, last closing order."""
+        out = {"opened": 0.0, "closed": 0.0, "pnl": 0.0, "fees": 0.0, "last_oid": None}
+        for f in fills:
+            if f["coin"] != trade["coin"] or (end_ms is not None and f.get("time", 0) > end_ms):
+                continue
+            direction = f.get("dir") or ""
+            if direction.startswith("Open"):
+                out["opened"] += f["size"]
+            elif direction.startswith("Close"):
+                out["closed"] += f["size"]
+            if f["closed_pnl"] != 0 or direction.startswith("Close"):
+                out["last_oid"] = f["oid"]
+            out["pnl"] += f["closed_pnl"]
+            out["fees"] += f["fee"]
+        lot = 10 ** -int(trade.get("sz_decimals") or 0)
+        out["complete"] = out["opened"] > 0 and out["closed"] >= out["opened"] - lot / 2
+        return out
+
+    @staticmethod
+    def _exit_reason(trade, last_oid) -> str:
+        if trade.get("close_reason"):
+            return trade["close_reason"]
+        if last_oid and last_oid == trade.get("tp2_oid"):
+            return "Target 2 hit"
+        if last_oid and last_oid == trade.get("sl_oid"):
+            moved = trade["stop"] != trade.get("original_stop")
+            return ("Stop hit at entry (break-even)" if trade.get("tp1_done") else "Trailing stop hit") if moved else "Stop-loss hit"
+        return "Position closed on the exchange"
+
     async def _finalize(self, trade, open_oids, orders):
+        """The position is gone: report the result once Hyperliquid's fill history
+        shows every closing fill. It lags the position by a moment, and reading it
+        too early missed the stop's own fills (ZEC 11 Nov: +$11.86 reported, +$9.18
+        real). Re-read every FILLS_RETRY s, for at most FILLS_SETTLE s."""
         from .desk_panel import close_text
 
         tid = trade["id"]
-        for o in orders:
-            if o.get("coin") == trade["coin"] and o.get("oid") in {trade.get("sl_oid"), trade.get("tp1_oid"), trade.get("tp2_oid"), trade.get("entry_oid")}:
-                try:
-                    await self.client.cancel(trade["coin"], o["oid"])
-                except HLError:
-                    pass
+        now = self.clock()
+        if tid not in self._closing:
+            self._closing[tid] = now
+            for o in orders:
+                if o.get("coin") == trade["coin"] and o.get("oid") in {trade.get("sl_oid"), trade.get("tp1_oid"), trade.get("tp2_oid"), trade.get("entry_oid")}:
+                    try:
+                        await self.client.cancel(trade["coin"], o["oid"])
+                    except HLError:
+                        pass
+        if now < self._closing_next.get(tid, 0):
+            return
         start = int(float(trade.get("placed_at") or trade["created_at"]) * 1000)
-        pnl, fees, last_oid = 0.0, 0.0, None
         try:
             fills = await self.client.fills_since(start - 60000)
         except HLError:
             fills = None
-        if fills is not None:
-            for f in fills:
-                if f["coin"] != trade["coin"]:
-                    continue
-                pnl += f["closed_pnl"]
-                fees += f["fee"]
-                if f["closed_pnl"] != 0 or (f.get("dir") or "").startswith("Close"):
-                    last_oid = f["oid"]
-        net = pnl - fees
-        if trade.get("close_reason"):
-            reason = trade["close_reason"]
-        elif last_oid and last_oid == trade.get("tp2_oid"):
-            reason = "Target 2 hit"
-        elif last_oid and last_oid == trade.get("sl_oid"):
-            moved = trade["stop"] != trade.get("original_stop")
-            reason = ("Stop hit at entry (break-even)" if trade.get("tp1_done") else "Trailing stop hit") if moved else "Stop-loss hit"
-        else:
-            reason = "Position closed on the exchange"
+        tally = self._tally(trade, fills or [])
+        complete = fills is not None and tally["complete"]
+        if not complete and now - self._closing[tid] < FILLS_SETTLE:
+            self._closing_next[tid] = now + FILLS_RETRY
+            return
+        self._closing.pop(tid, None)
+        self._closing_next.pop(tid, None)
+        net = tally["pnl"] - tally["fees"]
         risk = trade.get("risk_usd") or 0
         changes = {
             "status": "CLOSED",
-            "closed_at": self.clock(),
+            "closed_at": now,
             "pnl": round(net, 2),
-            "fees": round(fees, 4),
+            "fees": round(tally["fees"], 4),
             "r": round(net / risk, 2) if risk else None,
-            "exit": reason,
-            "pnl_complete": fills is not None,
+            "exit": self._exit_reason(trade, tally["last_oid"]),
+            "pnl_complete": complete,
+            "reconciled": complete,
         }
         trade.update(changes)
         await self._save(tid, changes, (f"desk:{tid}:closed{_tag(trade)}", {"id": tid, "pnl": net}, close_text(trade)))
+
+    async def _reconcile_closed(self, desk):
+        """Once per process: re-check results recorded in the last 48 h before this
+        fix (or while fill history was unreadable) and correct any that were short."""
+        from .desk_panel import correction_text
+
+        now = self.clock()
+        todo = [
+            t for t in desk["trades"].values()
+            if t.get("status") == "CLOSED" and not t.get("reconciled") and now - float(t.get("closed_at") or 0) < 48 * 3600
+            and t.get("placed_at")
+        ]
+        if not todo:
+            return
+        start = int(min(float(t["placed_at"]) for t in todo) * 1000) - 60000
+        fills = await self.client.fills_since(start)
+        for trade in todo:
+            begin = int(float(trade["placed_at"]) * 1000) - 60000
+            mine = [f for f in fills if f.get("time", 0) >= begin]
+            tally = self._tally(trade, mine, end_ms=int((float(trade["closed_at"]) + 300) * 1000))
+            changes = {"reconciled": True}
+            note = None
+            if tally["complete"]:
+                net = round(tally["pnl"] - tally["fees"], 2)
+                reason = trade.get("exit")
+                if reason == "Position closed on the exchange":
+                    reason = self._exit_reason(trade, tally["last_oid"])
+                risk = trade.get("risk_usd") or 0
+                if abs(net - (trade.get("pnl") or 0.0)) >= 0.01 or reason != trade.get("exit"):
+                    previous = trade.get("pnl")
+                    changes.update(
+                        pnl=net, fees=round(tally["fees"], 4), r=round(net / risk, 2) if risk else None,
+                        exit=reason, pnl_complete=True,
+                    )
+                    note = {"previous": previous}
+            trade.update(changes)
+            event = None
+            if note is not None:
+                event = (f"desk:{trade['id']}:corrected{_tag(trade)}", {"id": trade["id"], "pnl": trade["pnl"]}, correction_text(trade, note["previous"]))
+            await self._save(trade["id"], changes, event)
 
     async def _cleanup_orphans(self, state, orders):
         """Cancel our own leftover orders whose trade is no longer active."""

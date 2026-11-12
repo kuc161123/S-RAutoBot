@@ -975,7 +975,13 @@ class Desk:
     async def _ensure_stop(self, trade, held, orders, mid):
         """Invariant: a reduce-only stop covering the whole position is on the book."""
         current = next((o for o in orders if o.get("oid") == trade.get("sl_oid")), None)
-        attached = self._attached_stop(trade, orders)
+        # Hyperliquid lists the attached stop as an open order from the start,
+        # looking exactly like a live one, but it cannot fire until the entry is
+        # COMPLETELY filled. While the entry order is still on the book (unfilled
+        # or partly filled) it is ignored here and the filled part gets the
+        # desk's own stop; it is taken over only once the entry has left the book.
+        entry_resting = bool(trade.get("entry_oid")) and any(o.get("oid") == trade["entry_oid"] for o in orders)
+        attached = None if entry_resting else self._attached_stop(trade, orders)
         if attached and attached.get("oid") != trade.get("sl_oid"):
             usable = attached["size"] + 1e-12 >= held and abs((attached.get("trigger_px") or 0) - trade["stop"]) <= 1e-9 * max(1.0, abs(trade["stop"]))
             if usable and not (current and current["size"] + 1e-12 >= held):

@@ -214,7 +214,18 @@ class FakeHL:
                 raise HLError("Exchange rejected the request: TP/SL grouping not allowed")
             parent = (await self.place(orders[:1]))[0]
             if parent["ok"] and parent["state"] == "resting":
-                self.children[parent["oid"]] = [dict(o) for o in orders[1:]]
+                # Like Hyperliquid: listed as open orders at once, looking live,
+                # but they cannot fire until the entry is completely filled.
+                kids = []
+                for o in orders[1:]:
+                    oid = next(self.oids)
+                    self.orders[oid] = {
+                        "coin": o["coin"], "oid": oid, "cloid": o.get("cloid"), "side": "B" if o["is_buy"] else "A",
+                        "size": o["size"], "orig_size": o["size"], "limit_px": o["limit_px"], "trigger_px": o.get("trigger_px"),
+                        "is_trigger": True, "reduce_only": True, "order_type": o["kind"], "kind": o["kind"], "dormant": True,
+                    }
+                    kids.append(oid)
+                self.children[parent["oid"]] = kids
                 self.placed.extend(orders[1:])
             waiting = {"ok": parent["ok"], "state": "waiting" if parent["ok"] else "error", "oid": None, "filled": 0.0, "avg_px": None, "error": parent["error"]}
             return [parent] + [dict(waiting) for _ in orders[1:]]
@@ -255,17 +266,14 @@ class FakeHL:
 
     async def cancel(self, coin, oid):
         self.cancelled.append(oid)
-        self.children.pop(oid, None)  # cancelling the entry cancels what waits on it
+        for kid in self.children.pop(oid, []):  # cancelling the entry cancels what waits on it
+            self.orders.pop(kid, None)
         return self.orders.pop(oid, None) is not None
 
     def _activate_children(self, parent_oid):
-        for o in self.children.pop(parent_oid, []):
-            oid = next(self.oids)
-            self.orders[oid] = {
-                "coin": o["coin"], "oid": oid, "cloid": o.get("cloid"), "side": "B" if o["is_buy"] else "A",
-                "size": o["size"], "orig_size": o["size"], "limit_px": o["limit_px"], "trigger_px": o.get("trigger_px"),
-                "is_trigger": True, "reduce_only": True, "order_type": o["kind"], "kind": o["kind"],
-            }
+        for kid in self.children.pop(parent_oid, []):
+            if kid in self.orders:
+                self.orders[kid].pop("dormant", None)
 
     async def order_status(self, cloid):
         for o in self.orders.values():
@@ -287,6 +295,7 @@ class FakeHL:
             self._activate_children(entry["oid"])  # Hyperliquid places them on the full fill
 
     def trigger(self, oid, pnl=0.0):
+        assert not self.orders[oid].get("dormant"), "an attached stop cannot fire before its entry has fully filled"
         order = self.orders.pop(oid)
         pos = self.positions[order["coin"]]
         reduce = min(order["size"], abs(pos["size"]))
@@ -338,7 +347,8 @@ def test_full_lifecycle_entry_fill_tp1_breakeven_trail_and_stop(tmp_path):
         await desk.tick()
         t = await trade(store)
         assert t["status"] == "ORDERED" and hl.leverage["SOL"] == (10, True)
-        assert hl.kinds("SOL") == ["limit"]
+        assert hl.kinds("SOL") == ["limit", "sl"]  # the entry and its attached stop, waiting on the fill
+        assert not _stops(hl)  # which cannot fire yet
         texts = await outbox(store)
         assert any("Desk online" in x for x in texts)
         assert any("LONG SOL · Apex signal" in x and "Risk $" in x for x in texts)
@@ -514,7 +524,8 @@ def test_recent_results_read_too_early_are_corrected_once(tmp_path):
 
 
 def _stops(hl, coin="SOL"):
-    return [o for o in hl.orders.values() if o["coin"] == coin and o["kind"] == "sl"]
+    """Stops that can actually fire (an attached stop waiting on its entry cannot)."""
+    return [o for o in hl.orders.values() if o["coin"] == coin and o["kind"] == "sl" and not o.get("dormant")]
 
 
 def test_stop_is_on_the_exchange_the_moment_the_entry_fills(tmp_path):

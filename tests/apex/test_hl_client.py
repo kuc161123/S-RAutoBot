@@ -53,7 +53,7 @@ class FakeInfo:
 
 def make_client():
     client = HyperliquidClient("0x" + "ab" * 20, "0x" + "cd" * 32)
-    client._exchange = type("Ex", (), {"bulk_orders": lambda self, w: {"status": "ok", "response": {"data": {"statuses": [{"resting": {"oid": 9}}]}}}, "cancel": lambda self, c, o: {"status": "ok", "response": {"data": {"statuses": ["success"]}}}})()
+    client._exchange = type("Ex", (), {"bulk_orders": lambda self, w, grouping="na": {"status": "ok", "response": {"data": {"statuses": [{"resting": {"oid": 9}}]}}}, "cancel": lambda self, c, o: {"status": "ok", "response": {"data": {"statuses": ["success"]}}}})()
     client._info = FakeInfo()
     client.dexs = ("", "xyz")
     clock = Clock()

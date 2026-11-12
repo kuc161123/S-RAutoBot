@@ -181,6 +181,8 @@ class FakeHL:
         self.reject_next = False
         self.bars = {}  # coin -> [(t_ms, high, low)] price history for entry checks
         self.equity = 5000.0
+        self.children = {}  # entry oid -> TP/SL waiting for that entry's full fill
+        self.refuse_brackets = False  # exchange refuses an entry+stop pair as a whole
 
     async def assets(self):
         return dict(ASSETS)
@@ -205,7 +207,17 @@ class FakeHL:
     async def set_leverage(self, coin, leverage, isolated=True):
         self.leverage[coin] = (leverage, isolated)
 
-    async def place(self, orders):
+    async def place(self, orders, grouping="na"):
+        if grouping == "normalTpsl":
+            if self.refuse_brackets:
+                self.placed.append({"refused_bracket": True})
+                raise HLError("Exchange rejected the request: TP/SL grouping not allowed")
+            parent = (await self.place(orders[:1]))[0]
+            if parent["ok"] and parent["state"] == "resting":
+                self.children[parent["oid"]] = [dict(o) for o in orders[1:]]
+                self.placed.extend(orders[1:])
+            waiting = {"ok": parent["ok"], "state": "waiting" if parent["ok"] else "error", "oid": None, "filled": 0.0, "avg_px": None, "error": parent["error"]}
+            return [parent] + [dict(waiting) for _ in orders[1:]]
         out = []
         for o in orders:
             self.placed.append(o)
@@ -243,7 +255,17 @@ class FakeHL:
 
     async def cancel(self, coin, oid):
         self.cancelled.append(oid)
+        self.children.pop(oid, None)  # cancelling the entry cancels what waits on it
         return self.orders.pop(oid, None) is not None
+
+    def _activate_children(self, parent_oid):
+        for o in self.children.pop(parent_oid, []):
+            oid = next(self.oids)
+            self.orders[oid] = {
+                "coin": o["coin"], "oid": oid, "cloid": o.get("cloid"), "side": "B" if o["is_buy"] else "A",
+                "size": o["size"], "orig_size": o["size"], "limit_px": o["limit_px"], "trigger_px": o.get("trigger_px"),
+                "is_trigger": True, "reduce_only": True, "order_type": o["kind"], "kind": o["kind"],
+            }
 
     async def order_status(self, cloid):
         for o in self.orders.values():
@@ -262,6 +284,7 @@ class FakeHL:
         entry["size"] -= size
         if entry["size"] <= 1e-12:
             del self.orders[entry["oid"]]
+            self._activate_children(entry["oid"])  # Hyperliquid places them on the full fill
 
     def trigger(self, oid, pnl=0.0):
         order = self.orders.pop(oid)
@@ -485,6 +508,108 @@ def test_recent_results_read_too_early_are_corrected_once(tmp_path):
         desk._reconciled = False  # a restart re-checks, but only what is not yet settled
         await desk.tick()
         assert len([x for x in await outbox(store) if "RESULT CORRECTED" in x]) == 1
+        await store.close()
+
+    asyncio.run(run())
+
+
+def _stops(hl, coin="SOL"):
+    return [o for o in hl.orders.values() if o["coin"] == coin and o["kind"] == "sl"]
+
+
+def test_stop_is_on_the_exchange_the_moment_the_entry_fills(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        t = await trade(store)
+        assert t["status"] == "ORDERED" and t["sl_attached"] and not _stops(hl)  # waiting on the fill
+        hl.fill_entry("SOL")  # fills while the desk is not looking (e.g. Hyperliquid unreachable)
+        stops = _stops(hl)
+        assert len(stops) == 1 and stops[0]["trigger_px"] == 95.0 and stops[0]["size"] == t["size"]
+        await desk.tick()
+        t = await trade(store)
+        assert t["status"] == "OPEN" and t["sl_oid"] == stops[0]["oid"]  # adopted, not duplicated
+        assert len(_stops(hl)) == 1 and len([o for o in hl.placed if o.get("kind") == "sl"]) == 1  # no second stop sent
+        assert sorted(o["kind"] for o in hl.orders.values()) == ["sl", "tp", "tp"]
+        # Target 1, then the adopted stop is replaced by the break-even stop.
+        hl.trigger(t["tp1_oid"], pnl=49.0)
+        hl.mid["SOL"] = 110.5
+        await desk.tick()
+        t = await trade(store)
+        assert t["stop"] == 100.0 and len(_stops(hl)) == 1 and _stops(hl)[0]["oid"] == t["sl_oid"]
+        assert stops[0]["oid"] in hl.cancelled
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_attached_stop_is_recognised_even_without_its_client_id(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        hl.fill_entry("SOL")
+        for o in _stops(hl):
+            o["cloid"] = None  # the exchange dropped the client ID
+        await desk.tick()
+        t = await trade(store)
+        assert len(_stops(hl)) == 1 and t["sl_oid"] == _stops(hl)[0]["oid"]
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_partial_fill_is_covered_then_the_attached_stop_takes_over(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        full = (await trade(store))["size"]
+        hl.fill_entry("SOL", size=4.0)
+        assert not _stops(hl)  # Hyperliquid waits for the full fill
+        await desk.tick()
+        t = await trade(store)
+        own = _stops(hl)
+        assert len(own) == 1 and own[0]["size"] == 4.0 and t["sl_oid"] == own[0]["oid"]  # the desk covers the part
+        hl.fill_entry("SOL")  # the rest fills: the attached stop goes live for the whole size
+        assert len(_stops(hl)) == 2
+        await desk.tick()
+        t = await trade(store)
+        stops = _stops(hl)
+        assert len(stops) == 1 and stops[0]["size"] == full and t["sl_oid"] == stops[0]["oid"]
+        assert own[0]["oid"] in hl.cancelled
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_partial_fill_then_expiry_keeps_the_desk_stop(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        hl.fill_entry("SOL", size=4.0)
+        await desk.tick()
+        clock.now = (await trade(store))["expires_at"] + 1
+        await desk.tick()  # the unfilled rest is cancelled, which cancels the attached stop too
+        t = await trade(store)
+        stops = _stops(hl)
+        assert t["status"] == "OPEN" and len(stops) == 1 and stops[0]["size"] == 4.0 and t["sl_oid"] == stops[0]["oid"]
+        assert not hl.children
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_entry_alone_when_the_exchange_refuses_the_attached_stop(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        hl.refuse_brackets = True
+        await desk.tick()
+        t = await trade(store)
+        assert t["status"] == "ORDERED" and t["entry_oid"] and t["sl_attached"] is None
+        assert len([o for o in hl.orders.values() if o["kind"] == "limit"]) == 1  # one entry, not two
+        hl.fill_entry("SOL")
+        await desk.tick()
+        t = await trade(store)
+        assert len(_stops(hl)) == 1 and t["sl_oid"] == _stops(hl)[0]["oid"]  # placed after the fill, as before
         await store.close()
 
     asyncio.run(run())

@@ -774,23 +774,36 @@ class Desk:
             "close_reason": None,
             "notes": [],
         }
+        # The stop rides on the entry order itself: Hyperliquid places it the
+        # moment the entry is completely filled, even if this process or the
+        # connection is down at that moment. Partial fills are covered by
+        # _ensure_stop as before (the attached stop waits for the full fill).
+        attached = _stop_order(trade, plan["size"], plan["stop"], 1)
+        trade["sl_attached"] = attached["cloid"]
+        trade["sl_version"] = 1
         await self._save(trade_id, new=trade)
+        entry_order = {
+            "coin": plan["coin"],
+            "is_buy": plan["is_buy"],
+            "size": plan["size"],
+            "limit_px": plan["entry"],
+            "kind": "limit",
+            "tif": "Gtc",
+            "reduce_only": False,
+            "cloid": trade["entry_cloid"],
+        }
         try:
             await self.client.set_leverage(plan["coin"], plan["leverage"], isolated=True)
-            statuses = await self.client.place(
-                [
-                    {
-                        "coin": plan["coin"],
-                        "is_buy": plan["is_buy"],
-                        "size": plan["size"],
-                        "limit_px": plan["entry"],
-                        "kind": "limit",
-                        "tif": "Gtc",
-                        "reduce_only": False,
-                        "cloid": trade["entry_cloid"],
-                    }
-                ]
-            )
+            try:
+                statuses = await self.client.place([entry_order, attached], grouping="normalTpsl")
+            except HLError as exc:
+                if not str(exc).startswith("Exchange rejected the request"):
+                    raise
+                # The exchange refused the pair as a whole, so nothing was placed:
+                # fall back to the entry alone; the stop then follows the fill.
+                LOG.warning("Entry with attached stop refused (%s); placing the entry alone", exc)
+                statuses = await self.client.place([entry_order])
+                statuses = statuses[:1] + [{"ok": False, "error": "not attached"}]
         except HLError as exc:
             await self._save(
                 trade_id,
@@ -807,6 +820,8 @@ class Desk:
             )
             return None
         changes = {"status": "ORDERED", "entry_oid": status["oid"], "placed_at": self.clock()}
+        if len(statuses) < 2 or not statuses[1].get("ok"):
+            changes["sl_attached"] = None  # no attached stop: _ensure_stop places one on the fill
         trade.update(changes)
         await self._save(
             trade_id, changes, (f"desk:{trade_id}:placed{tag}", {"id": trade_id, "plan": plan}, signal_card(trade, signal))
@@ -930,9 +945,57 @@ class Desk:
                 f"⚠️ {escape(trade['coin'])} target order not placed ({escape(str(errors[0]))}). The stop-loss stays active; retrying.",
             )
 
+    @staticmethod
+    def _attached_stop(trade, orders):
+        """The stop that rode on the entry order, once Hyperliquid has placed it."""
+        cloid = str(trade.get("sl_attached") or "").lower()
+        if not cloid:
+            return None
+        mine = [o for o in orders if o.get("coin") == trade["coin"]]
+        found = next((o for o in mine if str(o.get("cloid") or "").lower() == cloid), None)
+        if found:
+            return found
+        # Should the exchange not carry the client ID over to the placed stop:
+        # the reduce-only stop at the original level, for the full entry size,
+        # on the closing side, that is not one of this trade's known orders.
+        known = {trade.get(k) for k in ("entry_oid", "sl_oid", "tp1_oid", "tp2_oid")}
+        closing = "A" if trade["is_buy"] else "B"
+        level = trade.get("original_stop") or trade["stop"]
+        return next(
+            (
+                o for o in mine
+                if o.get("is_trigger") and o.get("reduce_only") and o.get("side") == closing
+                and o.get("oid") not in known and not o.get("cloid")
+                and abs((o.get("trigger_px") or 0) - level) <= 1e-9 * max(1.0, abs(level))
+                and abs((o.get("size") or 0) - trade["size"]) <= 1e-9 * max(1.0, trade["size"])
+            ),
+            None,
+        )
+
     async def _ensure_stop(self, trade, held, orders, mid):
         """Invariant: a reduce-only stop covering the whole position is on the book."""
         current = next((o for o in orders if o.get("oid") == trade.get("sl_oid")), None)
+        attached = self._attached_stop(trade, orders)
+        if attached and attached.get("oid") != trade.get("sl_oid"):
+            usable = attached["size"] + 1e-12 >= held and abs((attached.get("trigger_px") or 0) - trade["stop"]) <= 1e-9 * max(1.0, abs(trade["stop"]))
+            if usable and not (current and current["size"] + 1e-12 >= held):
+                # Adopt it: it becomes this trade's stop, so later moves replace it.
+                changes = {"sl_oid": attached["oid"]}
+                trade.update(changes)
+                await self._save(trade["id"], changes)
+                self._sl_failures.pop(trade["id"], None)
+                if current:
+                    await self.client.cancel(trade["coin"], current["oid"])
+                return True
+            # Surplus (our own stop already covers the position, or the stop has
+            # since moved): keep exactly one stop on the book.
+            changes = {"sl_attached": None}
+            trade.update(changes)
+            await self._save(trade["id"], changes)
+            try:
+                await self.client.cancel(trade["coin"], attached["oid"])
+            except HLError:
+                pass
         if current and current["size"] + 1e-12 >= held:
             self._sl_failures.pop(trade["id"], None)
             return True
@@ -1229,13 +1292,15 @@ class Desk:
     async def _cleanup_orphans(self, state, orders):
         """Cancel our own leftover orders whose trade is no longer active."""
         desk = desk_state(state)
-        known = {}
+        known, attached = {}, {}
         for t in desk["trades"].values():
             for key in ("entry_oid", "sl_oid", "tp1_oid", "tp2_oid"):
                 if t.get(key):
                     known[t[key]] = t
+            if t.get("sl_attached"):
+                attached[str(t["sl_attached"]).lower()] = t
         for o in orders:
-            trade = known.get(o.get("oid"))
+            trade = known.get(o.get("oid")) or attached.get(str(o.get("cloid") or "").lower())
             if trade and trade.get("status") not in ACTIVE:
                 try:
                     await self.client.cancel(o["coin"], o["oid"])

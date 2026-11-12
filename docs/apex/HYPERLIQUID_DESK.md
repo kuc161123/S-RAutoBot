@@ -46,17 +46,28 @@ The engine's levels are used unchanged: limit entry, stop, target 1, target 2.
    only sets margin: dollars at risk come from the stop. With isolated margin the
    higher, still liquidation-safe level also bounds a gap-through-the-stop loss
    at about 1.5R, where a low leverage would put the whole larger margin at risk.
-4. **Entry.** GTC limit at the signal entry. Cancelled at the signal's expiry,
-   when the engine closes the signal, or if price crosses the stop or target 1
-   first.
+4. **Entry.** GTC limit at the signal entry, sent together with its stop
+   (Hyperliquid order grouping `normalTpsl`): the exchange itself places the
+   stop the moment the entry is completely filled, so a fill during an outage of
+   this process or of the API is protected from the first second. Cancelled at
+   the signal's expiry, when the engine closes the signal, or if price crosses
+   the stop first (engine signals also on target 1 first; Shadow Book limits
+   rest until their entry trades). If the exchange refuses the pair as a whole,
+   the entry goes out alone and the stop follows the fill as below.
 5. **Protection.** As soon as any size is filled, a reduce-only stop-market
-   trigger covers the whole position. Every tick re-checks it and re-places it
-   if missing; two failures in a row close the position at market.
+   trigger covers the whole position. On a full fill this is the attached stop,
+   adopted by its client order ID (or, failing that, by its exact level, size and
+   side). Hyperliquid holds the attached stop back while the entry is only
+   partly filled, so the desk places its own stop for the filled part and hands
+   over to the attached one when the rest fills (cancelling the unfilled rest
+   cancels the attached stop; the desk's stop stays). Every tick re-checks the
+   stop and re-places it if missing; two failures in a row close the position at
+   market. Exactly one stop is kept on the book.
 6. **Targets.** Target 1 closes half (one lot stays intact, odd lots round up —
    same as the shadow book; skipped if too small for the $10 minimum). Target 2
    closes the rest.
 7. **Management.** Target 1 hit (or the Sheet/engine reporting it) → stop to
-   entry. Engine trailing stop moves → live stop follows, tighten only. Sheet row
+   entry, retried every 30 s until it is there. Engine trailing stop moves → live stop follows, tighten only. Sheet row
    CLOSED with a non-price reason (the desk closed it), or an engine structural
    exit → market close. Sheet EXPIRED/CLOSED before a fill → entry cancelled.
    If the Sheet cannot be read, no new entries are taken and exchange orders keep

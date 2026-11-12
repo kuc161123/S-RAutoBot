@@ -270,7 +270,9 @@ def test_untouched_short_below_target1_is_still_placed(tmp_path):
         await desk.tick()
         trade = desk_state(await store.read())["trades"]["shadowbook:S-BTC"]
         assert trade["status"] == "ORDERED" and trade["entry"] == 74250
-        assert [o["limit_px"] for o in hl.placed if o["coin"] == "BTC"] == [74250]
+        assert [o["limit_px"] for o in hl.placed if o["coin"] == "BTC" and o["kind"] == "limit"] == [74250]
+        # its stop rides on the entry order, waiting for the fill
+        assert [o["trigger_px"] for o in hl.placed if o["coin"] == "BTC" and o["kind"] == "sl"] == [75020]
         await store.close()
 
     asyncio.run(run())

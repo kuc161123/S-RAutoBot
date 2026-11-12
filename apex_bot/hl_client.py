@@ -528,9 +528,14 @@ class HyperliquidClient:
             wire["cloid"] = Cloid.from_str(order["cloid"])
         return wire
 
-    async def place(self, orders: list[dict]) -> list[dict]:
+    async def place(self, orders: list[dict], grouping: str = "na") -> list[dict]:
+        """grouping "normalTpsl": orders[0] is an entry and the rest are its TP/SL,
+        which Hyperliquid holds ("waitingForFill") and places itself the moment the
+        entry is completely filled — no round trip through this process needed."""
+        if grouping not in ("na", "normalTpsl"):
+            raise ValueError("Unsupported order grouping")
         wires = [self._wire(o) for o in orders]
-        response = await self._act(lambda: self._exchange.bulk_orders(wires))
+        response = await self._act(lambda: self._exchange.bulk_orders(wires, grouping=grouping))
         return parse_statuses(response)
 
     async def cancel(self, coin: str, oid: int) -> bool:

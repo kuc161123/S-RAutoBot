@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from apex_bot.desk import Desk, desk_state
+from apex_bot.desk import SHADOW_CLOSE_CONFIRM, Desk, desk_state
 from apex_bot.desk_panel import DeskPanel, plain, signal_card
 from apex_bot.shadow_book import (
     SourceError,
@@ -70,7 +70,7 @@ def test_exit_reason_classification_and_links():
     assert not valid_csv_url("https://evil.example/pub?output=csv")
     assert not valid_csv_url("https://docs.google.com/forms/x?output=csv")
     with pytest.raises(ValueError):
-        ShadowBookSource(None, sheet_id="1aCcEcbodqcBzf3eM8THxxTyTww3aoOCE6PXCLtirXe4")  # no Google key
+        ShadowBookSource(None, sheet_id="1" + "x" * 43)  # no Google key
 
 
 class FakeSource:
@@ -153,6 +153,9 @@ def test_sheet_status_changes_drive_live_management(tmp_path):
         # SOL fills live, then the Sheet reports TP1 -> stop to entry.
         hl.fill_entry("SOL")
         await desk.tick()
+        assert desk_state(await store.read())["trades"]["shadowbook:S-2"]["status"] == "ORDERED"  # confirming
+        clock.now += SHADOW_CLOSE_CONFIRM + 1
+        await desk.tick()
         trades = desk_state(await store.read())["trades"]
         assert trades["shadowbook:S-2"]["status"] == "CANCELLED"
         assert trades["shadowbook:S-1"]["status"] == "OPEN"
@@ -164,9 +167,95 @@ def test_sheet_status_changes_drive_live_management(tmp_path):
         # The desk closes it for its own reason -> live position closed at market.
         source.rows[1] = row("S-1", "SOL", "Short", 100, 105, 95, 90, status="CLOSED", reason="Closed by desk: count invalidated")
         await desk.tick()
+        assert desk_state(await store.read())["trades"]["shadowbook:S-1"]["status"] == "OPEN"  # confirming
+        clock.now += SHADOW_CLOSE_CONFIRM + 1
+        await desk.tick()
         await desk.tick()
         t = desk_state(await store.read())["trades"]["shadowbook:S-1"]
         assert t["status"] == "CLOSED" and t["exit"].startswith("Shadow Desk exit")
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_desk_follows_the_shadow_book_when_its_stop_fires_before_the_exchange_stop(tmp_path):
+    """14 Nov, live: TSLA traded 383.21 under the 383.35 stop, the Shadow Book
+    closed the trade, but Hyperliquid's stop (mark price) only fired four hours
+    later. The desk now closes the rest at market once the row has said CLOSED
+    for SHADOW_CLOSE_CONFIRM seconds."""
+
+    async def run():
+        rows = [HEADER, row("S-1", "SOL", "Short", 100, 105, 95, 90, layer="SIGNAL")]
+        store, desk, hl, clock, source = await make(tmp_path, rows)
+        await desk.tick()
+        hl.fill_entry("SOL")
+        await desk.tick()
+        assert desk_state(await store.read())["trades"]["shadowbook:S-1"]["status"] == "OPEN"
+        stop_reason = "STOP 105.00 hit on the HL 15m bar 16:45 UTC 14 Nov (O 104.2 H 105.1; no gap). Saturday."
+        source.rows[1] = row("S-1", "SOL", "Short", 100, 105, 95, 90, status="CLOSED", reason=stop_reason, layer="SIGNAL")
+        hl.mid["SOL"] = 104.6  # the exchange stop has not fired
+        await desk.tick()
+        clock.now += SHADOW_CLOSE_CONFIRM - 5
+        await desk.tick()
+        assert "SOL" in hl.positions  # still confirming: no close yet
+        clock.now += 10
+        await desk.tick()
+        assert "SOL" not in hl.positions
+        assert any(o.get("tif") == "Ioc" and o["reduce_only"] for o in hl.placed)
+        clock.now += 70  # fill history settles
+        await desk.tick()
+        t = desk_state(await store.read())["trades"]["shadowbook:S-1"]
+        assert t["status"] == "CLOSED"
+        assert t["exit"].startswith("Closed to match the Shadow Book (STOP 105.00 hit on the HL 15m bar 16:45 UTC 14 Nov)")
+        assert not [o for o in hl.orders.values() if o["coin"] == "SOL"]  # stop and targets cancelled
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_a_closed_status_fixed_within_the_confirmation_window_is_ignored(tmp_path):
+    async def run():
+        rows = [HEADER, row("S-1", "SOL", "Short", 100, 105, 95, 90, layer="SIGNAL")]
+        store, desk, hl, clock, source = await make(tmp_path, rows)
+        await desk.tick()
+        hl.fill_entry("SOL")
+        await desk.tick()
+        source.rows[1] = row("S-1", "SOL", "Short", 100, 105, 95, 90, status="CLOSED", reason="TP2", layer="SIGNAL")
+        await desk.tick()
+        clock.now += 60
+        source.rows[1] = row("S-1", "SOL", "Short", 100, 105, 95, 90, status="OPEN", layer="SIGNAL")  # write corrected
+        await desk.tick()
+        clock.now += SHADOW_CLOSE_CONFIRM
+        await desk.tick()
+        assert "SOL" in hl.positions
+        assert desk_state(await store.read())["trades"]["shadowbook:S-1"]["status"] == "OPEN"
+        # Closed again later: the confirmation window starts over.
+        source.rows[1] = row("S-1", "SOL", "Short", 100, 105, 95, 90, status="CLOSED", reason="TP2", layer="SIGNAL")
+        await desk.tick()
+        clock.now += 30
+        await desk.tick()
+        assert "SOL" in hl.positions
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_a_live_fill_the_shadow_book_never_had_is_closed_when_it_expires_the_signal(tmp_path):
+    async def run():
+        rows = [HEADER, row("S-1", "SOL", "Short", 100, 105, 95, 90, layer="SIGNAL")]
+        store, desk, hl, clock, source = await make(tmp_path, rows)
+        await desk.tick()
+        hl.fill_entry("SOL")  # touched 100 here; the Book needs a candle to trade through it
+        await desk.tick()
+        source.rows[1] = row("S-1", "SOL", "Short", 100, 105, 95, 90, status="EXPIRED", reason="EXPIRED unfilled at 08:00 UTC (48 h)", layer="SIGNAL")
+        await desk.tick()
+        clock.now += SHADOW_CLOSE_CONFIRM + 1
+        await desk.tick()
+        assert "SOL" not in hl.positions
+        clock.now += 70
+        await desk.tick()
+        t = desk_state(await store.read())["trades"]["shadowbook:S-1"]
+        assert t["status"] == "CLOSED" and t["exit"] == "Closed to match the Shadow Book: its entry never filled there (EXPIRED unfilled at 08:00 UTC)"
         await store.close()
 
     asyncio.run(run())
@@ -480,6 +569,8 @@ def test_resting_shadow_limit_is_not_cancelled_when_price_passes_target1(tmp_pat
         assert trade["status"] == "ORDERED" and not hl.cancelled
         # The Shadow Book expiring it still cancels it.
         source.rows[1] = row("S-CL", "SOL", "Short", 100, 101, 98, 96, status="EXPIRED", reason="EXPIRED unfilled", layer="SIGNAL")
+        await desk.tick()
+        clock.now += SHADOW_CLOSE_CONFIRM + 1
         await desk.tick()
         trade = desk_state(await store.read())["trades"]["shadowbook:S-CL"]
         assert trade["status"] == "CANCELLED" and "Shadow Book closed" in trade["reason"]

@@ -556,8 +556,15 @@ class DeskPanel:
                 )
             if not open_trades and not pending:
                 lines.append("Flat — waiting for the next signal.")
+            # Waiting limits count too: each one is a full stop-out once it fills.
+            pending_risk = sum(float(t.get("risk_usd") or 0.0) for t in pending)
             if open_trades:
-                lines.append(f"At risk if every stop hits: {money(open_risk)}")
+                lines.append(
+                    f"At risk if every stop hits: {money(open_risk)}"
+                    + (f" · +{money(pending_risk)} if the pending orders fill" if pending_risk > 0 else "")
+                )
+            elif pending_risk > 0:
+                lines.append(f"At risk if the pending orders fill and stop out: {money(pending_risk)}")
             mine = {t["coin"] for t in (*open_trades, *pending)}
             foreign = sorted(c for c in positions if c not in mine)
             if foreign:

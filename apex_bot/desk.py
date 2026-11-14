@@ -85,6 +85,10 @@ ACTIVE = ("PLACING", "ORDERED", "OPEN")
 # reported as possibly incomplete after FILLS_SETTLE s).
 FILLS_SETTLE = 60.0
 FILLS_RETRY = 8.0
+# A Shadow Book row must read CLOSED this long before the desk closes the live
+# remainder: the desk fixes mis-aimed writes within the same minute.
+SHADOW_CLOSE_CONFIRM = 180.0
+HISTORY_WARN_EVERY = 60.0  # seconds between repeated "price history unavailable" logs
 # Shadow exits the exchange orders already cover; anything else is structural.
 PRICE_EXITS = {"STOP", "TP1", "TP2", "UNFILLED", "TARGET_BEFORE_ENTRY"}
 LIQ_BUFFER = 1.5  # liquidation distance must be >= 1.5x the stop distance
@@ -400,6 +404,8 @@ class Desk:
         self._closing: dict = {}  # trade id -> when its position was first seen gone
         self._closing_next: dict = {}  # trade id -> next fill-history read
         self._reconciled = False  # recent results re-checked once per process
+        self._shadow_closed: dict = {}  # trade id -> when the Sheet first said CLOSED
+        self._history_warned: dict = {}  # coin -> last "price history unavailable" log
 
     @property
     def configured(self) -> bool:
@@ -660,7 +666,11 @@ class Desk:
                             coin, "5m", int(float(signal["created_at"]) * 1000) - 300_000, int(self.clock() * 1000)
                         )
                     except HLError as exc:
-                        LOG.warning("Price history for %s unavailable (%s); retrying next tick", coin, exc)
+                        # Retried every tick; one log line a minute is enough
+                        # (13 Nov: 70 identical lines in 6 minutes of HTTP 500s).
+                        if self.clock() - self._history_warned.get(coin, 0.0) >= HISTORY_WARN_EVERY:
+                            self._history_warned[coin] = self.clock()
+                            LOG.warning("Price history for %s unavailable (%s); retrying every tick", coin, exc)
                         continue
                     touched, outcome = entry_history(
                         long, float(signal["limit"]), float(signal["stop"]), float(signal["target1"]), bars
@@ -869,10 +879,13 @@ class Desk:
             await self._ensure_stop(trade, held, orders, mid)
         entry_open = trade.get("entry_oid") in open_oids
         sign = 1 if trade["is_buy"] else -1
+        sheet_done = shadow.get("status") in ("EXPIRED", "CLOSED")
+        if not sheet_done:
+            self._shadow_closed.pop(tid, None)
         reason = None
         if self.clock() >= trade["expires_at"]:
             reason = "Entry window expired"
-        elif shadow.get("status") in ("EXPIRED", "CLOSED"):
+        elif sheet_done and self._sheet_confirmed(tid):
             reason = (
                 "The Shadow Book closed this signal before the entry filled"
                 if str(tid).startswith("shadowbook:")
@@ -1141,13 +1154,56 @@ class Desk:
             sign = 1 if trade["is_buy"] else -1
             if sign * (shadow_stop - trade["stop"]) > 0:
                 await self._move_stop(trade, held, shadow_stop, mid, "Trailing stop moved by the engine")
+        if shadow.get("source") == "shadow_book":
+            await self._follow_shadow_close(trade, held, shadow)
+            return
         price_exit = shadow.get("price_exit", shadow.get("exit_reason") in PRICE_EXITS)
         if shadow.get("status") == "CLOSED" and shadow.get("exit_reason") and not price_exit:
             from .notifications import describe_reason
 
-            reason = shadow["exit_reason"]
-            label = "Shadow Desk exit" if shadow.get("source") == "shadow_book" else "Engine exit"
-            await self._close(trade, held, f"{label}: {describe_reason(reason)[:160]}")
+            await self._close(trade, held, f"Engine exit: {describe_reason(shadow['exit_reason'])[:160]}")
+
+    def _sheet_confirmed(self, trade_id) -> bool:
+        """A Shadow Book row has read CLOSED/EXPIRED for SHADOW_CLOSE_CONFIRM s.
+        Engine signals come from this process's own state: no wait."""
+        if not str(trade_id).startswith("shadowbook:"):
+            return True
+        now = self.clock()
+        first = self._shadow_closed.setdefault(trade_id, now)
+        return now - first >= SHADOW_CLOSE_CONFIRM
+
+    async def _follow_shadow_close(self, trade, held, shadow):
+        """The Shadow Book row says CLOSED while a position is still open here.
+
+        Its own reason (the desk closed it) always meant a market close. A price
+        reason (stop, target 2, break-even) used to be left to the exchange orders,
+        but Hyperliquid triggers those on the mark price and the Shadow Book on
+        traded prices; on a thin book they part. 14 Nov: TSLA traded 383.21 under
+        the 383.35 stop at 16:45 UTC, the Book closed the trade, the mark did not
+        cross until 20:54 UTC - four hours holding a trade the system had closed.
+        Now the desk follows the Book either way, once the row has said CLOSED for
+        SHADOW_CLOSE_CONFIRM seconds (a mis-aimed write fixed within that is ignored).
+        """
+        from .notifications import describe_reason
+
+        tid = trade["id"]
+        status = shadow.get("status")
+        # EXPIRED with a live position: the limit filled here on a touch but the
+        # Book (which needs a candle to trade through it) never had the trade.
+        if status not in ("CLOSED", "EXPIRED"):
+            self._shadow_closed.pop(tid, None)
+            return
+        if not self._sheet_confirmed(tid):
+            return
+        reason = " ".join(str(shadow.get("exit_reason") or "").split())
+        short = re.split(r"\s[(;]|\.\s", reason, maxsplit=1)[0][:90] if reason else status.lower()
+        if status == "EXPIRED":
+            why = f"Closed to match the Shadow Book: its entry never filled there ({short})"
+        elif shadow.get("price_exit") or not reason:
+            why = f"Closed to match the Shadow Book ({short}); the exchange order had not triggered on the mark price"
+        else:
+            why = f"Shadow Desk exit: {describe_reason(reason)[:160]}"
+        await self._close(trade, held, why)
 
     async def _close(self, trade, held, why):
         """Reduce-only aggressive limit (Hyperliquid's market order)."""
@@ -1200,13 +1256,15 @@ class Desk:
 
     @staticmethod
     def _exit_reason(trade, last_oid) -> str:
-        if trade.get("close_reason"):
-            return trade["close_reason"]
+        # The exchange's own stop or target can beat a market close the desk was
+        # sending at the same moment: name what actually closed the position.
         if last_oid and last_oid == trade.get("tp2_oid"):
             return "Target 2 hit"
         if last_oid and last_oid == trade.get("sl_oid"):
             moved = trade["stop"] != trade.get("original_stop")
             return ("Stop hit at entry (break-even)" if trade.get("tp1_done") else "Trailing stop hit") if moved else "Stop-loss hit"
+        if trade.get("close_reason"):
+            return trade["close_reason"]
         return "Position closed on the exchange"
 
     async def _finalize(self, trade, open_oids, orders):

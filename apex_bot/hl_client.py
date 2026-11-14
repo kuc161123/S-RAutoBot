@@ -359,16 +359,21 @@ class HyperliquidClient:
             total["positions"].update(part["positions"])
         mode = await self._abstraction()
         if mode in ("unifiedAccount", "portfolioMargin"):
-            # Unified/portfolio accounts keep collateral in the spot USDC balance;
-            # the perp clearinghouse's "withdrawable" understates free margin there.
+            # Unified/portfolio accounts keep every balance in the spot USDC
+            # balance; the perp clearinghouse's "withdrawable" understates free
+            # margin there. That total already carries open P&L: an isolated
+            # position's margin is marked to market inside it (as "hold"), and
+            # Hyperliquid's own account value equals it. Adding the positions'
+            # unrealized P&L again double-counted it (14 Nov: TSLA -$64 open,
+            # the desk showed $1,280.71 equity for a $1,344.82 account, and %
+            # risk was sized off the wrong number).
             spot = await self._read(lambda: self._info.spot_user_state(self.address))
             usdc = next(
                 (b for b in (spot or {}).get("balances", []) if b.get("coin") == "USDC"),
                 {},
             )
             usdc_total, hold = _num(usdc.get("total")), _num(usdc.get("hold"))
-            upnl = sum(p["upnl"] for p in total["positions"].values())
-            total["equity"] = usdc_total + upnl
+            total["equity"] = usdc_total
             total["available"] = max(total["available"], usdc_total - hold)
             total["mode"] = mode
         # A fill, stop or target changes a position size and the orders with it.

@@ -39,7 +39,9 @@ The engine's levels are used unchanged: limit entry, stop, target 1, target 2.
    or order on that coin, max positions, daily loss stop, price within 5% of
    the signal entry, price not already through the stop or target 1.
 2. **Sizing.** `size = risk$ / (|entry − stop| + fee_rate × (entry + stop))`,
-   rounded down. Risk is fixed dollars or % of equity.
+   rounded down. Risk is fixed dollars or % of equity. On a unified account
+   equity is the spot USDC total, which already carries open P&L (it equals
+   Hyperliquid's own account value).
 3. **Leverage.** `min(symbol setting or max leverage, exchange max,
    liquidation-safe)`; liquidation-safe keeps the isolated liquidation distance
    ≥ 1.5× the stop distance. Isolated margin, set before every entry. Leverage
@@ -67,9 +69,17 @@ The engine's levels are used unchanged: limit entry, stop, target 1, target 2.
    same as the shadow book; skipped if too small for the $10 minimum). Target 2
    closes the rest.
 7. **Management.** Target 1 hit (or the Sheet/engine reporting it) → stop to
-   entry, retried every 30 s until it is there. Engine trailing stop moves → live stop follows, tighten only. Sheet row
-   CLOSED with a non-price reason (the desk closed it), or an engine structural
-   exit → market close. Sheet EXPIRED/CLOSED before a fill → entry cancelled.
+   entry, retried every 30 s until it is there. Engine trailing stop moves → live stop follows, tighten only.
+   Sheet row CLOSED for any reason (stop, target 2, break-even or the desk's own
+   call) or EXPIRED while a position is still open here → the rest is closed at
+   market, so the live book never holds a trade the Shadow Book has closed.
+   Hyperliquid triggers stops and targets on the mark price, the Shadow Book on
+   traded prices; on a thin book (stock perps at the weekend) they part — 14 Nov
+   TSLA traded under its stop at 16:45 UTC, the mark only at 20:54 UTC. Engine
+   structural exit → market close. Sheet EXPIRED/CLOSED before a fill → entry
+   cancelled. Every Sheet-driven close or cancel waits until the row has read
+   CLOSED/EXPIRED for 3 minutes, so a mis-aimed Sheet write fixed within that is
+   ignored.
    If the Sheet cannot be read, no new entries are taken and exchange orders keep
    protecting open positions.
 8. **Close.** Realized P&L = Σ closedPnl − Σ fees from Hyperliquid fills since

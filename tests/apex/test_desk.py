@@ -1018,5 +1018,74 @@ def test_unified_account_counts_spot_usdc_as_free_margin():
     account = asyncio.run(client.account())
     assert account["mode"] == "unifiedAccount"
     assert account["available"] == pytest.approx(491.5)
-    assert account["equity"] == pytest.approx(1183.33)
+    # The spot total already includes open P&L: it is the account value.
+    assert account["equity"] == pytest.approx(1170.83)
     assert "XRP" in account["positions"]
+
+
+def test_unified_account_equity_does_not_count_open_pnl_twice():
+    """14 Nov, live: spot USDC total 1,337.17 with an isolated TSLA long at
+    -$71.74 open. Hyperliquid's portfolio account value was 1,337.17 exactly."""
+    from apex_bot.hl_client import HyperliquidClient
+
+    class Info:
+        def user_state(self, address, dex=""):
+            if dex == "xyz":
+                return {
+                    "marginSummary": {"accountValue": "106.29", "totalMarginUsed": "106.29"},
+                    "withdrawable": "0",
+                    "assetPositions": [{"position": {
+                        "coin": "xyz:TSLA", "szi": "6.31", "entryPx": "395.0", "unrealizedPnl": "-71.7447",
+                        "marginUsed": "106.29", "leverage": {"type": "isolated", "value": 14, "rawUsd": "-2314.42"},
+                    }}],
+                }
+            return {"marginSummary": {"accountValue": "967.9", "totalMarginUsed": "0"}, "withdrawable": "9.58", "assetPositions": []}
+
+        def spot_user_state(self, address):
+            return {"balances": [{"coin": "USDC", "total": "1337.17", "hold": "1074.23"}]}
+
+        def query_user_abstraction_state(self, address):
+            return "unifiedAccount"
+
+    client = HyperliquidClient("0x" + "ab" * 20, "0x" + "11" * 32)
+    client._info, client._exchange, client.dexs = Info(), object(), ("", "xyz")
+    account = asyncio.run(client.account())
+    assert account["equity"] == pytest.approx(1337.17)
+    assert account["available"] == pytest.approx(262.94)
+    assert account["positions"]["xyz:TSLA"]["upnl"] == pytest.approx(-71.7447)
+
+
+def test_dashboard_counts_pending_orders_in_the_risk_line(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()  # the signal is placed as a resting limit
+        panel = DeskPanel(store, desk, clock=clock)
+        text = plain((await panel.home())[0])
+        risk = (await trade(store))["risk_usd"]
+        assert f"At risk if the pending orders fill and stop out: ${risk:,.2f}" in text
+        hl.fill_entry("SOL")
+        await desk.tick()
+        text = plain((await panel.home())[0])
+        assert "At risk if every stop hits: $" in text and "pending orders fill" not in text
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_exchange_stop_beating_a_market_close_is_named_as_the_stop():
+    trade_rec = {"tp2_oid": 7, "sl_oid": 8, "stop": 95.0, "original_stop": 95.0, "close_reason": "Closed to match the Shadow Book (STOP)"}
+    assert Desk._exit_reason(trade_rec, 8) == "Stop-loss hit"
+    assert Desk._exit_reason(trade_rec, 7) == "Target 2 hit"
+    assert Desk._exit_reason(trade_rec, 99) == "Closed to match the Shadow Book (STOP)"
+    assert Desk._exit_reason({**trade_rec, "close_reason": None}, None) == "Position closed on the exchange"
+
+
+def test_loop_failure_logs_keep_telegram_detail_but_never_library_text():
+    from apex_bot.hl_client import HLError
+    from apex_bot.runtime import _failure_text
+    from apex_bot.telegram import TelegramError
+
+    assert _failure_text(TelegramError("Telegram API request rejected", status=429)) == "Telegram API request rejected (HTTP 429)"
+    assert _failure_text(TelegramError("Telegram transport failed")) == "Telegram transport failed"
+    assert _failure_text(HLError("Hyperliquid request failed (ServerError 500)")) == "Hyperliquid request failed (ServerError 500)"
+    assert _failure_text(RuntimeError("https://api.telegram.org/bot123:secret/getUpdates")) == "RuntimeError"

@@ -41,6 +41,18 @@ LOG = logging.getLogger(__name__)
 DESK_ALERT_AFTER = 120
 
 
+def _failure_text(exc) -> str:
+    """Log text for a failed loop. HLError and TelegramError messages are written
+    by this bot and already sanitized; anything else logs only its type, since
+    library errors can carry URLs with credentials."""
+    if isinstance(exc, HLError):
+        return str(exc)
+    if type(exc).__name__ == "TelegramError":
+        status = getattr(exc, "status", None)
+        return f"{exc}" + (f" (HTTP {status})" if isinstance(status, int) else "")
+    return type(exc).__name__
+
+
 def _issue_time(value, now):
     """Legacy missing, malformed and future timestamps are not evidence of time."""
     try:
@@ -351,9 +363,7 @@ class Runtime:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                LOG.warning(
-                    "%s unavailable: %s", name, str(exc) if isinstance(exc, HLError) else type(exc).__name__
-                )
+                LOG.warning("%s unavailable: %s", name, _failure_text(exc))
                 try:
                     await self._health(name, exc)
                 except Exception:

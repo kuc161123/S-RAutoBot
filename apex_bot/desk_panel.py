@@ -36,7 +36,7 @@ CONFIRM_SECONDS = 120
 LAYERS = {"signal": "SIGNAL layer", "book": "BOOK layer", "all": "SIGNAL + BOOK"}
 SETTINGS_BUTTON_SECONDS = 900
 PIN_IDLE_SECONDS = 300  # the pinned dashboard returns home after 5 idle minutes
-VIEWS = ("home", "pos", "risk", "lev", "flt", "alr", "perf", "help", "sig", "st")
+VIEWS = ("home", "pos", "risk", "lev", "flt", "alr", "perf", "help", "sig", "st", "rul")
 
 # ---------------------------------------------------------------- formatting
 
@@ -174,6 +174,34 @@ def signal_card(trade: dict, signal: dict | None = None) -> str:
         "⏳ Limit order live on Hyperliquid",
     ]
     return "\n".join(lines)
+
+
+def _rule_line(rule: dict, mark: str) -> str:
+    name = f" — {h(rule['name'])}" if rule.get("name") else ""
+    return f"{mark} {h(rule.get('side'))} · {h(rule.get('setup'))}{name}"
+
+
+def rules_text(rules, version: str = "", changed: bool = True) -> str:
+    """Telegram note when BotRules' "Rules version" changes."""
+    active = [r for r in rules or () if r.get("active")]
+    title = "Bot rules updated" if changed else "Bot rules loaded"
+    lines = [f"📋 <b>{title}</b>" + (f" · version {h(version)}" if version else "")]
+    if active:
+        lines.append("The bot now places only these Shadow Book setups:")
+        lines += [_rule_line(r, "✅") for r in active]
+        lines.append("Every other setup is skipped (the Shadow Desk keeps paper-trading it).")
+    else:
+        lines.append("No setup is active, so the bot places no new trades.")
+    lines.append("Open trades and resting orders are not changed by a rule change. /rules shows the list.")
+    return "\n".join(lines)
+
+
+def rules_down_text(error: str) -> str:
+    return (
+        "⚠️ <b>BotRules can't be read</b>\n"
+        f"{h(error)}\n"
+        "No new trades are placed until it is back. Open trades and resting orders keep running."
+    )
 
 
 def skip_text(signal: dict, coin, reason: str) -> str:
@@ -316,7 +344,8 @@ HELP = (
     "/signals — Shadow Book signals and what the desk did\n"
     "/positions — open trades with close and break-even buttons\n"
     "/performance — live results\n"
-    "/status — connections and health\n\n"
+    "/status — connections and health\n"
+    "/rules — which setups the bot may trade (Shadow Book BotRules tab)\n\n"
     "<b>Risk</b>\n"
     "/risk 50 — risk $50 per trade · /risk 1% — 1% of equity\n"
     "/maxpos 6 — max open positions\n"
@@ -340,6 +369,7 @@ DESK_COMMANDS = {
     "positions": "Open positions and pending entries",
     "performance": "Live trading results",
     "status": "Connections and health",
+    "rules": "Setups the bot may trade (BotRules)",
     "risk": "Risk per trade: /risk 50 or /risk 1%",
     "lev": "Leverage: /lev auto, /lev 10 or /lev SOL 5",
     "maxpos": "Max open positions: /maxpos 6",
@@ -451,6 +481,8 @@ class DeskPanel:
             return await self.signals()
         if view == "st":
             return await self.status()
+        if view == "rul":
+            return await self.rules()
         return await self.home()
 
     def _connection_lines(self):
@@ -636,6 +668,47 @@ class DeskPanel:
             "Trading starts automatically when every line is ✅.",
         ]
 
+    def _rules_line(self) -> str:
+        source = self.desk.source if self.desk else None
+        if self.desk and self.desk.rules_ready():
+            active = [f"{r['side']} {r['setup']}" for r in source.rules if r.get("active")]
+            version = getattr(source, "rules_version", "") or "—"
+            return f"Rules {h(version)}: " + (h(", ".join(active)) if active else "none active") + " · /rules"
+        error = getattr(source, "rules_error", None) if source else None
+        return f"⚠️ BotRules unavailable: {h(error or 'not read yet')} · no new trades until it is back"
+
+    async def rules(self):
+        state, desk, s = await self._state()
+        now = self.clock()
+        source = self.desk.source if self.desk else None
+        lines = ["📋 <b>Bot rules</b> · Shadow Book tab BotRules", ""]
+        if s["book"] != "shadow_book":
+            lines.append("These apply to Shadow Book signals; the desk is following the engine right now.")
+        if self.desk and self.desk.rules_ready():
+            version = getattr(source, "rules_version", "") or "—"
+            via = getattr(source, "rules_link_used", "") or ""
+            lines.append(
+                f"Version {h(version)} · read {ago(getattr(source, 'rules_at', 0), now)}"
+                + (f" via the {h(via)}" if via and via != "by tab name" else " (by tab name)" if via else "")
+            )
+            active = [r for r in source.rules if r.get("active")]
+            inactive = [r for r in source.rules if not r.get("active")]
+            lines += ["", "<b>The bot places</b>"]
+            lines += [_rule_line(r, "✅") for r in active] or ["— nothing: no setup is active"]
+            if inactive:
+                lines += ["", "<b>Paper only (skipped by the bot)</b>"]
+                lines += [_rule_line(r, "▫️") for r in inactive]
+        else:
+            error = getattr(source, "rules_error", None) if source else "Shadow Book not connected"
+            lines += [f"⚠️ BotRules can't be read: {h(error or 'not read yet')}", "No new trades are placed until it is back."]
+        lines += [
+            "",
+            "A new SIGNAL row is placed only when an active rule has the same side and setup letter "
+            "(the first letter of the setup). Rule changes apply to new signals only: open trades and "
+            "resting orders are never closed or cancelled because a rule changed.",
+        ]
+        return "\n".join(lines), {"inline_keyboard": [_nav("d:rul")]}
+
     async def status(self):
         state, desk, s = await self._state()
         snap = self._snap()
@@ -674,6 +747,7 @@ class DeskPanel:
                 )
             for kind, error in sorted((getattr(source, "link_errors", None) or {}).items()):
                 lines.append(f"⚠️ {h(kind)} link failing ({h(error)}); using the other link")
+            lines.append(self._rules_line())
             lines.append("New signals arrive with each Shadow Desk shift (3× a day).")
         trades = desk["trades"].values()
         counts = {}
@@ -1176,6 +1250,8 @@ class DeskPanel:
             return await self.performance()
         if command == "status":
             return await self.status()
+        if command == "rules":
+            return await self.rules()
         if command == "alerts":
             return await self.alerts()
         if command == "help":

@@ -11,6 +11,11 @@ Two read-only ways to reach it, chosen by configuration:
 * a "Publish to the web" CSV link of the Trades tab — APEX_SHADOW_BOOK_CSV_URL.
 
 Rows are parsed by header name, so column order may change; header names may not.
+
+The same Sheet's "BotRules" tab says which setups the bot may trade: one row per
+Side + Setup letter with Active TRUE/FALSE and a "Rules version". It is read on
+every poll with Trades; a new Trades row is placed only when an active rule has the
+same Side and Setup letter (the first character of "Setup (EW count)").
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ import math
 import re
 import time
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 LOG = logging.getLogger(__name__)
 
@@ -47,6 +52,17 @@ HEADERS = {
 }
 REQUIRED = ("id", "market", "side", "entry", "stop", "tp1", "tp2", "status")
 PREFIX = "shadowbook:"
+RULES_TAB = "BotRules"
+RULES_GID = "423805298"  # the BotRules tab's id in the Shadow Book (APEX_SHADOW_BOOK_RULES_GID overrides)
+RULES_HEADERS = {
+    "id": "Rule ID",
+    "active": "Active",
+    "side": "Side",
+    "setup": "Setup",
+    "name": "Setup name",
+    "version": "Rules version",
+}
+RULES_REQUIRED = ("active", "side", "setup")
 _SHEET_ID = re.compile(r"[A-Za-z0-9_-]{20,128}\Z")
 # Exit reasons the exchange orders already reproduce; anything else is a desk decision.
 _PRICE_EXIT = re.compile(r"^\s*(FILL\s+(AND|&)\s+STOP|STOP|TP1|TP2|BE\b|BREAK-?EVEN|EXPIRED|TARGET)", re.I)
@@ -130,6 +146,99 @@ def is_price_exit(reason: str) -> bool:
     return bool(_PRICE_EXIT.match(str(reason or "")))
 
 
+def setup_letter(text) -> str:
+    """BotRules key: the first character of 'Setup (EW count)', e.g. 'B — wave-(iv)…' -> 'B'."""
+    text = str(text or "").strip()
+    return text[:1].upper()
+
+
+def _rule_side(text) -> str:
+    side = str(text or "").strip().lower()
+    return {"long": "Long", "short": "Short"}.get(side, str(text or "").strip())
+
+
+def parse_rules(rows: list[list[str]]) -> dict:
+    """BotRules tab -> {"rules": [...], "version": str}.
+
+    Row 1 holds the headers (found by name); rule rows run from row 2 to the first
+    blank row. The notes and change log further down the tab are never read. A row
+    whose Active, Side and Setup are all empty also ends the table, because Google's
+    by-name CSV drops blank rows.
+    """
+    if not rows:
+        raise SourceError("BotRules tab is empty")
+    header = [str(h).strip() for h in rows[0]]
+    index = {key: header.index(name) for key, name in RULES_HEADERS.items() if name in header}
+    missing = [RULES_HEADERS[k] for k in RULES_REQUIRED if k not in index]
+    if missing:
+        raise SourceError("BotRules header missing: " + ", ".join(missing))
+
+    def cell(row, key):
+        i = index.get(key)
+        return str(row[i]).strip() if i is not None and i < len(row) else ""
+
+    rules = []
+    for row in rows[1:]:
+        if not any(str(c).strip() for c in row):
+            break
+        if not (cell(row, "active") or cell(row, "side") or cell(row, "setup")):
+            break
+        rules.append(
+            {
+                "id": cell(row, "id"),
+                "active": cell(row, "active").upper() == "TRUE",
+                "side": _rule_side(cell(row, "side")),
+                "setup": setup_letter(cell(row, "setup")),
+                "name": cell(row, "name"),
+                "version": cell(row, "version"),
+            }
+        )
+    versions = sorted({r["version"] for r in rules if r["version"]})
+    return {"rules": rules, "version": versions[-1] if versions else ""}
+
+
+def rule_for(rules, side: str, letter: str):
+    """The active rule matching a signal ('Buy'/'Sell' or 'Long'/'Short' + letter), or None."""
+    want = {"buy": "Long", "long": "Long", "sell": "Short", "short": "Short"}.get(str(side or "").lower())
+    letter = str(letter or "").strip().upper()
+    if not want or not letter:
+        return None
+    for rule in rules or ():
+        if rule.get("active") and rule.get("side") == want and rule.get("setup") == letter:
+            return rule
+    return None
+
+
+def active_rule_names(rules) -> list[str]:
+    return [f"{r['side']} {r['setup']}" for r in rules or () if r.get("active")]
+
+
+def rules_links(trade_links, gid: str = RULES_GID, tab: str = RULES_TAB) -> list[str]:
+    """BotRules CSV links derived from the Trades links: each link with the BotRules
+    tab id (exact cell text, blank rows kept), then Google's by-name CSV of the live
+    sheet as a fallback in case the tab is ever recreated with a new id."""
+    out = []
+    for link in trade_links:
+        url = urlparse(link)
+        if gid:
+            query = [(k, v) for k, v in parse_qsl(url.query, keep_blank_values=True) if k != "gid"]
+            query.append(("gid", gid))
+            out.append(urlunparse(url._replace(query=urlencode(query), fragment="")))
+    for link in trade_links:
+        url = urlparse(link)
+        parts = url.path.split("/")
+        # /spreadsheets/d/<id>/... (a "Publish to the web" copy is /d/e/<id> and has no by-name CSV)
+        if len(parts) > 3 and parts[1] == "spreadsheets" and parts[2] == "d" and parts[3] != "e":
+            query = urlencode({"tqx": "out:csv", "headers": "1", "sheet": tab})
+            out.append(urlunparse(url._replace(path=f"/spreadsheets/d/{parts[3]}/gviz/tq", query=query, fragment="")))
+    seen, unique = set(), []
+    for link in out:
+        if link not in seen:
+            seen.add(link)
+            unique.append(link)
+    return unique
+
+
 def parse_rows(rows: list[list[str]]) -> dict:
     """Header row + data rows -> {signal_id: signal dict in the desk's shape}."""
     if not rows:
@@ -174,6 +283,7 @@ def parse_rows(rows: list[list[str]]) -> dict:
             "side": "Buy" if side == "long" else "Sell",
             "setup": None,
             "setup_text": setup_title(cell(row, "setup")),
+            "setup_letter": setup_letter(cell(row, "setup")),
             "entry_type": str(cell(row, "entry_type")).strip().upper() or "LIMIT",
             "entry_style": "confirmed",
             "status": status,
@@ -197,7 +307,18 @@ class ShadowBookSource:
 
     RANGE = "Trades!A1:AI3000"
 
-    def __init__(self, session, *, sheet_id: str = "", credentials_json: str = "", csv_url: str = "", refresh_seconds: int = 60, clock=time.time):
+    def __init__(
+        self,
+        session,
+        *,
+        sheet_id: str = "",
+        credentials_json: str = "",
+        csv_url: str = "",
+        refresh_seconds: int = 60,
+        clock=time.time,
+        rules_gid: str = RULES_GID,
+        rules_tab: str = RULES_TAB,
+    ):
         if sheet_id and not valid_sheet_id(sheet_id):
             raise ValueError("Invalid Shadow Book sheet ID")
         if csv_url and not valid_csv_links(csv_url):
@@ -220,6 +341,16 @@ class ShadowBookSource:
         self.ok_at = 0.0  # last successful read
         self.newest_at = 0.0  # newest "Opened UTC" in that read
         self._reader = None
+        # BotRules: which Side + Setup letters the bot may trade. rules_ok is False
+        # until a read succeeds with at least one rule row; the desk then places nothing new.
+        self.rules_tab = rules_tab or RULES_TAB
+        self.rules_urls = rules_links(self.csv_urls, rules_gid or "", self.rules_tab)
+        self.rules: list = []
+        self.rules_version = ""
+        self.rules_ok = False
+        self.rules_error: str | None = "waiting for first read"
+        self.rules_at = 0.0  # last good BotRules read
+        self.rules_link_used = ""
 
     @property
     def configured(self) -> bool:
@@ -229,7 +360,7 @@ class ShadowBookSource:
     def mode(self) -> str:
         return "sheets_api" if self.sheet_id else "csv" if self.csv_url else "none"
 
-    async def _rows_api(self):
+    async def _rows_api(self, cell_range: str | None = None):
         from .references import ReferenceReader
 
         if self._reader is None:
@@ -240,7 +371,10 @@ class ShadowBookSource:
             raise SourceError(f"Google sign-in failed ({getattr(exc, 'args', ['auth'])[0]})") from None
         import aiohttp
 
-        url = f"https://sheets.googleapis.com/v4/spreadsheets/{self.sheet_id}/values/{self.RANGE}"
+        url = (
+            f"https://sheets.googleapis.com/v4/spreadsheets/{self.sheet_id}/values/"
+            + quote(cell_range or self.RANGE, safe="!:")
+        )
         async with self.session.get(
             url,
             headers={"Authorization": f"Bearer {token}"},
@@ -304,9 +438,47 @@ class ShadowBookSource:
             raise SourceError("Shadow Book link returned a web page, not CSV (publish the Trades tab as CSV)")
         return list(csv.reader(io.StringIO(text)))
 
+    async def _rules_rows(self):
+        if self.sheet_id:
+            name = self.rules_tab.replace("'", "''")
+            return await self._rows_api(f"'{name}'!A1:Z200")
+        first = None
+        for link in self.rules_urls:
+            try:
+                rows = await self._rows_from(link)
+                parsed = parse_rules(rows)  # wrong tab or headers -> try the next link
+            except Exception as exc:  # noqa: BLE001 - try the next link
+                first = first or exc
+                continue
+            self.rules_link_used = "by tab name" if "/gviz/" in link else link_kind(link)
+            return parsed
+        if first is not None:
+            raise first
+        raise SourceError("No BotRules link configured")
+
+    async def _refresh_rules(self):
+        try:
+            result = await self._rules_rows()
+            if self.sheet_id:
+                result = parse_rules(result)
+            if not result["rules"]:
+                raise SourceError("BotRules has no rule rows")
+            self.rules, self.rules_version = result["rules"], result["version"]
+            self.rules_ok, self.rules_error = True, None
+            self.rules_at = self.clock()
+        except SourceError as exc:
+            self.rules_ok, self.rules_error = False, str(exc).replace("Shadow Book CSV", "BotRules")
+        except Exception as exc:  # noqa: BLE001 - keep trading loop alive
+            self.rules_ok, self.rules_error = False, f"BotRules read failed ({type(exc).__name__})"
+        if not self.rules_ok:
+            # Never trade on old rules: a failed read means no new entries this cycle.
+            self.rules = []
+            LOG.warning("BotRules unavailable: %s", self.rules_error)
+
     async def refresh(self, force: bool = False) -> bool:
         if not self.configured:
             self.ok, self.error = False, "not configured"
+            self.rules_ok, self.rules_error, self.rules = False, "not configured", []
             return False
         if not force and self.clock() - self.fetched_at < self.refresh_seconds:
             return self.ok
@@ -323,4 +495,5 @@ class ShadowBookSource:
             self.ok, self.error = False, f"Shadow Book read failed ({type(exc).__name__})"
         if not self.ok:
             LOG.warning("Shadow Book unavailable: %s", self.error)
+        await self._refresh_rules()
         return self.ok

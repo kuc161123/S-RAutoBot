@@ -121,6 +121,26 @@ def layer_wanted(setting: str, layer) -> bool:
     return layer == str(setting or "").upper()
 
 
+COPY_WINDOW = 3600.0  # rows opened this close together with identical numbers are one trade
+
+
+def copy_key(signal: dict, coin):
+    """The same trade written twice (the Shadow Book's BOOK twin of a SIGNAL row has its
+    own ID but the same market, side, entry, stop and targets)."""
+    if not coin or not signal:
+        return None
+    prices = []
+    for field_name in ("limit", "stop", "target1", "target2"):
+        value = signal.get(field_name)
+        try:
+            prices.append(None if value is None else round(float(value), 9))
+        except (TypeError, ValueError):
+            return None
+    if prices[0] is None or prices[1] is None:
+        return None
+    return (coin, signal.get("side"), *prices)
+
+
 def desk_state(state: dict) -> dict:
     desk = state.setdefault("desk", {})
     desk.setdefault("settings", {})
@@ -706,6 +726,15 @@ class Desk:
             for t in desk["trades"].values()
             if t.get("status") == "CLOSED" and _utc_day(t.get("closed_at", 0)) == today
         )
+        # Rows already handled, by trade (placed, skipped or waiting), so a copy of one
+        # (a BOOK twin of a SIGNAL row) is recorded as handled without a Telegram message.
+        known = getattr(self.source, "signals", None) or {}
+        handled: dict = {}
+        for tid, record in desk["trades"].items():
+            twin = known.get(tid)
+            key = copy_key(twin, record.get("coin")) if twin else None
+            if key:
+                handled.setdefault(key, (tid, twin.get("created_at") or 0))
         for signal in self._candidates(state, settings):
             trade_id = signal["id"]
             direct = signal.get("coin")
@@ -713,6 +742,14 @@ class Desk:
                 coin = direct
             else:
                 coin = map_coin(signal.get("symbol", ""), self.assets)
+            key = copy_key(signal, coin) if trade_id.startswith("shadowbook:") else None
+            first = handled.get(key) if key else None
+            if first and first[0] != trade_id and abs((signal.get("created_at") or 0) - first[1]) <= COPY_WINDOW:
+                original = first[0].split(":", 1)[-1]
+                await self._skip(signal, coin, Skip(f"Same trade as {original} (its twin in the other layer)"), notify=False)
+                continue
+            if key and not first:
+                handled[key] = (trade_id, signal.get("created_at") or 0)
             try:
                 self._rule_check(signal)
                 if coin is None:

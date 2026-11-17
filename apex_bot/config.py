@@ -82,6 +82,7 @@ class Config:
     hl_perp_dexs: tuple[str, ...] = ("xyz",)
     shadow_book_sheet_id: str = ""
     shadow_book_csv_url: str = field(default="", repr=False)
+    shadow_book_rules_gid: str = ""  # BotRules tab id; empty = the built-in default
     # auto = Telegram shows only the Hyperliquid desk (engine off) once HL keys are set.
     desk_only: str = "auto"
 
@@ -160,6 +161,7 @@ class Config:
             ),
             shadow_book_sheet_id=env.get("APEX_SHADOW_BOOK_SHEET_ID", "").strip(),
             shadow_book_csv_url=env.get("APEX_SHADOW_BOOK_CSV_URL", "").strip(),
+            shadow_book_rules_gid=env.get("APEX_SHADOW_BOOK_RULES_GID", "").strip(),
             desk_only=env.get("APEX_DESK_ONLY", "auto").strip().lower() or "auto",
         )
         if cfg.desk_only not in ("auto", "on", "off"):
@@ -174,6 +176,8 @@ class Config:
             raise ConfigError(
                 "APEX_SHADOW_BOOK_SHEET_ID needs APEX_GOOGLE_SERVICE_ACCOUNT_JSON (or use APEX_SHADOW_BOOK_CSV_URL)"
             )
+        if cfg.shadow_book_rules_gid and not re.fullmatch(r"\d{1,12}", cfg.shadow_book_rules_gid):
+            raise ConfigError("APEX_SHADOW_BOOK_RULES_GID must be the BotRules tab's numeric id (gid=…)")
         if cfg.shadow_book_csv_url and not valid_csv_links(cfg.shadow_book_csv_url):
             raise ConfigError(
                 "APEX_SHADOW_BOOK_CSV_URL must be one to three docs.google.com CSV links "

@@ -73,16 +73,36 @@ def test_exit_reason_classification_and_links():
         ShadowBookSource(None, sheet_id="1" + "x" * 43)  # no Google key
 
 
+def rule(side, setup, active=True, version="t-1", name=""):
+    return {"id": f"R-{side.upper()}-{setup}", "active": active, "side": side, "setup": setup, "name": name, "version": version}
+
+
+# The test rows are setup C; both sides allowed unless a test says otherwise.
+DEFAULT_RULES = [rule("Short", "C"), rule("Long", "C")]
+
+
 class FakeSource:
     configured = True
     mode = "csv"
 
-    def __init__(self, rows):
+    def __init__(self, rows, rules=None):
         self.rows = rows
         self.ok = True
         self.error = None
         self.fetched_at = 0.0
         self.signals = parse_rows(rows)
+        self.rules = list(DEFAULT_RULES if rules is None else rules)
+        self.rules_version = next((r["version"] for r in self.rules if r.get("version")), "")
+        self.rules_ok = bool(self.rules)
+        self.rules_error = None if self.rules else "BotRules has no rule rows"
+        self.rules_at = 0.0
+        self.rules_link_used = "live sheet"
+
+    def set_rules(self, rules, version):
+        for r in rules:
+            r["version"] = version
+        self.rules, self.rules_version = rules, version
+        self.rules_ok, self.rules_error = bool(rules), None if rules else "BotRules has no rule rows"
 
     async def refresh(self, force=False):
         self.signals = parse_rows(self.rows)
@@ -92,7 +112,7 @@ class FakeSource:
 START = 1_800_000_000.0  # 2027-01-15 08:00 UTC
 
 
-async def make(tmp_path, rows, settings=None):
+async def make(tmp_path, rows, settings=None, rules=None):
     store = Store(sqlite_path=str(tmp_path / "sb.sqlite"))
     await store.initialize()
     assert await store.lease()
@@ -100,7 +120,7 @@ async def make(tmp_path, rows, settings=None):
     clock.now = START + 600
     hl = FakeHL()
     hl.mid.update({"SOL": 99.0, "xyz:GOLD": 4070.0, "BTC": 69800.0})
-    source = FakeSource(rows)
+    source = FakeSource(rows, rules)
 
     def seed(tx):
         desk_state(tx.state)["settings"] = settings or {}
@@ -454,7 +474,8 @@ def test_csv_reads_ask_google_for_a_fresh_copy():
 
     class Session:
         def get(self, url, **kwargs):
-            seen["url"], seen["headers"] = url, kwargs.get("headers")
+            seen.setdefault("url", url)  # the Trades read comes first; BotRules follows
+            seen.setdefault("headers", kwargs.get("headers"))
             return Response()
 
     link = "https://docs.google.com/spreadsheets/d/e/2PACX-abc/pub?gid=1&single=true&output=csv"
@@ -500,7 +521,8 @@ def test_live_link_first_published_copy_as_fallback():
 
     class Session:
         def get(self, url, **kwargs):
-            calls.append("export" if "/export" in url else "pub")
+            if "gid=1&" in url or url.endswith("gid=1"):  # Trades reads; BotRules reads use their own gid
+                calls.append("export" if "/export" in url else "pub")
             return Response(url)
 
     assert valid_csv_links(f"{live} {pub}") and valid_csv_links(f"{live},{pub}")

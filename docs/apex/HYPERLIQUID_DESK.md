@@ -19,6 +19,21 @@ Default signal source: the **Shadow Book, SIGNAL layer** (+$533.51 over 17
 closed trades to 10 Nov 2026; the BOOK layer made +$203.36 over 23). Filters can
 switch to BOOK or both, or to the Railway engine's own books.
 
+**BotRules** (since 17 Nov 2026, Lual: the bot trades only the best setups). The
+Shadow Book's `BotRules` tab lists which Side + Setup letters the bot may trade:
+row 1 = headers (found by name: `Active`, `Side`, `Setup`, `Rules version`;
+`Rule ID` and `Setup name` are shown when present), rule rows from row 2 to the
+first blank row. It is read with Trades on every poll (the Trades links with the
+BotRules tab id `gid=423805298`, override `APEX_SHADOW_BOOK_RULES_GID`; Google's
+by-name CSV as fallback). A Shadow Book row is placed only if an `Active = TRUE`
+rule has the same Side and the same Setup letter (the first character of
+`Setup (EW count)`); otherwise it is skipped and recorded as handled. If
+BotRules can't be read or has no rule rows, nothing new is placed that cycle
+(no cached rules); after 10 minutes Telegram says so once. Rules apply to new
+signals only — a rule change never closes or cancels an order or position.
+When `Rules version` changes, Telegram lists the active setups; `/rules` shows
+the current list.
+
 * `apex_bot/hl_client.py` — Hyperliquid SDK wrapper: price/size precision,
   client order IDs, Bybit→Hyperliquid symbol mapping, sanitized errors.
 * `apex_bot/shadow_book.py` — reads the Sheet by header name (Sheets API with a
@@ -35,6 +50,7 @@ The engine's levels are used unchanged: limit entry, stop, target 1, target 2.
 ## Order lifecycle
 
 1. **Intake.** Followed-book PENDING trade, not expiring within 60 s. Filters:
+   an active BotRules row for its Side + Setup letter (Shadow Book only),
    listed on Hyperliquid, not blocked, direction allowed, no existing position
    or order on that coin, max positions, daily loss stop, price within 5% of
    the signal entry, price not already through the stop or target 1.
@@ -127,7 +143,7 @@ margin), Leverage, Filters, Alerts (skipped-signal messages on/off).
 Commands: `/risk 50`, `/risk 1%`, `/lev auto`, `/lev 10`, `/lev SOL 5`,
 `/lev SOL auto`, `/maxpos 6`, `/dailystop 200|off`,
 `/direction both|long|short`, `/block X`, `/unblock X`, `/pause`, `/resume`,
-`/be X`, `/close X`, `/closeall`, `/status`.
+`/be X`, `/close X`, `/closeall`, `/status`, `/rules` (BotRules: what the bot may trade).
 Typed changes must be fresh (≤120 s); settings buttons older than 15 minutes
 are refused; closing needs a second tap within 2 minutes by the same user.
 
@@ -153,6 +169,8 @@ APEX_SHADOW_BOOK_CSV_URL  1–3 CSV links of the Trades tab, space separated, tr
                           the "Publish to the web" link as fallback (Google refreshes it
                           on its own schedule; on 10 Nov that took hours), OR
 APEX_SHADOW_BOOK_SHEET_ID + APEX_GOOGLE_SERVICE_ACCOUNT_JSON (Sheet shared as Viewer)
+APEX_SHADOW_BOOK_RULES_GID  optional: the BotRules tab id if the tab is ever recreated
+                          (default 423805298; the tab is also found by name as a fallback)
 ```
 
 For xyz markets the desk asks Hyperliquid once to let them use the main perp

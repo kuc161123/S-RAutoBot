@@ -39,6 +39,7 @@ from .hl_client import (
     round_size,
     size_step,
 )
+from .shadow_book import active_rule_names, rule_for
 
 LOG = logging.getLogger(__name__)
 
@@ -197,6 +198,7 @@ def liquidation_safe_leverage(stop_fraction: float, exchange_max: int) -> int:
 LEGACY_TP1_SKIP = "Price already reached target 1"
 LEGACY_TP1_CANCEL = "Price reached target 1 before the entry filled"
 SKIP_RULE = 2  # skip records written with the entry-history rule
+RULES_DOWN_NOTICE = 600.0  # tell the user once BotRules has been unreadable this long
 
 
 def entry_history(is_buy: bool, entry: float, stop: float, target1: float, bars) -> tuple[bool, str | None]:
@@ -406,6 +408,7 @@ class Desk:
         self._reconciled = False  # recent results re-checked once per process
         self._shadow_closed: dict = {}  # trade id -> when the Sheet first said CLOSED
         self._history_warned: dict = {}  # coin -> last "price history unavailable" log
+        self._rules_down_since: float | None = None  # BotRules unreadable since (this process)
 
     @property
     def configured(self) -> bool:
@@ -491,6 +494,7 @@ class Desk:
             settings = self.effective(desk.get("settings"))
             if self.source is not None and settings["book"] == "shadow_book":
                 await self.source.refresh()
+                await self._watch_rules(desk)
             self.snapshot = {
                 "status": "live",
                 "at": self.clock(),
@@ -577,6 +581,62 @@ class Desk:
             return f"{settings['risk_pct']:g}% of equity"
         return f"${settings['risk_usd']:,.2f} per trade"
 
+    # -------------------------------------------------------------------- rules
+    def rules_ready(self) -> bool:
+        """BotRules read this cycle with at least one rule row. Otherwise nothing new is placed."""
+        source = self.source
+        return bool(source is not None and getattr(source, "rules_ok", False) and getattr(source, "rules", None))
+
+    def rules_key(self) -> str:
+        source = self.source
+        version = str(getattr(source, "rules_version", "") or "")
+        if version:
+            return version
+        # No "Rules version" filled in: fall back to the active list itself.
+        return "unversioned:" + ",".join(sorted(active_rule_names(getattr(source, "rules", ()))))
+
+    async def _watch_rules(self, desk: dict):
+        """Telegram when the rules version changes (or BotRules stays unreadable)."""
+        from .desk_panel import rules_down_text, rules_text
+
+        now = self.clock()
+        if not self.rules_ready():
+            if self._rules_down_since is None:
+                self._rules_down_since = now
+            elif now - self._rules_down_since >= RULES_DOWN_NOTICE:
+                error = getattr(self.source, "rules_error", "") or "unreadable"
+                await self._notify(f"desk:rules:down:{int(self._rules_down_since)}", rules_down_text(error))
+            return
+        self._rules_down_since = None
+        key = self.rules_key()
+        if desk.get("rules_seen") == key:
+            return
+        first = desk.get("rules_seen") is None
+        text = rules_text(self.source.rules, getattr(self.source, "rules_version", ""), changed=not first)
+        payload = {"version": key, "active": active_rule_names(self.source.rules)}
+
+        def write(tx):
+            desk_state(tx.state)["rules_seen"] = key
+            tx.event(f"desk:rules:{short_id(key)}", "desk", payload, text)
+
+        await self.store.update(write)
+        desk["rules_seen"] = key
+
+    def _rule_check(self, signal: dict):
+        """Raise Skip (handled, not retried) unless an active BotRules row matches."""
+        if not str(signal.get("id", "")).startswith("shadowbook:"):
+            return None
+        letter = signal.get("setup_letter") or ""
+        rule = rule_for(getattr(self.source, "rules", ()), signal.get("side"), letter)
+        if rule is None:
+            side = "Long" if signal.get("side") == "Buy" else "Short"
+            version = getattr(self.source, "rules_version", "") or "current"
+            raise Skip(
+                f"Setup {letter or '?'} {side} is not active in BotRules (rules {version}); "
+                "the Shadow Desk keeps paper-trading it"
+            )
+        return rule
+
     # ------------------------------------------------------------------- intake
     @staticmethod
     def _open_to_intake(record) -> bool:
@@ -598,6 +658,8 @@ class Desk:
         if settings["book"] == "shadow_book":
             if self.source is None or not self.source.ok:
                 return []
+            if not self.rules_ready():
+                return []  # BotRules unreadable or empty: place nothing new this cycle
             for signal in self.source.signals.values():
                 if (
                     signal["status"] == "PENDING"
@@ -640,6 +702,7 @@ class Desk:
             else:
                 coin = map_coin(signal.get("symbol", ""), self.assets)
             try:
+                self._rule_check(signal)
                 if coin is None:
                     raise Skip(f"{signal.get('symbol')} is not listed on Hyperliquid")
                 if coin in settings["blocked"]:

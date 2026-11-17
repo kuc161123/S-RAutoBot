@@ -188,6 +188,11 @@ class Runtime:
                 sheet_id=sheet_id,
                 credentials_json=getattr(config, "drive_credentials_json", "") if sheet_id else "",
                 csv_url="" if sheet_id else csv_url,
+                **(
+                    {"rules_gid": getattr(config, "shadow_book_rules_gid", "")}
+                    if getattr(config, "shadow_book_rules_gid", "")
+                    else {}
+                ),
             )
             if sheet_id or csv_url
             else None

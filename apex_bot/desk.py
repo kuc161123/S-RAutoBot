@@ -109,6 +109,18 @@ class Skip(Exception):
         self.key = key or re.sub(r"\$?\d[\d.,]*[x%]?", "#", reason.split("(")[0]).strip().lower()
 
 
+TRADED_LAYERS = ("SIGNAL", "BOOK")  # TEST rows (paper only) and anything else are never traded
+
+
+def layer_wanted(setting: str, layer) -> bool:
+    """settings['layer'] signal | book | all -> does a Shadow Book row's Layer qualify?
+    'all' means SIGNAL + BOOK; a TEST row is never placed whatever the setting."""
+    layer = str(layer or "").strip().upper()
+    if setting == "all":
+        return layer in TRADED_LAYERS
+    return layer == str(setting or "").upper()
+
+
 def desk_state(state: dict) -> dict:
     desk = state.setdefault("desk", {})
     desk.setdefault("settings", {})
@@ -664,7 +676,7 @@ class Desk:
                 if (
                     signal["status"] == "PENDING"
                     and signal.get("entry_type", "LIMIT") == "LIMIT"
-                    and (settings["layer"] == "all" or signal.get("layer") == settings["layer"].upper())
+                    and layer_wanted(settings["layer"], signal.get("layer"))
                     and self._open_to_intake(desk["trades"].get(signal["id"]))
                     and signal["expires_at"] > now + 60
                     and signal.get("created_at", 0) > now - 72 * 3600

@@ -840,7 +840,7 @@ class TelegramController:
         args = parts[1:]
         if self._desk is not None:
             mutating = {
-                "pause", "resume", "maxpos", "dailystop", "direction",
+                "pause", "resume", "maxpos", "dailystop", "direction", "layer",
                 "block", "unblock", "close", "closeall", "be",
             }
             if command in mutating or (command in ("risk", "lev") and args):

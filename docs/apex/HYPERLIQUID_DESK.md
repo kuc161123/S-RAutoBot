@@ -17,7 +17,11 @@ Claude Shadow Desk (3 shifts/day) ─► Apex Kapital Shadow Book (Google Sheet,
 
 Default signal source: the **Shadow Book, SIGNAL layer** (+$533.51 over 17
 closed trades to 10 Nov 2026; the BOOK layer made +$203.36 over 23). Filters can
-switch to BOOK or both, or to the Railway engine's own books.
+switch to BOOK or both, or to the Railway engine's own books. `/layer
+signal|book|both` sets it by command. BOTH means SIGNAL + BOOK only: a `TEST`
+row (paper only) is never traded whatever the setting, and BotRules applies to
+every layer (17 Nov 2026: BOOK Short B/C had closed 19 trades, 68% won, +0.51R
+each; the other BOOK setups 15 trades, -0.27R each).
 
 **BotRules** (since 17 Nov 2026, Lual: the bot trades only the best setups). The
 Shadow Book's `BotRules` tab lists which Side + Setup letters the bot may trade:
@@ -143,7 +147,8 @@ margin), Leverage, Filters, Alerts (skipped-signal messages on/off).
 Commands: `/risk 50`, `/risk 1%`, `/lev auto`, `/lev 10`, `/lev SOL 5`,
 `/lev SOL auto`, `/maxpos 6`, `/dailystop 200|off`,
 `/direction both|long|short`, `/block X`, `/unblock X`, `/pause`, `/resume`,
-`/be X`, `/close X`, `/closeall`, `/status`, `/rules` (BotRules: what the bot may trade).
+`/be X`, `/close X`, `/closeall`, `/status`, `/rules` (BotRules: what the bot may trade),
+`/layer signal|book|both`.
 Typed changes must be fresh (≤120 s); settings buttons older than 15 minutes
 are refused; closing needs a second tap within 2 minutes by the same user.
 

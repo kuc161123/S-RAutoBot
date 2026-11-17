@@ -318,3 +318,36 @@ def test_rules_gid_override_from_config():
     assert Config.from_env({"APEX_SHADOW_BOOK_RULES_GID": "123"}).shadow_book_rules_gid == "123"
     with pytest.raises(ConfigError):
         Config.from_env({"APEX_SHADOW_BOOK_RULES_GID": "BotRules"})
+
+
+def test_both_layers_means_signal_and_book_never_test(tmp_path):
+    """17 Nov: Lual asked for the BOOK layer too. BOTH = SIGNAL + BOOK; BotRules applies to both; TEST never."""
+    async def run():
+        rows = [
+            HEADER,
+            row("S-1", "SOL", "Short", 100, 105, 95, 90, layer="BOOK"),  # Short C: allowed
+            row("S-2", "BTC", "Short", 70000, 71000, 69000, 68000, layer="BOOK"),  # Short A: not allowed
+            row("T-1", "xyz:GOLD", "Long", 4060, 4000, 4120, 4200, layer="TEST"),  # allowed setup, TEST layer
+        ]
+        rows[2][HEADER.index("Setup (EW count)")] = "A — sell the wave-(ii) bounce"
+        rules = [rule("Short", "C"), rule("Long", "C")]
+        store, desk, hl, clock, source = await make(tmp_path, rows, rules=rules)
+        await desk.tick()  # default SIGNAL layer: nothing here qualifies
+        assert desk_state(await store.read())["trades"] == {}
+
+        panel = DeskPanel(store, desk, clock=clock)
+        text = plain((await panel.command("layer", ["both"], "telegram:1:2"))[0])
+        assert "SIGNAL + BOOK" in text and "TEST rows are never traded" in text
+        assert desk_state(await store.read())["settings"]["layer"] == "all"
+        await desk.tick()
+        trades = desk_state(await store.read())["trades"]
+        assert trades["shadowbook:S-1"]["status"] == "ORDERED"  # BOOK Short C placed
+        assert trades["shadowbook:S-2"]["status"] == "SKIPPED"  # BOOK Short A: BotRules says no
+        assert "shadowbook:T-1" not in trades  # TEST never, even with an active rule
+        assert {o["coin"] for o in hl.placed} == {"SOL"}
+        assert "Use /layer" in plain((await panel.command("layer", ["test"], "telegram:1:2"))[0])
+        await panel.command("layer", ["signal"], "telegram:1:2")
+        assert desk_state(await store.read())["settings"]["layer"] == "signal"
+        await store.close()
+
+    asyncio.run(run())

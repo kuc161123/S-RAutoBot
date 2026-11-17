@@ -23,6 +23,7 @@ from .desk import (
     DEFAULT_SETTINGS,
     LIMITS,
     desk_state,
+    layer_wanted,
     leverage_label,
     liquidation_safe_leverage,
     normalize_settings,
@@ -354,6 +355,7 @@ HELP = (
     "/lev auto — safest maximum per trade (default)\n"
     "/lev 10 — cap all symbols · /lev SOL 5 — one symbol · /lev SOL auto — clear it\n\n"
     "<b>Filters</b>\n"
+    "/layer signal|book|both — Shadow Book layers to trade (both = SIGNAL + BOOK)\n"
     "/direction both|long|short · /block DOGE · /unblock DOGE\n\n"
     "<b>Control</b>\n"
     "/pause · /resume — stop or restart new entries (open trades stay managed)\n"
@@ -374,6 +376,7 @@ DESK_COMMANDS = {
     "lev": "Leverage: /lev auto, /lev 10 or /lev SOL 5",
     "maxpos": "Max open positions: /maxpos 6",
     "dailystop": "Daily loss stop: /dailystop 200 or off",
+    "layer": "Shadow Book layers: /layer signal, book or both",
     "direction": "Trade both, long or short",
     "block": "Block a symbol: /block DOGE",
     "unblock": "Unblock a symbol",
@@ -523,9 +526,7 @@ class DeskPanel:
 
     @staticmethod
     def _wanted(s):
-        if s["layer"] == "all":
-            return lambda sig: True
-        return lambda sig: sig.get("layer") == s["layer"].upper()
+        return lambda sig: layer_wanted(s["layer"], sig.get("layer"))
 
     def _lev_text(self, s) -> str:
         return "Auto (safe max)" if s["max_leverage"] >= AUTO_LEVERAGE else f"{s['max_leverage']}x"
@@ -993,7 +994,8 @@ class DeskPanel:
             "Blocked: " + (h(", ".join(s["blocked"])) if s["blocked"] else "none"),
             "",
             "SIGNAL layer = every setup the Shadow Desk believes in (the profitable record). "
-            "BOOK layer = its capped, realistic subset. BOTH = everything.",
+            "BOOK layer = its capped, realistic subset. BOTH = SIGNAL + BOOK (TEST rows are never traded). "
+            "BotRules applies to every layer. Type /layer signal, /layer book or /layer both.",
         ]
         if self.engine:
             lines.append("Engine = the Railway bot's own Elliott scanner on Bybit data.")
@@ -1327,6 +1329,12 @@ class DeskPanel:
                 return self._error("Use a positive amount or off.", "d:risk")
             await self._change(lambda s: s.update(daily_loss_usd=value), f"daily_loss={value}")
             return await self.risk()
+        if command == "layer":
+            choice = {"signal": "signal", "book": "book", "both": "all", "all": "all"}.get((args[0] if args else "").lower())
+            if len(args) != 1 or choice is None:
+                return self._error("Use /layer signal, /layer book or /layer both (SIGNAL + BOOK).", "d:flt")
+            await self._change(lambda s: s.update(layer=choice), f"layer={choice}")
+            return await self.filters()
         if command == "direction":
             if len(args) != 1 or args[0].lower() not in ("both", "long", "short"):
                 return self._error("Use /direction both, /direction long or /direction short.", "d:flt")

@@ -21,7 +21,11 @@ switch to BOOK or both, or to the Railway engine's own books. `/layer
 signal|book|both` sets it by command. BOTH means SIGNAL + BOOK only: a `TEST`
 row (paper only) is never traded whatever the setting, and BotRules applies to
 every layer (17 Nov 2026: BOOK Short B/C had closed 19 trades, 68% won, +0.51R
-each; the other BOOK setups 15 trades, -0.27R each).
+each; the other BOOK setups 15 trades, -0.27R each). Since playbook v1.6 every
+BOOK pick is also written as a SIGNAL row with its own ID and the same numbers;
+the desk places the first of such a pair and records the copy as handled
+without a Telegram message ("Same trade as S-…"). A copy = same market, side,
+entry, stop, TP1 and TP2, opened within an hour of the other row.
 
 **BotRules** (since 17 Nov 2026, Lual: the bot trades only the best setups). The
 Shadow Book's `BotRules` tab lists which Side + Setup letters the bot may trade:

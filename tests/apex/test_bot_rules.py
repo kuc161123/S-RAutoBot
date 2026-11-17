@@ -264,7 +264,7 @@ def test_only_active_setups_are_placed_and_others_are_handled_once(tmp_path):
         assert len([t for t in await outbox(store) if "Bot rules updated" in t]) == 1
 
         # A new Short A signal is placed under the new rules.
-        rows.append(row("S-4", "BTC", "Short", 70000, 71000, 69000, 68000, layer="SIGNAL"))
+        rows.append(row("S-4", "BTC", "Short", 69900, 70900, 68900, 67900, layer="SIGNAL"))
         rows[-1][HEADER.index("Setup (EW count)")] = "A — sell the wave-(ii) bounce"
         await desk.tick()
         assert desk_state(await store.read())["trades"]["shadowbook:S-4"]["status"] == "ORDERED"
@@ -348,6 +348,49 @@ def test_both_layers_means_signal_and_book_never_test(tmp_path):
         assert "Use /layer" in plain((await panel.command("layer", ["test"], "telegram:1:2"))[0])
         await panel.command("layer", ["signal"], "telegram:1:2")
         assert desk_state(await store.read())["settings"]["layer"] == "signal"
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_book_twin_of_a_signal_row_is_skipped_silently(tmp_path):
+    """17 Nov: every BOOK pick is also written as a SIGNAL row with the same numbers.
+    With BOTH layers on, the copy is handled without a 'Signal not taken' message."""
+    async def run():
+        rows = [
+            HEADER,
+            row("S-1", "SOL", "Short", 100, 105, 95, 90, layer="SIGNAL"),
+            row("S-2", "SOL", "Short", 100, 105, 95, 90, layer="BOOK"),  # its BOOK twin
+            row("S-3", "BTC", "Short", 70000, 71000, 69000, 68000, layer="SIGNAL"),  # Short A: not allowed
+            row("S-4", "BTC", "Short", 70000, 71000, 69000, 68000, layer="BOOK"),  # twin of a rule skip
+        ]
+        for i in (3, 4):
+            rows[i][HEADER.index("Setup (EW count)")] = "A — sell the wave-(ii) bounce"
+        store, desk, hl, clock, source = await make(tmp_path, rows, settings={"layer": "all"})
+        await desk.tick()
+        trades = desk_state(await store.read())["trades"]
+        assert trades["shadowbook:S-1"]["status"] == "ORDERED"
+        assert trades["shadowbook:S-2"]["status"] == "SKIPPED"
+        assert trades["shadowbook:S-2"]["reason"] == "Same trade as S-1 (its twin in the other layer)"
+        assert trades["shadowbook:S-3"]["status"] == "SKIPPED" and "not active in BotRules" in trades["shadowbook:S-3"]["reason"]
+        assert trades["shadowbook:S-4"]["reason"] == "Same trade as S-3 (its twin in the other layer)"
+        assert {o["coin"] for o in hl.placed} == {"SOL"}
+        texts = await outbox(store)
+        not_taken = [t for t in texts if "not taken" in t.lower()]
+        assert len(not_taken) == 1 and "BTC" in not_taken[0]  # one message for the BTC pair, none for twins
+
+        # A different BOOK idea on a market already held still gets the normal message.
+        rows.append(row("S-5", "SOL", "Short", 102, 106, 97, 92, layer="BOOK"))
+        await desk.tick()
+        trades = desk_state(await store.read())["trades"]
+        assert trades["shadowbook:S-5"]["reason"] == "Already have a position or order on SOL"
+        assert any("Already have a position or order on SOL" in t for t in await outbox(store))
+
+        # A twin written later (outside the hour) is a new trade, not a copy.
+        later = row("S-6", "SOL", "Short", 100, 105, 95, 90, layer="BOOK", opened="2027-01-15 06:00")
+        rows.append(later)
+        await desk.tick()
+        assert "Same trade" not in desk_state(await store.read())["trades"]["shadowbook:S-6"]["reason"]
         await store.close()
 
     asyncio.run(run())

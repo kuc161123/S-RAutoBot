@@ -19,15 +19,22 @@ Default signal source: the **Shadow Book, SIGNAL layer** (+$533.51 over 17
 closed trades to 10 Nov 2026; the BOOK layer made +$203.36 over 23). Filters can
 switch to BOOK or both, or to the Railway engine's own books. `/layer
 signal|book|both` sets it by command. BOTH means SIGNAL + BOOK only: a `TEST`
-row (paper only) is never traded whatever the setting, and BotRules applies to
-every layer (17 Nov 2026: BOOK Short B/C had closed 19 trades, 68% won, +0.51R
-each; the other BOOK setups 15 trades, -0.27R each). Since playbook v1.6 every
+row (paper only) is never traded whatever the setting, and BotRules (when the
+rule check is on) applies to every layer (17 Nov 2026: BOOK Short B/C had closed
+19 trades, 68% won, +0.51R each; the other BOOK setups 15 trades, -0.27R each). Since playbook v1.6 every
 BOOK pick is also written as a SIGNAL row with its own ID and the same numbers;
 the desk places the first of such a pair and records the copy as handled
 without a Telegram message ("Same trade as S-…"). A copy = same market, side,
 entry, stop, TP1 and TP2, opened within an hour of the other row.
 
-**BotRules** (since 17 Nov 2026, Lual: the bot trades only the best setups). The
+**Rule check OFF since 20 Nov 2026** (Lual: "continue trading everything … get rid
+of the rules"; playbook v1.13 had already set every BotRules row active). With
+`rules_gate` off (the default) the desk takes every SIGNAL/BOOK row the Shadow
+Desk writes, ignores BotRules, and keeps trading if that tab can't be read; the
+other limits still apply. `/rules on` restores the check described below,
+`/rules off` removes it; `/rules` shows which is in force.
+
+**BotRules** (17 Nov 2026, Lual: the bot trades only the best setups). The
 Shadow Book's `BotRules` tab lists which Side + Setup letters the bot may trade:
 row 1 = headers (found by name: `Active`, `Side`, `Setup`, `Rules version`;
 `Rule ID` and `Setup name` are shown when present), rule rows from row 2 to the
@@ -58,7 +65,7 @@ The engine's levels are used unchanged: limit entry, stop, target 1, target 2.
 ## Order lifecycle
 
 1. **Intake.** Followed-book PENDING trade, not expiring within 60 s. Filters:
-   an active BotRules row for its Side + Setup letter (Shadow Book only),
+   an active BotRules row for its Side + Setup letter (Shadow Book, rule check on only),
    listed on Hyperliquid, not blocked, direction allowed, no existing position
    or order on that coin, max positions, daily loss stop, price within 5% of
    the signal entry, price not already through the stop or target 1.
@@ -151,7 +158,7 @@ margin), Leverage, Filters, Alerts (skipped-signal messages on/off).
 Commands: `/risk 50`, `/risk 1%`, `/lev auto`, `/lev 10`, `/lev SOL 5`,
 `/lev SOL auto`, `/maxpos 6`, `/dailystop 200|off`,
 `/direction both|long|short`, `/block X`, `/unblock X`, `/pause`, `/resume`,
-`/be X`, `/close X`, `/closeall`, `/status`, `/rules` (BotRules: what the bot may trade),
+`/be X`, `/close X`, `/closeall`, `/status`, `/rules` (BotRules check; `/rules on|off`),
 `/layer signal|book|both`.
 Typed changes must be fresh (≤120 s); settings buttons older than 15 minutes
 are refused; closing needs a second tap within 2 minutes by the same user.

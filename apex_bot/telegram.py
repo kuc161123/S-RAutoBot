@@ -843,7 +843,7 @@ class TelegramController:
                 "pause", "resume", "maxpos", "dailystop", "direction", "layer",
                 "block", "unblock", "close", "closeall", "be",
             }
-            if command in mutating or (command in ("risk", "lev") and args):
+            if command in mutating or (command in ("risk", "lev", "rules") and args):
                 self._fresh(message)
             result = await asyncio.wait_for(
                 self._desk.command(command, args, actor),

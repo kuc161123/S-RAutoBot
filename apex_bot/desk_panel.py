@@ -346,7 +346,7 @@ HELP = (
     "/positions — open trades with close and break-even buttons\n"
     "/performance — live results\n"
     "/status — connections and health\n"
-    "/rules — which setups the bot may trade (Shadow Book BotRules tab)\n\n"
+    "/rules — the BotRules check · /rules off takes every setup · /rules on only the active ones\n\n"
     "<b>Risk</b>\n"
     "/risk 50 — risk $50 per trade · /risk 1% — 1% of equity\n"
     "/maxpos 6 — max open positions\n"
@@ -371,7 +371,7 @@ DESK_COMMANDS = {
     "positions": "Open positions and pending entries",
     "performance": "Live trading results",
     "status": "Connections and health",
-    "rules": "Setups the bot may trade (BotRules)",
+    "rules": "BotRules check: /rules on or /rules off",
     "risk": "Risk per trade: /risk 50 or /risk 1%",
     "lev": "Leverage: /lev auto, /lev 10 or /lev SOL 5",
     "maxpos": "Max open positions: /maxpos 6",
@@ -669,8 +669,10 @@ class DeskPanel:
             "Trading starts automatically when every line is ✅.",
         ]
 
-    def _rules_line(self) -> str:
+    def _rules_line(self, s: dict) -> str:
         source = self.desk.source if self.desk else None
+        if not s.get("rules_gate"):
+            return "Rule check off: every SIGNAL/BOOK setup the Shadow Desk writes is taken · /rules"
         if self.desk and self.desk.rules_ready():
             active = [f"{r['side']} {r['setup']}" for r in source.rules if r.get("active")]
             version = getattr(source, "rules_version", "") or "—"
@@ -685,6 +687,22 @@ class DeskPanel:
         lines = ["📋 <b>Bot rules</b> · Shadow Book tab BotRules", ""]
         if s["book"] != "shadow_book":
             lines.append("These apply to Shadow Book signals; the desk is following the engine right now.")
+        if not s.get("rules_gate"):
+            lines += [
+                "Rule check: <b>OFF</b>",
+                "The bot takes every SIGNAL and BOOK setup the Shadow Desk writes (TEST never), "
+                "whatever BotRules says, and keeps trading if that tab can't be read. "
+                "Your other limits still apply: risk, max positions, daily loss stop, direction, blocklist.",
+                "",
+                "Type /rules on to place only the setups marked active in BotRules again.",
+            ]
+            if self.desk and self.desk.rules_ready():
+                version = getattr(source, "rules_version", "") or "—"
+                active = [f"{r['side']} {r['setup']}" for r in source.rules if r.get("active")]
+                lines += ["", f"BotRules on the Sheet now (version {h(version)}, not used): "
+                          + (h(", ".join(active)) + " active" if active else "nothing active")]
+            return "\n".join(lines), {"inline_keyboard": [_nav("d:rul")]}
+        lines += ["Rule check: <b>ON</b> · /rules off to take every setup", ""]
         if self.desk and self.desk.rules_ready():
             version = getattr(source, "rules_version", "") or "—"
             via = getattr(source, "rules_link_used", "") or ""
@@ -748,7 +766,7 @@ class DeskPanel:
                 )
             for kind, error in sorted((getattr(source, "link_errors", None) or {}).items()):
                 lines.append(f"⚠️ {h(kind)} link failing ({h(error)}); using the other link")
-            lines.append(self._rules_line())
+            lines.append(self._rules_line(s))
             lines.append("New signals arrive with each Shadow Desk shift (3× a day).")
         trades = desk["trades"].values()
         counts = {}
@@ -995,7 +1013,8 @@ class DeskPanel:
             "",
             "SIGNAL layer = every setup the Shadow Desk believes in (the profitable record). "
             "BOOK layer = its capped, realistic subset. BOTH = SIGNAL + BOOK (TEST rows are never traded). "
-            "BotRules applies to every layer. Type /layer signal, /layer book or /layer both.",
+            + ("BotRules applies to every layer. " if s.get("rules_gate") else "Rule check off: every setup is taken. ")
+            + "Type /layer signal, /layer book or /layer both.",
         ]
         if self.engine:
             lines.append("Engine = the Railway bot's own Elliott scanner on Bybit data.")
@@ -1253,6 +1272,11 @@ class DeskPanel:
         if command == "status":
             return await self.status()
         if command == "rules":
+            if args:
+                choice = {"on": True, "off": False}.get(args[0].lower())
+                if len(args) != 1 or choice is None:
+                    return self._error("Use /rules on or /rules off.", "d:rul")
+                await self._change(lambda s: s.update(rules_gate=choice), f"rules_gate={choice}")
             return await self.rules()
         if command == "alerts":
             return await self.alerts()

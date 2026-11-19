@@ -181,6 +181,8 @@ def test_source_reads_bot_rules_with_every_trades_read():
 
 # ------------------------------------------------------------------ desk
 
+GATE = {"rules_gate": True}  # the BotRules check, off by default since 20 Nov 2026
+
 def ts(text):
     return datetime.strptime(text, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).timestamp()
 
@@ -207,7 +209,7 @@ REAL_TRADES = [
 def test_real_rows_sp500_passes_and_book_rows_stay_ignored(tmp_path):
     async def run():
         rules = parse_rules(REAL_RULES)["rules"]
-        store, desk, hl, clock, source = await make(tmp_path, REAL_TRADES, rules=rules)
+        store, desk, hl, clock, source = await make(tmp_path, REAL_TRADES, rules=rules, settings=GATE)
         source.rules_version = "2026-11-17-1"
         clock.now = ts("2026-11-17 14:00")
         hl.mid.update({"xyz:SP500": 7418.4, "xyz:XYZ100": 27199.0, "xyz:SILVER": 47.445})
@@ -235,7 +237,7 @@ def test_only_active_setups_are_placed_and_others_are_handled_once(tmp_path):
         ]
         rows[2][HEADER.index("Setup (EW count)")] = "A — sell the wave-(ii) bounce"
         rules = [rule("Short", "C", version="v1"), rule("Short", "B", version="v1"), rule("Long", "C", active=False, version="v1")]
-        store, desk, hl, clock, source = await make(tmp_path, rows, rules=rules)
+        store, desk, hl, clock, source = await make(tmp_path, rows, rules=rules, settings=GATE)
         source.rules_version = "v1"
         await desk.tick()
         trades = desk_state(await store.read())["trades"]
@@ -283,7 +285,7 @@ def test_only_active_setups_are_placed_and_others_are_handled_once(tmp_path):
 def test_unreadable_rules_place_nothing_but_keep_existing_orders(tmp_path):
     async def run():
         rows = [HEADER, row("S-1", "SOL", "Short", 100, 105, 95, 90, layer="SIGNAL")]
-        store, desk, hl, clock, source = await make(tmp_path, rows)
+        store, desk, hl, clock, source = await make(tmp_path, rows, settings=GATE)
         await desk.tick()
         assert desk_state(await store.read())["trades"]["shadowbook:S-1"]["status"] == "ORDERED"
 
@@ -331,7 +333,7 @@ def test_both_layers_means_signal_and_book_never_test(tmp_path):
         ]
         rows[2][HEADER.index("Setup (EW count)")] = "A — sell the wave-(ii) bounce"
         rules = [rule("Short", "C"), rule("Long", "C")]
-        store, desk, hl, clock, source = await make(tmp_path, rows, rules=rules)
+        store, desk, hl, clock, source = await make(tmp_path, rows, rules=rules, settings=GATE)
         await desk.tick()  # default SIGNAL layer: nothing here qualifies
         assert desk_state(await store.read())["trades"] == {}
 
@@ -366,7 +368,7 @@ def test_book_twin_of_a_signal_row_is_skipped_silently(tmp_path):
         ]
         for i in (3, 4):
             rows[i][HEADER.index("Setup (EW count)")] = "A — sell the wave-(ii) bounce"
-        store, desk, hl, clock, source = await make(tmp_path, rows, settings={"layer": "all"})
+        store, desk, hl, clock, source = await make(tmp_path, rows, settings={"layer": "all", **GATE})
         await desk.tick()
         trades = desk_state(await store.read())["trades"]
         assert trades["shadowbook:S-1"]["status"] == "ORDERED"
@@ -391,6 +393,54 @@ def test_book_twin_of_a_signal_row_is_skipped_silently(tmp_path):
         rows.append(later)
         await desk.tick()
         assert "Same trade" not in desk_state(await store.read())["trades"]["shadowbook:S-6"]["reason"]
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_rule_check_is_off_by_default_and_switches_from_telegram(tmp_path):
+    """20 Nov: Lual — trade everything, get rid of the rules. With the check off every
+    SIGNAL/BOOK setup is taken whatever BotRules says, even while the tab is unreadable."""
+    async def run():
+        rows = [
+            HEADER,
+            row("S-1", "SOL", "Short", 100, 105, 95, 90, layer="SIGNAL"),  # Short C
+            row("S-2", "BTC", "Short", 70000, 71000, 69000, 68000, layer="SIGNAL"),  # Short A: inactive below
+            row("T-1", "xyz:GOLD", "Long", 4060, 4000, 4120, 4200, layer="TEST"),
+        ]
+        rows[2][HEADER.index("Setup (EW count)")] = "A — sell the wave-(ii) bounce"
+        rules = [rule("Short", "C"), rule("Short", "A", active=False)]
+        store, desk, hl, clock, source = await make(tmp_path, rows, rules=rules)
+        source.rules, source.rules_ok, source.rules_error = [], False, "BotRules CSV error HTTP 500"
+        await desk.tick()
+        trades = desk_state(await store.read())["trades"]
+        assert trades["shadowbook:S-1"]["status"] == "ORDERED"
+        assert trades["shadowbook:S-2"]["status"] == "ORDERED"  # inactive rule, unreadable tab: taken anyway
+        assert "shadowbook:T-1" not in trades  # TEST still never
+        clock.now += RULES_DOWN_NOTICE + 1
+        await desk.tick()
+        texts = await outbox(store)
+        assert not any("BotRules can't be read" in t or "Bot rules" in t for t in texts)
+
+        panel = DeskPanel(store, desk, clock=clock)
+        assert "Rule check off" in plain((await panel.status())[0])
+        assert "Rule check: OFF" in plain((await panel.command("rules", [], "telegram:1:2"))[0])
+        assert "Use /rules on" in plain((await panel.command("rules", ["maybe"], "telegram:1:2"))[0])
+
+        # Back on: a new inactive setup is skipped again and the tab is announced.
+        text = plain((await panel.command("rules", ["on"], "telegram:1:2"))[0])
+        assert desk_state(await store.read())["settings"]["rules_gate"] is True
+        assert "Rule check: ON" in text
+        source.set_rules(rules, "v9")
+        rows.append(row("S-3", "xyz:GOLD", "Short", 4080, 4120, 4040, 4000, layer="SIGNAL"))
+        rows[-1][HEADER.index("Setup (EW count)")] = "A — sell the wave-(ii) bounce"
+        await desk.tick()
+        trades = desk_state(await store.read())["trades"]
+        assert trades["shadowbook:S-3"]["status"] == "SKIPPED" and "not active in BotRules" in trades["shadowbook:S-3"]["reason"]
+        assert any("Bot rules loaded" in t and "version v9" in t for t in await outbox(store))
+
+        await panel.command("rules", ["off"], "telegram:1:2")
+        assert desk_state(await store.read())["settings"]["rules_gate"] is False
         await store.close()
 
     asyncio.run(run())

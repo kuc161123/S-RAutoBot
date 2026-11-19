@@ -58,6 +58,9 @@ DEFAULT_SETTINGS = {
     "blocked": [],  # coins
     "book": "shadow_book",
     "layer": "signal",  # signal | book | all (Shadow Book layer to trade)
+    # True = place only setups active in the Shadow Book's BotRules tab (and nothing new
+    # while that tab can't be read). Off since 20 Nov 2026 (Lual: trade everything).
+    "rules_gate": False,
     "paused": False,
     "watchlist_alerts": "auto",  # auto | on | off (auto = on only while not live)
     "shadow_alerts": "auto",  # auto | on | off
@@ -181,7 +184,7 @@ def normalize_settings(raw) -> dict:
                 value = default
             elif key == "layer" and value not in ("signal", "book", "all"):
                 value = default
-            elif key in ("paused", "notify_skips"):
+            elif key in ("paused", "notify_skips", "rules_gate"):
                 value = bool(value)
             elif key == "version":
                 try:
@@ -526,7 +529,7 @@ class Desk:
             settings = self.effective(desk.get("settings"))
             if self.source is not None and settings["book"] == "shadow_book":
                 await self.source.refresh()
-                await self._watch_rules(desk)
+                await self._watch_rules(desk, settings)
             self.snapshot = {
                 "status": "live",
                 "at": self.clock(),
@@ -627,11 +630,15 @@ class Desk:
         # No "Rules version" filled in: fall back to the active list itself.
         return "unversioned:" + ",".join(sorted(active_rule_names(getattr(source, "rules", ()))))
 
-    async def _watch_rules(self, desk: dict):
-        """Telegram when the rules version changes (or BotRules stays unreadable)."""
+    async def _watch_rules(self, desk: dict, settings: dict):
+        """Telegram when the rules version changes (or BotRules stays unreadable).
+        Silent while the rule check is off: the tab then decides nothing."""
         from .desk_panel import rules_down_text, rules_text
 
         now = self.clock()
+        if not settings.get("rules_gate"):
+            self._rules_down_since = None
+            return
         if not self.rules_ready():
             if self._rules_down_since is None:
                 self._rules_down_since = now
@@ -690,8 +697,8 @@ class Desk:
         if settings["book"] == "shadow_book":
             if self.source is None or not self.source.ok:
                 return []
-            if not self.rules_ready():
-                return []  # BotRules unreadable or empty: place nothing new this cycle
+            if settings.get("rules_gate") and not self.rules_ready():
+                return []  # rule check on and BotRules unreadable or empty: place nothing new
             for signal in self.source.signals.values():
                 if (
                     signal["status"] == "PENDING"
@@ -751,7 +758,8 @@ class Desk:
             if key and not first:
                 handled[key] = (trade_id, signal.get("created_at") or 0)
             try:
-                self._rule_check(signal)
+                if settings.get("rules_gate"):
+                    self._rule_check(signal)
                 if coin is None:
                     raise Skip(f"{signal.get('symbol')} is not listed on Hyperliquid")
                 if coin in settings["blocked"]:

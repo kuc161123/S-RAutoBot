@@ -125,6 +125,12 @@ def layer_wanted(setting: str, layer) -> bool:
 
 
 COPY_WINDOW = 3600.0  # rows opened this close together with identical numbers are one trade
+COPY_REASON = "Same trade as "
+
+
+def is_copy_skip(record) -> bool:
+    """A row recorded only as the twin of another row; it decides nothing by itself."""
+    return bool(record) and record.get("status") == "SKIPPED" and str(record.get("reason") or "").startswith(COPY_REASON)
 
 
 def copy_key(signal: dict, coin):
@@ -683,6 +689,8 @@ class Desk:
         ignored whether the limit price had ever traded. Those get one re-check."""
         if record is None:
             return True
+        if is_copy_skip(record):
+            return True  # re-checked every tick: stays a copy only while its original is handled
         if record.get("rule"):
             return False
         return (record.get("status"), record.get("reason")) in (
@@ -738,6 +746,8 @@ class Desk:
         known = getattr(self.source, "signals", None) or {}
         handled: dict = {}
         for tid, record in desk["trades"].items():
+            if is_copy_skip(record):
+                continue  # only a row the desk really placed or skipped can make another a copy
             twin = known.get(tid)
             key = copy_key(twin, record.get("coin")) if twin else None
             if key:
@@ -753,7 +763,9 @@ class Desk:
             first = handled.get(key) if key else None
             if first and first[0] != trade_id and abs((signal.get("created_at") or 0) - first[1]) <= COPY_WINDOW:
                 original = first[0].split(":", 1)[-1]
-                await self._skip(signal, coin, Skip(f"Same trade as {original} (its twin in the other layer)"), notify=False)
+                reason = f"{COPY_REASON}{original} (its twin in the other layer)"
+                if (desk["trades"].get(trade_id) or {}).get("reason") != reason:
+                    await self._skip(signal, coin, Skip(reason), notify=False)
                 continue
             if key and not first:
                 handled[key] = (trade_id, signal.get("created_at") or 0)

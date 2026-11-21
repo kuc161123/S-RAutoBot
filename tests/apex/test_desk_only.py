@@ -2,6 +2,8 @@
 
 import asyncio
 import types
+
+import pytest
 from types import SimpleNamespace
 
 from apex_bot.config import Config
@@ -477,5 +479,106 @@ def test_status_shows_the_last_hyperliquid_hiccup(tmp_path):
         assert "Last Hyperliquid hiccup: Hyperliquid request failed (ClientError 429)" in plain(text)
         assert "1 since restart" in plain(text)
         await store.close()
+
+    asyncio.run(run())
+
+
+def test_telegram_outage_sends_one_note_after_it_ends(tmp_path, monkeypatch):
+    """20 Nov: overnight Telegram outages filled the chat with 'failing' pairs that
+    could only arrive once the link was back. Now: nothing while it is down, one
+    note afterwards, and a link that flaps soon after gets no second note."""
+    from apex_bot import runtime as runtime_module
+    from apex_bot.runtime import TELEGRAM_NOTE_EVERY, Runtime
+    from apex_bot.telegram import TelegramError
+
+    async def run():
+        store = Store(sqlite_path=str(tmp_path / "tg.sqlite"))
+        await store.initialize()
+        import time as real_time
+
+        now = [real_time.time()]
+        monkeypatch.setattr(runtime_module.time, "time", lambda: now[0])
+        await store.lease()
+        rt = SimpleNamespace(store=store, desk_only=True, last_loop={}, _failing_since={}, cache=SimpleNamespace(status="ok"))
+        health = types.MethodType(Runtime._health, rt)
+
+        async def outage(seconds):
+            for _ in range(int(seconds // 4)):
+                now[0] += 4
+                await health("telegram", TelegramError("Telegram API request rejected (HTTP 502)", status=502))
+                await health("dashboard", TelegramError("Telegram transport failed"))
+                await store.lease()
+            now[0] += 4
+            await health("telegram")
+            await health("dashboard")
+
+        await outage(600)
+        texts = [n["text"] for n in await store.pending_notifications()]
+        assert len(texts) == 1 and texts[0].startswith("📶 The connection to Telegram was down for about 10 min")
+        assert "Trading carried on" in texts[0] and "failing" not in texts[0]
+
+        await outage(300)  # flaps again within half an hour: no second note
+        assert len(await store.pending_notifications()) == 1
+        await outage(60)  # short blip: never noted
+        assert len(await store.pending_notifications()) == 1
+
+        now[0] += TELEGRAM_NOTE_EVERY
+        await store.lease()
+        await outage(200)
+        assert len(await store.pending_notifications()) == 2
+
+        # Other components still page while failing, with accurate wording.
+        for _ in range(35):
+            now[0] += 4
+            await health("outbox", RuntimeError("x"))
+            await store.lease()
+        last = (await store.pending_notifications())[-1]["text"]
+        assert "outbox has been failing" in last and "trading continues" in last
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_poll_finishes_telegram_setup_when_startup_could_not(tmp_path, monkeypatch):
+    from apex_bot import runtime as runtime_module
+    from apex_bot.runtime import Runtime
+    from apex_bot.telegram import TelegramError
+
+    async def run():
+        clock = [1000.0]
+        monkeypatch.setattr(runtime_module.time, "monotonic", lambda: clock[0])
+        calls = []
+
+        class Tg:
+            ready = False
+
+            async def initialize(self):
+                calls.append(clock[0])
+                if len(calls) == 1:
+                    raise TelegramError("Telegram transport failed")
+                self.ready = True
+
+            async def poll_once(self, offset):
+                return offset
+
+        class St:
+            async def assert_leader(self):
+                pass
+
+            async def read(self):
+                return {"telegram_offset": 0}
+
+            async def update(self, fn):
+                pass
+
+        rt = SimpleNamespace(telegram=Tg(), store=St(), _telegram_init_at=float("-inf"))
+        poll = types.MethodType(Runtime.poll, rt)
+        with pytest.raises(TelegramError):
+            await poll()
+        await poll()  # within 30 s: no new attempt
+        assert len(calls) == 1
+        clock[0] += 31
+        await poll()
+        assert len(calls) == 2 and rt.telegram.ready
 
     asyncio.run(run())

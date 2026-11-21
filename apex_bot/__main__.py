@@ -15,6 +15,7 @@ from aiohttp import web
 
 from .config import Config, ConfigError
 from .storage import Store
+from .telegram import TelegramError
 
 
 async def serve(config):
@@ -67,7 +68,12 @@ async def serve(config):
             # deployment. None of these calls polls Telegram or places orders.
             await runtime.refresh_instruments()
             if runtime.telegram:
-                await runtime.telegram.initialize(publish_commands=False)
+                # Telegram only carries messages and controls: an outage there must
+                # never stop the bot from starting and managing trades.
+                try:
+                    await runtime.telegram.initialize(publish_commands=False)
+                except TelegramError as exc:
+                    logging.warning("Telegram not reachable at startup (%s); trading starts anyway", exc.status or type(exc).__name__)
             preflight_ready = True
             while not runtime.stopping.is_set() and not await store.lease():
                 try:
@@ -77,7 +83,10 @@ async def serve(config):
             if not runtime.stopping.is_set():
                 await runtime.initialize()
                 if runtime.telegram:
-                    await runtime.telegram.initialize()
+                    try:
+                        await runtime.telegram.initialize()
+                    except TelegramError as exc:
+                        logging.warning("Telegram not reachable at startup (%s); retrying in the background", exc.status or type(exc).__name__)
                 await runtime.run()
         finally:
             await runner.cleanup()

@@ -326,6 +326,11 @@ class TelegramController:
         self._write_lock = asyncio.Lock()
         self._next_write = 0.0
 
+    @property
+    def ready(self) -> bool:
+        """Identity verified: polling and sending are possible."""
+        return bool(self._enabled and not self._identity_failed and self._bot_username)
+
     async def initialize(self, *, publish_commands: bool = True) -> None:
         """Verify getMe identity, optionally publish commands; never starts polling.
 

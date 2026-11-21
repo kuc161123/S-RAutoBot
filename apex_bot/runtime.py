@@ -39,6 +39,13 @@ LOG = logging.getLogger(__name__)
 # Desk-only: a component must fail this long before Telegram hears about it, so a
 # single Hyperliquid blip (retried 4 s later) never pages the owner.
 DESK_ALERT_AFTER = 120
+# Components that talk only to Telegram. A warning about them cannot reach the owner
+# while they fail, and they never block trading, so they get no "failing" page: one
+# note after the link is back says how long it was down. Flapping links (back for a
+# few minutes, then down again) produce at most one note per TELEGRAM_NOTE_EVERY.
+TELEGRAM_COMPONENTS = ("telegram", "dashboard")
+TELEGRAM_NOTE_EVERY = 1800
+TELEGRAM_RETRY_INIT = 30  # seconds between startup identity checks while Telegram is down
 
 
 def _failure_text(exc) -> str:
@@ -250,6 +257,7 @@ class Runtime:
         self.started = False
         self.last_loop = {}
         self._failing_since: dict = {}
+        self._telegram_init_at = float("-inf")
         self.worker_tasks = []
         self.decision_lock = asyncio.Lock()
         self.universe_lock = asyncio.Lock()
@@ -320,17 +328,31 @@ class Runtime:
             # a restart still gets its "back to normal" (and is not sent twice).
             paged = tx.state["health"].setdefault("paged", {})
             page = recovered = None
+            telegram_part = name in TELEGRAM_COMPONENTS
             if self.desk_only and error is None and name in paged:
                 began = float(paged.pop(name) or now)
                 minutes = max(1, round((now - began) / 60))
-                recovered = f"✅ {name} is back to normal (it was failing for about {minutes} min)."
+                if not telegram_part:
+                    recovered = f"✅ {name} is back to normal (it was failing for about {minutes} min)."
+                elif name == "telegram":
+                    last = float(tx.state["health"].get("telegram_note_at") or 0)
+                    if now - last >= TELEGRAM_NOTE_EVERY:
+                        tx.state["health"]["telegram_note_at"] = now
+                        recovered = (
+                            f"📶 The connection to Telegram was down for about {minutes} min "
+                            f"(from {time.strftime('%H:%M', time.gmtime(began))} UTC). "
+                            "Trading carried on as normal; messages from that time arrived late, above this one."
+                        )
+            elif self.desk_only and error is not None and telegram_part and now - since >= DESK_ALERT_AFTER:
+                paged.setdefault(name, since)  # remembered for the one note on recovery; nothing sent now
             elif self.desk_only and error is not None and now - since >= DESK_ALERT_AFTER and name not in paged:
                 paged[name] = since
                 page = (
                     f"issue:{name}:down:{int(since)}",
                     f"⚠️ {name} has been failing for {round((now - since) / 60)} min ({detail}).\n"
-                    "Stops and targets already on Hyperliquid stay active; new entries wait. "
-                    "Retrying every few seconds — you will get a message when it recovers.",
+                    "Stops and targets already on Hyperliquid stay active"
+                    + ("; new entries wait. " if name in ("desk", "lease") else "; trading continues. ")
+                    + "Retrying every few seconds — you will get a message when it recovers.",
                 )
             _health_history(tx.state["health"], name, error, now)
             tx.state["health"][name + "_attempt_at"] = now
@@ -1477,6 +1499,15 @@ class Runtime:
         if not self.telegram:
             return
         await self.store.assert_leader()
+        if not getattr(self.telegram, "ready", True):
+            # Started while Telegram was unreachable: finish the identity check and
+            # command menu now. Failures surface as this loop's errors and are retried.
+            now = time.monotonic()
+            if now - self._telegram_init_at < TELEGRAM_RETRY_INIT:
+                return
+            self._telegram_init_at = now
+            await self.telegram.initialize()
+            LOG.info("Telegram connected")
         state = await self.store.read()
         try:
             offset = await self.telegram.poll_once(state["telegram_offset"])

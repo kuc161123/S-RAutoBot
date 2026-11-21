@@ -444,3 +444,61 @@ def test_rule_check_is_off_by_default_and_switches_from_telegram(tmp_path):
         await store.close()
 
     asyncio.run(run())
+
+
+def test_twin_pair_is_not_lost_when_the_first_row_has_to_wait(tmp_path):
+    """21 Nov: BTC S-261121-01/-02. The price-history read failed once for the SIGNAL
+    row, its BOOK twin was recorded as 'Same trade as S-…-01', and on the next tick
+    that record made the SIGNAL row a copy of its own copy: neither was placed."""
+    from apex_bot.hl_client import HLError
+
+    async def run():
+        rows = [
+            HEADER,
+            row("S-1", "SOL", "Short", 100, 105, 95, 90, layer="SIGNAL"),
+            row("S-2", "SOL", "Short", 100, 105, 95, 90, layer="BOOK"),
+        ]
+        store, desk, hl, clock, source = await make(tmp_path, rows, settings={"layer": "all"})
+        real = hl.candles
+        failures = [1]
+
+        async def flaky(*args, **kwargs):
+            if failures:
+                failures.pop()
+                raise HLError("Hyperliquid request failed (ServerError 500)")
+            return await real(*args, **kwargs)
+
+        hl.candles = flaky
+        await desk.tick()  # S-1 waits on price history; S-2 recorded as its copy
+        trades = desk_state(await store.read())["trades"]
+        assert "shadowbook:S-1" not in trades and trades["shadowbook:S-2"]["reason"].startswith("Same trade as S-1")
+        await desk.tick()
+        trades = desk_state(await store.read())["trades"]
+        assert trades["shadowbook:S-1"]["status"] == "ORDERED"
+        assert trades["shadowbook:S-2"]["reason"] == "Same trade as S-1 (its twin in the other layer)"
+        assert [t["coin"] for t in trades.values() if t["status"] == "ORDERED"] == ["SOL"]
+
+        # A pair already stuck as copies of each other (the live state) recovers too.
+        rows.append(row("S-3", "BTC", "Short", 70000, 71000, 69000, 68000, layer="SIGNAL"))
+        rows.append(row("S-4", "BTC", "Short", 70000, 71000, 69000, 68000, layer="BOOK"))
+
+        def stuck(tx):
+            trades = desk_state(tx.state)["trades"]
+            for a, b in (("S-3", "S-4"), ("S-4", "S-3")):
+                trades[f"shadowbook:{a}"] = {
+                    "id": f"shadowbook:{a}", "shadow_id": f"shadowbook:{a}", "coin": "BTC", "side": "Sell",
+                    "status": "SKIPPED", "reason": f"Same trade as {b} (its twin in the other layer)", "rule": 2,
+                    "created_at": clock.now, "closed_at": clock.now,
+                }
+
+        await store.update(stuck)
+        await desk.tick()
+        trades = desk_state(await store.read())["trades"]
+        assert trades["shadowbook:S-3"]["status"] == "ORDERED"
+        assert trades["shadowbook:S-4"]["reason"] == "Same trade as S-3 (its twin in the other layer)"
+        assert sorted(t["coin"] for t in trades.values() if t["status"] == "ORDERED") == ["BTC", "SOL"]
+        texts = await outbox(store)
+        assert not any("not taken" in t.lower() and "S-4" in t for t in texts)
+        await store.close()
+
+    asyncio.run(run())

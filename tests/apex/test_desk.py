@@ -183,6 +183,7 @@ class FakeHL:
         self.equity = 5000.0
         self.children = {}  # entry oid -> TP/SL waiting for that entry's full fill
         self.refuse_brackets = False  # exchange refuses an entry+stop pair as a whole
+        self.done = {}  # cloid -> "filled" / "canceled" once the order left the book
 
     async def assets(self):
         return dict(ASSETS)
@@ -266,6 +267,8 @@ class FakeHL:
 
     async def cancel(self, coin, oid):
         self.cancelled.append(oid)
+        if oid in self.orders and self.orders[oid].get("cloid"):
+            self.done[self.orders[oid]["cloid"]] = "canceled"
         for kid in self.children.pop(oid, []):  # cancelling the entry cancels what waits on it
             self.orders.pop(kid, None)
         return self.orders.pop(oid, None) is not None
@@ -276,6 +279,8 @@ class FakeHL:
                 self.orders[kid].pop("dormant", None)
 
     async def order_status(self, cloid):
+        if cloid in self.done:
+            return {"status": "order", "order": {"order": {"oid": None}, "status": self.done[cloid]}}
         for o in self.orders.values():
             if o.get("cloid") == cloid:
                 return {"status": "order", "order": {"order": {"oid": o["oid"]}, "status": "open"}}
@@ -291,6 +296,8 @@ class FakeHL:
         self.fills.append({"coin": coin, "oid": entry["oid"], "px": px or entry["limit_px"], "size": size, "side": entry["side"], "time": 0, "closed_pnl": 0.0, "fee": 0.0, "dir": "Open Long" if sign > 0 else "Open Short"})
         entry["size"] -= size
         if entry["size"] <= 1e-12:
+            if entry.get("cloid"):
+                self.done[entry["cloid"]] = "filled"
             del self.orders[entry["oid"]]
             self._activate_children(entry["oid"])  # Hyperliquid places them on the full fill
 
@@ -1089,3 +1096,78 @@ def test_loop_failure_logs_keep_telegram_detail_but_never_library_text():
     assert _failure_text(TelegramError("Telegram transport failed")) == "Telegram transport failed"
     assert _failure_text(HLError("Hyperliquid request failed (ServerError 500)")) == "Hyperliquid request failed (ServerError 500)"
     assert _failure_text(RuntimeError("https://api.telegram.org/bot123:secret/getUpdates")) == "RuntimeError"
+
+
+def test_entry_filling_between_the_position_and_order_reads_keeps_its_stop(tmp_path):
+    """21 Nov ETH: the entry filled after the tick read positions (none yet) and
+    before it read orders (entry gone). The desk recorded "Entry order no longer on
+    the book", then cancelled the attached stop as an orphan; the short ran 39 h
+    with no stop. Now the desk asks the exchange first and keeps managing it."""
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        t = await trade(store)
+        assert t["status"] == "ORDERED"
+        real_account = hl.account
+
+        async def stale_then_fill():
+            snapshot = await real_account()  # positions read first: nothing yet
+            hl.fill_entry("SOL")  # ...the entry fills before the orders are read
+            return snapshot
+
+        hl.account = stale_then_fill
+        await desk.tick()
+        hl.account = real_account
+        t = await trade(store)
+        assert t["status"] == "ORDERED"  # not written off as cancelled
+        stops = _stops(hl)
+        assert len(stops) == 1 and stops[0]["trigger_px"] == 95.0  # the attached stop is still there
+        await desk.tick()
+        t = await trade(store)
+        assert t["status"] == "OPEN" and t["sl_oid"] == stops[0]["oid"]
+        assert sorted(o["kind"] for o in hl.orders.values()) == ["sl", "tp", "tp"]
+        assert not any("no longer on the book" in x for x in await outbox(store))
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_cancelled_entry_is_still_recorded_as_cancelled(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        t = await trade(store)
+        await hl.cancel("SOL", t["entry_oid"])  # cancelled on the exchange by hand
+        await desk.tick()
+        t = await trade(store)
+        assert t["status"] == "CANCELLED" and t["reason"] == "Entry order no longer on the book"
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_unmanaged_position_keeps_its_stop_and_is_reported_once(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        t = await trade(store)
+        # Whatever the cause, a dead trade's stop is not removed while its position is open.
+        hl.fill_entry("SOL")
+
+        def kill(tx):
+            desk_state(tx.state)["trades"][t["id"]]["status"] = "CANCELLED"
+
+        await store.update(kill)
+        await desk.tick()
+        await desk.tick()
+        assert len(_stops(hl)) == 1
+        texts = [x for x in await outbox(store) if "not managing it" in x]
+        assert len(texts) == 1 and "A stop is on the exchange at 95" in texts[0]
+        # A position with no stop at all gets the loud version.
+        hl.positions["BTC"] = {"size": -0.01, "entry_px": 60000.0, "liq_px": 90000.0, "upnl": 0.0}
+        await desk.tick()
+        texts = [x for x in await outbox(store) if "BTC" in x and "not managing it" in x]
+        assert len(texts) == 1 and "NO stop-loss" in texts[0]
+        await store.close()
+
+    asyncio.run(run())

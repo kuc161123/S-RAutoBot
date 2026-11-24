@@ -443,6 +443,7 @@ class Desk:
         self.error_count = 0  # failed Hyperliquid snapshots since this process started
         self._sl_failures: dict = {}
         self._deferred_notified: set = set()
+        self._unmanaged_seen: set = set()  # unmanaged-position notices already sent
         self._be_retry: dict = {}  # trade id -> next stop-to-entry retry after target 1
         self._closing: dict = {}  # trade id -> when its position was first seen gone
         self._closing_next: dict = {}  # trade id -> next fill-history read
@@ -585,7 +586,8 @@ class Desk:
                     LOG.warning("Result re-check deferred: %s", exc)
             if not settings["paused"]:
                 await self._intake(state, settings, account, orders, mids)
-            await self._cleanup_orphans(state, orders)
+            await self._cleanup_orphans(state, orders, account)
+            await self._watch_unmanaged(state, account, orders)
             if len(desk["trades"]) > 1200:
                 await self._prune()
 
@@ -1040,6 +1042,26 @@ class Desk:
             entry_open = False
         if entry_open:
             return
+        if held <= 0 and trade.get("entry_cloid"):
+            # The entry left the book and no position shows. An entry that filled
+            # between this tick's position read and its order read looks exactly
+            # like that: 21 Nov ETH was recorded as cancelled, its stop was then
+            # removed as an orphan and the short ran 39 h with no stop. Ask the
+            # exchange what happened to the entry before deciding anything.
+            outcome = await self._entry_outcome(trade)
+            if outcome is None:
+                return  # could not tell: the next tick decides
+            if outcome == "filled":
+                fresh = await self.client.account()
+                pos = fresh["positions"].get(trade["coin"])
+                held = abs(pos["size"]) if pos and pos["size"] * sign > 0 else 0.0
+                if held > 0:
+                    return  # the next tick sees the position and the orders together
+                # Filled and already closed again (its stop fired at once): settle it.
+                changes = {"status": "OPEN", "filled": trade["size"], "avg_entry": trade["entry"], "opened_at": self.clock()}
+                trade.update(changes)
+                await self._save(tid, changes)
+                return
         if held > 0:
             changes = {
                 "status": "OPEN",
@@ -1057,6 +1079,26 @@ class Desk:
                 {"status": "CANCELLED", "reason": reason or "Entry order no longer on the book", "closed_at": self.clock()},
                 (f"desk:{tid}:cancelled{_tag(trade)}", {"id": tid}, cancel_text(trade, reason or "Entry order no longer on the book")),
             )
+
+    async def _entry_outcome(self, trade):
+        """What the exchange says became of an entry no longer on the book:
+        "filled", "gone" (cancelled, rejected, never known) or None (can't tell)."""
+        try:
+            result = await self.client.order_status(trade["entry_cloid"])
+        except HLError:
+            return None
+        if not isinstance(result, dict):
+            return None
+        if result.get("status") == "unknownOid":
+            return "gone"
+        if result.get("status") != "order":
+            return None
+        status = str((result.get("order") or {}).get("status") or "")
+        if status == "filled":
+            return "filled"
+        if status in ("open", "triggered", ""):
+            return None
+        return "gone"
 
     async def _place_targets(self, trade, held, open_oids=frozenset()):
         roles, orders = [], []
@@ -1485,9 +1527,43 @@ class Desk:
                 event = (f"desk:{trade['id']}:corrected{_tag(trade)}", {"id": trade["id"], "pnl": trade["pnl"]}, correction_text(trade, note["previous"]))
             await self._save(trade["id"], changes, event)
 
-    async def _cleanup_orphans(self, state, orders):
-        """Cancel our own leftover orders whose trade is no longer active."""
+    async def _watch_unmanaged(self, state, account, orders):
+        """Tell the owner once about any position the desk is not managing, with
+        whether a stop protects it. The desk never touches such a position."""
         desk = desk_state(state)
+        mine = {t["coin"] for t in desk["trades"].values() if t.get("status") in ACTIVE}
+        for coin, pos in (account.get("positions") or {}).items():
+            size = float(pos.get("size") or 0)
+            if coin in mine or not size:
+                continue
+            closing = "A" if size > 0 else "B"
+            stop = next(
+                (o for o in orders if o.get("coin") == coin and o.get("is_trigger") and o.get("reduce_only")
+                 and o.get("side") == closing and "take" not in str(o.get("order_type") or "").lower()),
+                None,
+            )
+            side = "long" if size > 0 else "short"
+            protection = (
+                f"A stop is on the exchange at {stop.get('trigger_px'):g}."
+                if stop and stop.get("trigger_px") else
+                "⚠️ It has NO stop-loss. Set one on Hyperliquid or close it."
+            )
+            key = f"desk:unmanaged:{coin}:{pos.get('entry_px')}:{size}:{bool(stop)}"
+            if key in self._unmanaged_seen:
+                continue
+            self._unmanaged_seen.add(key)
+            await self._notify(
+                key,
+                f"{'ℹ️' if stop else '🚨'} {escape(coin)} {side} {abs(size):g} @ {pos.get('entry_px')} is on the account "
+                f"but the desk is not managing it (no targets, no break-even move). {protection}",
+            )
+
+    async def _cleanup_orphans(self, state, orders, account=None):
+        """Cancel our own leftover orders whose trade is no longer active. A
+        reduce-only exit order is kept while a position it can close is open:
+        removing it could leave that position without a stop."""
+        desk = desk_state(state)
+        positions = (account or {}).get("positions") or {}
         known, attached = {}, {}
         for t in desk["trades"].values():
             for key in ("entry_oid", "sl_oid", "tp1_oid", "tp2_oid"):
@@ -1498,6 +1574,9 @@ class Desk:
         for o in orders:
             trade = known.get(o.get("oid")) or attached.get(str(o.get("cloid") or "").lower())
             if trade and trade.get("status") not in ACTIVE:
+                pos = positions.get(o.get("coin"))
+                if pos and o.get("reduce_only") and o.get("side") == ("A" if float(pos.get("size") or 0) > 0 else "B"):
+                    continue
                 try:
                     await self.client.cancel(o["coin"], o["oid"])
                 except HLError:

@@ -98,9 +98,19 @@ The engine's levels are used unchanged: limit entry, stop, target 1, target 2.
    market. Exactly one stop is kept on the book.
 6. **Targets.** Target 1 closes half (one lot stays intact, odd lots round up —
    same as the shadow book; skipped if too small for the $10 minimum). Target 2
-   closes the rest.
+   closes the rest. Since 25 Nov 2026 both rest on the book as reduce-only GTC
+   limits at the target price (before: mark-price triggers sending a market
+   order), so a target fills at the target or better, as a maker, the moment the
+   market trades there. Together they never exceed the position: target 2 is the
+   position less target 1's unfilled part, and grows back to the whole position if
+   target 1 leaves the book unfilled. A target 1 that was on the book is never put
+   back (it may have filled between two reads). A market close cancels the targets
+   first.
 7. **Management.** Target 1 hit (or the Sheet/engine reporting it) → stop to
-   entry, retried every 30 s until it is there. Engine trailing stop moves → live stop follows, tighten only.
+   entry, retried every 30 s until it is there. If the Sheet/engine reports
+   target 1 while the resting order there is still unfilled (price touched it
+   without reaching our place in the queue), the target-1 share is sold at
+   market once the report has stood for 3 minutes. Engine trailing stop moves → live stop follows, tighten only.
    Sheet row CLOSED for any reason (stop, target 2, break-even or the desk's own
    call) or EXPIRED while a position is still open here → the rest is closed at
    market, so the live book never holds a trade the Shadow Book has closed.

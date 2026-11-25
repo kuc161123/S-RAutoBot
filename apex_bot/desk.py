@@ -27,6 +27,7 @@ import re
 import time
 from html import escape
 from datetime import datetime, timezone
+from decimal import ROUND_HALF_UP, Decimal
 
 from .hl_client import (
     MARKET_SLIPPAGE,
@@ -385,19 +386,35 @@ def _stop_order(trade: dict, size: float, price: float, version: int) -> dict:
 
 
 def _target_order(trade: dict, size: float, price: float, role: str) -> dict:
-    long = trade["is_buy"]
+    """A target rests on the book as a reduce-only limit (GTC) at the target price.
+
+    Until 25 Nov 2026 targets were trigger orders: Hyperliquid fired them on the mark
+    price and then sent a market order, so a target filled late, below the target
+    (slippage plus the taker fee) or not at all when the traded price touched it and
+    the mark did not. Resting at the price, a target fills at the target or better,
+    as a maker, the moment the market trades there. Placed when the market is already
+    beyond it, it fills at once.
+    """
     szd = trade["sz_decimals"]
-    limit = price * (1 - STOP_SLIPPAGE) if long else price * (1 + STOP_SLIPPAGE)
     return {
         "coin": trade["coin"],
-        "is_buy": not long,
+        "is_buy": not trade["is_buy"],
         "size": round_size(size, szd),
-        "limit_px": round_price(limit, szd),
-        "trigger_px": round_price(price, szd),
-        "kind": "tp",
+        "limit_px": round_price(price, szd),
+        "kind": "limit",
+        "tif": "Gtc",
         "reduce_only": True,
         "cloid": cloid_for(trade["id"], _role(trade, role)),
     }
+
+
+def _lots(sz_decimals: int, size: float, *minus: float) -> float:
+    """size minus the others, exact to the asset's lot. Plain float subtraction
+    (0.3 - 0.1 = 0.19999999999999998) rounded down would come out a lot short."""
+    step = Decimal(1).scaleb(-int(sz_decimals))
+    total = Decimal(repr(float(size))) - sum((Decimal(repr(float(m))) for m in minus), Decimal(0))
+    lots = (total / step).to_integral_value(rounding=ROUND_HALF_UP)
+    return float(max(lots, Decimal(0)) * step)
 
 
 def short_id(trade_id: str) -> str:
@@ -445,6 +462,7 @@ class Desk:
         self._deferred_notified: set = set()
         self._unmanaged_seen: set = set()  # unmanaged-position notices already sent
         self._be_retry: dict = {}  # trade id -> next stop-to-entry retry after target 1
+        self._tp1_lag: dict = {}  # trade id -> when the Book took target 1 with ours still resting
         self._closing: dict = {}  # trade id -> when its position was first seen gone
         self._closing_next: dict = {}  # trade id -> next fill-history read
         self._reconciled = False  # recent results re-checked once per process
@@ -1071,7 +1089,7 @@ class Desk:
             }
             trade.update(changes)
             await self._save(tid, changes)
-            await self._place_targets(trade, held, open_oids)
+            await self._ensure_targets(trade, held, orders)
             await self._notify(f"desk:{tid}:filled{_tag(trade)}", fill_text(trade, held, pos), {"id": tid})
         else:
             await self._save(
@@ -1100,37 +1118,138 @@ class Desk:
             return None
         return "gone"
 
-    async def _place_targets(self, trade, held, open_oids=frozenset()):
-        roles, orders = [], []
-        tp1 = trade["tp1_size"] if trade["tp1_size"] and trade["tp1_size"] < held else 0.0
-        if tp1 > 0 and not trade.get("tp1_done") and trade.get("tp1_oid") not in open_oids:
+    @staticmethod
+    def _tp1_split(trade, held) -> float:
+        """Size of a target-1 order still to be placed, else 0. Only before any of the
+        position is sold, only while no target 1 has been on the book (one that was
+        and is gone may have filled between this tick's position and order reads:
+        putting it back would sell target 2's share), and only if both parts stay
+        above the exchange minimum."""
+        size = trade.get("tp1_size") or 0.0
+        if not size or trade.get("tp1_done") or trade.get("tp1_oid") or size >= held:
+            return 0.0
+        if held < (trade.get("filled") or held) - size_step(trade["sz_decimals"]) / 2:
+            return 0.0
+        floor = MIN_NOTIONAL_USD * 1.05
+        if size * trade["target1"] < floor or (held - size) * trade["target2"] < floor:
+            return 0.0
+        return size
+
+    async def _ensure_targets(self, trade, held, orders):
+        """Invariant: resting targets cover the position exactly once - target 1 its
+        share while that is still to come, target 2 the rest. Resting reduce-only
+        orders never add up past the position, so the exchange has nothing to trim,
+        and target 2 grows back to the whole position if target 1 leaves unfilled."""
+        if trade.get("close_reason"):
+            return  # being closed at market: no targets wanted
+        szd = trade["sz_decimals"]
+        mine = {o.get("oid"): o for o in orders if o.get("coin") == trade["coin"]}
+        tp1_order = mine.get(trade.get("tp1_oid")) if trade.get("tp1_oid") else None
+        tp2_order = mine.get(trade.get("tp2_oid")) if trade.get("tp2_oid") else None
+        new1 = 0.0 if tp1_order else self._tp1_split(trade, held)
+        want2 = _lots(szd, held, tp1_order["size"] if tp1_order else 0.0, new1)
+        fix2 = want2 > 0 and (tp2_order is None or abs(tp2_order["size"] - want2) > size_step(szd) / 2)
+        changes = {}
+        if not tp1_order and not new1 and trade.get("tp1_size") and not trade.get("tp1_oid") and not trade.get("tp1_done"):
+            changes["tp1_size"] = 0.0  # too small to split: target 2 takes it all, the stop still moves at target 1
+        roles, batch = [], []
+        if new1:
+            version = trade.get("tp1_version", 0) + 1
             roles.append("tp1_oid")
-            orders.append(_target_order(trade, tp1, trade["target1"], "tp1"))
-        if trade.get("tp2_oid") not in open_oids:
-            roles.append("tp2_oid")
-            orders.append(_target_order(trade, held, trade["target2"], f"tp2v{trade.get('tp2_version', 0) + 1}"))
-        if not orders:
-            return
-        try:
-            statuses = await self.client.place(orders)
-        except HLError as exc:
-            statuses = [{"ok": False, "error": str(exc), "oid": None}] * len(orders)
-        changes = {"tp2_version": trade.get("tp2_version", 0) + (1 if "tp2_oid" in roles else 0)}
+            batch.append(_target_order(trade, new1, trade["target1"], "tp1" if version == 1 else f"tp1v{version}"))
+            changes["tp1_version"] = version
+        if fix2:
+            if tp2_order:
+                # Cancel first: two target-2 orders resting at once would add up past
+                # the position. A target already filled or gone refuses the cancel.
+                try:
+                    gone = await self.client.cancel(trade["coin"], tp2_order["oid"])
+                except HLError:
+                    gone = False
+                if not gone:
+                    fix2 = False
+            if fix2:
+                version = trade.get("tp2_version", 0) + 1
+                roles.append("tp2_oid")
+                batch.append(_target_order(trade, want2, trade["target2"], f"tp2v{version}"))
+                changes["tp2_version"] = version
+                changes["tp2_oid"] = None
         errors = []
-        for role, status in zip(roles, statuses):
-            if status["ok"]:
-                changes[role] = status["oid"]
-            else:
-                errors.append(status.get("error") or "rejected")
-        if tp1 <= 0 and not trade.get("tp1_done"):
-            changes["tp1_size"] = 0.0
-        trade.update(changes)
-        await self._save(trade["id"], changes)
+        if batch:
+            try:
+                statuses = await self.client.place(batch)
+            except HLError as exc:
+                statuses = [{"ok": False, "error": str(exc), "oid": None}] * len(batch)
+            for role, status in zip(roles, statuses):
+                if status["ok"]:
+                    changes[role] = status["oid"]
+                else:
+                    errors.append(status.get("error") or "rejected")
+        if changes:
+            trade.update(changes)
+            await self._save(trade["id"], changes)
         if errors:
             await self._notify(
                 f"desk:{trade['id']}:tp-error:{int(self.clock() // 900)}",
                 f"⚠️ {escape(trade['coin'])} target order not placed ({escape(str(errors[0]))}). The stop-loss stays active; retrying.",
             )
+
+    async def _match_book_tp1(self, trade, held, orders, shadow, mid):
+        """The Shadow Book took target 1 but the resting order there has not filled:
+        the price touched the target without trading through our place in the queue,
+        or turned before it. Once the Book has said so for SHADOW_CLOSE_CONFIRM s the
+        target-1 share is sold at market, so the account matches the Book - as the
+        desk already does with the Book's stops and closes."""
+        from .desk_panel import money, px
+
+        tid = trade["id"]
+        order = next((o for o in orders if trade.get("tp1_oid") and o.get("oid") == trade["tp1_oid"]), None)
+        if not order or order.get("is_trigger") or not shadow.get("tp1_done"):
+            self._tp1_lag.pop(tid, None)
+            return
+        now = self.clock()
+        first = self._tp1_lag.setdefault(tid, now)
+        if now - first < SHADOW_CLOSE_CONFIRM:
+            return
+        try:
+            if not await self.client.cancel(trade["coin"], order["oid"]):
+                return  # filled or gone meanwhile: the next tick sees which
+            fresh = await self.client.account()
+        except HLError:
+            return
+        self._tp1_lag.pop(tid, None)
+        szd = trade["sz_decimals"]
+        sign = 1 if trade["is_buy"] else -1
+        pos = fresh["positions"].get(trade["coin"])
+        now_held = abs(pos["size"]) if pos and pos["size"] * sign > 0 else 0.0
+        sold = _lots(szd, trade.get("filled") or now_held, now_held)
+        rest = min(_lots(szd, trade["tp1_size"], sold), now_held)
+        if rest <= 0:
+            return
+        try:
+            status = await self._market_reduce(trade, rest, "tp1m", mid)
+        except HLError as exc:
+            status = {"ok": False, "error": str(exc)}
+        coin = escape(trade["coin"])
+        if status and status.get("ok") and status.get("filled"):
+            got = status["filled"]
+            avg = status.get("avg_px") or mid or trade["target1"]
+            pnl = sign * (avg - (trade.get("avg_entry") or trade["entry"])) * got
+            changes = {"tp1_pnl": round((trade.get("tp1_pnl") or 0.0) + pnl, 2), "tp1_market_oid": status.get("oid")}
+            trade.update(changes)
+            await self._save(tid, changes)
+            text = (
+                f"🎯 {coin} target 1 — the Shadow Book took {px(trade['target1'])} but the resting order there "
+                f"had not filled. Sold the target-1 share at market: {got:g} @ {px(avg)} ({money(pnl, signed=True)}). "
+                "The rest keeps its stop and target 2."
+            )
+        else:
+            text = (
+                f"⚠️ {coin} target 1 — the Shadow Book took {px(trade['target1'])} but the resting order there had "
+                f"not filled, and the market sale was refused ({escape(str((status or {}).get('error') or 'no price'))}). "
+                "That share now goes to target 2 with the rest."
+            )
+        await self._notify(f"desk:{tid}:tp1-market{_tag(trade)}", text, {"id": tid})
 
     @staticmethod
     def _attached_stop(trade, orders):
@@ -1303,8 +1422,7 @@ class Desk:
             return
         if not await self._ensure_stop(trade, held, orders, mid):
             return
-        if trade.get("tp2_oid") not in open_oids:
-            await self._place_targets(trade, held, open_oids)
+        await self._ensure_targets(trade, held, orders)
         tp1_filled = (
             not trade.get("tp1_done")
             and (
@@ -1323,6 +1441,7 @@ class Desk:
             await self._stop_to_entry(trade, held, mid, tp1=sale or {})
         elif trade.get("tp1_done"):
             await self._stop_to_entry(trade, held, mid)
+        await self._match_book_tp1(trade, held, orders, shadow, mid)
         shadow_stop = shadow.get("stop")
         if isinstance(shadow_stop, (int, float)) and trade.get("tp1_done"):
             sign = 1 if trade["is_buy"] else -1
@@ -1379,34 +1498,48 @@ class Desk:
             why = f"Shadow Desk exit: {describe_reason(reason)[:160]}"
         await self._close(trade, held, why)
 
-    async def _close(self, trade, held, why):
-        """Reduce-only aggressive limit (Hyperliquid's market order)."""
-        mid = (self.snapshot.get("mids") or {}).get(trade["coin"])
+    async def _market_reduce(self, trade, size, role, mid=None):
+        """Reduce-only IOC far through the market (Hyperliquid's market order).
+        Returns the exchange status, or None when there is no price to send at."""
         if mid is None:
-            mids = await self.client.mids()
-            mid = mids.get(trade["coin"])
+            mid = (self.snapshot.get("mids") or {}).get(trade["coin"])
         if mid is None:
-            return False
+            mid = (await self.client.mids()).get(trade["coin"])
+        if mid is None:
+            return None
         long = trade["is_buy"]
-        px = round_price(mid * (1 - MARKET_SLIPPAGE) if long else mid * (1 + MARKET_SLIPPAGE), trade["sz_decimals"])
-        attempt = trade.get("close_attempts", 0) + 1
-        await self._save(trade["id"], {"close_reason": why, "close_attempts": attempt})
-        trade["close_reason"] = why
         statuses = await self.client.place(
             [
                 {
                     "coin": trade["coin"],
                     "is_buy": not long,
-                    "size": round_size(held, trade["sz_decimals"]),
-                    "limit_px": px,
+                    "size": round_size(size, trade["sz_decimals"]),
+                    "limit_px": round_price(mid * (1 - MARKET_SLIPPAGE) if long else mid * (1 + MARKET_SLIPPAGE), trade["sz_decimals"]),
                     "kind": "limit",
                     "tif": "Ioc",
                     "reduce_only": True,
-                    "cloid": cloid_for(trade["id"], _role(trade, f"close{attempt}")),
+                    "cloid": cloid_for(trade["id"], _role(trade, role)),
                 }
             ]
         )
-        return bool(statuses and statuses[0]["ok"])
+        return statuses[0] if statuses else None
+
+    async def _close(self, trade, held, why):
+        """Close the whole position at market."""
+        attempt = trade.get("close_attempts", 0) + 1
+        await self._save(trade["id"], {"close_reason": why, "close_attempts": attempt})
+        trade["close_reason"] = why
+        if attempt == 1:
+            # The resting targets go first: they are not wanted once the desk closes,
+            # and none of them can then compete with the closing order.
+            for key in ("tp1_oid", "tp2_oid"):
+                if trade.get(key):
+                    try:
+                        await self.client.cancel(trade["coin"], trade[key])
+                    except HLError:
+                        pass
+        status = await self._market_reduce(trade, held, f"close{attempt}")
+        return bool(status and status["ok"])
 
     @staticmethod
     def _tally(trade, fills, end_ms=None) -> dict:
@@ -1472,6 +1605,7 @@ class Desk:
             return
         self._closing.pop(tid, None)
         self._closing_next.pop(tid, None)
+        self._tp1_lag.pop(tid, None)
         net = tally["pnl"] - tally["fees"]
         risk = trade.get("risk_usd") or 0
         changes = {
@@ -1575,8 +1709,12 @@ class Desk:
             trade = known.get(o.get("oid")) or attached.get(str(o.get("cloid") or "").lower())
             if trade and trade.get("status") not in ACTIVE:
                 pos = positions.get(o.get("coin"))
-                if pos and o.get("reduce_only") and o.get("side") == ("A" if float(pos.get("size") or 0) > 0 else "B"):
-                    continue
+                if (
+                    pos and o.get("reduce_only") and o.get("is_trigger")
+                    and "take" not in str(o.get("order_type") or "").lower()
+                    and o.get("side") == ("A" if float(pos.get("size") or 0) > 0 else "B")
+                ):
+                    continue  # a stop: a target of a finished trade would sell a new position
                 try:
                     await self.client.cancel(o["coin"], o["oid"])
                 except HLError:

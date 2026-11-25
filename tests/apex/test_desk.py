@@ -260,7 +260,8 @@ class FakeHL:
                 "is_trigger": o["kind"] in ("sl", "tp"),
                 "reduce_only": o.get("reduce_only", False),
                 "order_type": o["kind"],
-                "kind": o["kind"],
+                # A reduce-only resting limit is a target: named apart from the entry.
+                "kind": "target" if o["kind"] == "limit" and o.get("reduce_only") else o["kind"],
             }
             out.append({"ok": True, "state": "resting", "oid": oid, "filled": 0.0, "avg_px": None, "error": None})
         return out
@@ -288,7 +289,7 @@ class FakeHL:
 
     # -- helpers to simulate the market
     def fill_entry(self, coin, size=None, px=None):
-        entry = next(o for o in self.orders.values() if o["coin"] == coin and o["kind"] == "limit")
+        entry = next(o for o in self.orders.values() if o["coin"] == coin and o["kind"] == "limit" and not o.get("reduce_only"))
         size = entry["size"] if size is None else size
         sign = 1 if entry["side"] == "B" else -1
         held = abs(self.positions.get(coin, {}).get("size", 0.0))
@@ -307,7 +308,7 @@ class FakeHL:
         pos = self.positions[order["coin"]]
         reduce = min(order["size"], abs(pos["size"]))
         pos["size"] -= reduce if pos["size"] > 0 else -reduce
-        self.fills.append({"coin": order["coin"], "oid": oid, "px": order["trigger_px"], "size": reduce, "side": order["side"], "time": 0, "closed_pnl": pnl, "fee": 0.1, "dir": "Close Long"})
+        self.fills.append({"coin": order["coin"], "oid": oid, "px": order.get("trigger_px") or order["limit_px"], "size": reduce, "side": order["side"], "time": 0, "closed_pnl": pnl, "fee": 0.1, "dir": "Close Long"})
         if abs(pos["size"]) < 1e-9:
             del self.positions[order["coin"]]
 
@@ -367,7 +368,7 @@ def test_full_lifecycle_entry_fill_tp1_breakeven_trail_and_stop(tmp_path):
         await desk.tick()
         t = await trade(store)
         assert t["status"] == "OPEN"
-        assert hl.kinds("SOL") == ["sl", "tp", "tp"]
+        assert hl.kinds("SOL") == ["sl", "target", "target"]
         sl = hl.orders[t["sl_oid"]]
         assert sl["reduce_only"] and sl["trigger_px"] == 95.0 and sl["size"] == t["size"]
         assert hl.orders[t["tp1_oid"]]["size"] == t["tp1_size"]
@@ -402,6 +403,118 @@ def test_full_lifecycle_entry_fill_tp1_breakeven_trail_and_stop(tmp_path):
         assert t["exit"] == "Trailing stop hit" or "Stop" in t["exit"]
         assert hl.orders == {}  # leftover target cancelled
         assert any("CLOSED" in x and "Result: +$" in x for x in await outbox(store))
+        await store.close()
+
+    asyncio.run(run())
+
+
+def _targets(hl, coin="SOL"):
+    return sorted((o for o in hl.orders.values() if o["coin"] == coin and o["kind"] == "target"), key=lambda o: o["limit_px"])
+
+
+def test_lots_subtracts_sizes_exactly():
+    from apex_bot.desk import _lots
+
+    assert _lots(2, 0.3, 0.1) == 0.2  # 0.3 - 0.1 in floats rounds down to 0.19
+    assert _lots(0, 7, 3, 4) == 0.0 and _lots(1, 1.0, 2.0) == 0.0
+
+
+def test_targets_rest_on_the_book_at_the_target_and_cover_the_position_once(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        hl.fill_entry("SOL")
+        await desk.tick()
+        t = await trade(store)
+        sent = [o for o in hl.placed if o["kind"] == "limit" and o.get("reduce_only")]
+        assert len(sent) == 2 and all(o["tif"] == "Gtc" and "trigger_px" not in o for o in sent)
+        tp1, tp2 = _targets(hl)
+        assert (tp1["limit_px"], tp2["limit_px"]) == (110.0, 125.0)
+        assert not tp1["is_trigger"] and tp1["side"] == "A" and tp1["size"] == t["tp1_size"]
+        assert tp1["size"] + tp2["size"] == pytest.approx(t["size"])  # never more than the position
+
+        hl.trigger(t["tp1_oid"], pnl=49.0)
+        hl.mid["SOL"] = 110.5
+        await desk.tick()
+        await desk.tick()
+        t = await trade(store)
+        assert t["tp1_done"] and [o["oid"] for o in _targets(hl)] == [tp2["oid"]]  # target 2 left as it was
+        assert hl.orders[tp2["oid"]]["size"] == pytest.approx(abs(hl.positions["SOL"]["size"]))
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_target2_takes_the_whole_position_when_target1_leaves_unfilled(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        hl.fill_entry("SOL")
+        await desk.tick()
+        t = await trade(store)
+        old_tp2 = t["tp2_oid"]
+        hl.orders.pop(t["tp1_oid"])  # the exchange dropped target 1 without a fill
+        await desk.tick()
+        t = await trade(store)
+        (tp2,) = _targets(hl)  # target 1 is not put back: it might have filled unseen
+        assert tp2["oid"] == t["tp2_oid"] != old_tp2 and old_tp2 in hl.cancelled
+        assert tp2["size"] == pytest.approx(t["size"]) and tp2["limit_px"] == 125.0
+        await desk.tick()
+        assert [o["oid"] for o in _targets(hl)] == [tp2["oid"]]  # settled: no churn
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_book_target1_without_our_fill_sells_the_share_at_market(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        hl.fill_entry("SOL")
+        await desk.tick()
+        t = await trade(store)
+        tp1_oid, tp2_oid, size, share = t["tp1_oid"], t["tp2_oid"], t["size"], t["tp1_size"]
+
+        def book_tp1(tx):  # the Book saw target 1 trade; ours sat in the queue
+            tx.state["trades"]["baseline_shadow:op1"]["tp1_done"] = True
+
+        await store.update(book_tp1)
+        hl.mid["SOL"] = 109.0
+        await desk.tick()
+        t = await trade(store)
+        assert t["tp1_done"] and t["stop"] == 100.0 and tp1_oid in hl.orders  # stop to entry; target 1 still waits
+        clock.now += 120
+        await desk.tick()
+        assert tp1_oid in hl.orders and abs(hl.positions["SOL"]["size"]) == pytest.approx(size)
+
+        clock.now += 61
+        await desk.tick()
+        t = await trade(store)
+        assert tp1_oid not in hl.orders and tp1_oid in hl.cancelled
+        assert abs(hl.positions["SOL"]["size"]) == pytest.approx(size - share)
+        assert t["tp1_pnl"] == pytest.approx(9.0 * share, abs=0.01)
+        msg = next(x for x in await outbox(store) if "Sold the target-1 share at market" in x)
+        assert f"{share:g} @ 109" in msg
+        await desk.tick()
+        assert [o["oid"] for o in _targets(hl)] == [tp2_oid]  # target 2 already the rest
+        assert hl.orders[tp2_oid]["size"] == pytest.approx(size - share)
+        await store.close()
+
+    asyncio.run(run())
+
+
+def test_closing_at_market_cancels_the_targets_first(tmp_path):
+    async def run():
+        store, desk, hl, clock = await make_desk(tmp_path)
+        await desk.tick()
+        hl.fill_entry("SOL")
+        await desk.tick()
+        t = await trade(store)
+        await desk.close_trade(t["id"])
+        assert t["tp1_oid"] in hl.cancelled and t["tp2_oid"] in hl.cancelled
+        assert "SOL" not in hl.positions and not _targets(hl)
+        await desk.tick()
+        assert not _targets(hl)  # not put back while the trade closes
         await store.close()
 
     asyncio.run(run())
@@ -548,7 +661,7 @@ def test_stop_is_on_the_exchange_the_moment_the_entry_fills(tmp_path):
         t = await trade(store)
         assert t["status"] == "OPEN" and t["sl_oid"] == stops[0]["oid"]  # adopted, not duplicated
         assert len(_stops(hl)) == 1 and len([o for o in hl.placed if o.get("kind") == "sl"]) == 1  # no second stop sent
-        assert sorted(o["kind"] for o in hl.orders.values()) == ["sl", "tp", "tp"]
+        assert sorted(o["kind"] for o in hl.orders.values()) == ["sl", "target", "target"]
         # Target 1, then the adopted stop is replaced by the break-even stop.
         hl.trigger(t["tp1_oid"], pnl=49.0)
         hl.mid["SOL"] = 110.5
@@ -966,14 +1079,15 @@ def test_every_desk_order_encodes_and_signs_with_the_real_sdk(tmp_path):
         for coin in ("SOL", "kPEPE", "BTC"):
             hl.fill_entry(coin)
         await desk.tick()
-        hl.trigger(next(o["oid"] for o in hl.orders.values() if o["coin"] == "SOL" and o["kind"] == "tp" and o["size"] < 9), pnl=1)
+        hl.trigger(next(o["oid"] for o in hl.orders.values() if o["coin"] == "SOL" and o["kind"] == "target" and o["size"] < 9), pnl=1)
         hl.mid["SOL"] = 110.4
         await desk.tick()
         await store.close()
         return hl.placed
 
     placed = asyncio.run(run())
-    assert {o["kind"] for o in placed} == {"limit", "sl", "tp"}
+    assert {o["kind"] for o in placed} == {"limit", "sl"}
+    assert any(o["kind"] == "limit" and o.get("reduce_only") and o.get("tif") == "Gtc" for o in placed)  # resting targets
     client = HyperliquidClient("0x" + "ab" * 20, "0x" + "11" * 32)
     wallet = eth_account.Account.from_key("0x" + "11" * 32)
     for order in placed:
@@ -1125,7 +1239,7 @@ def test_entry_filling_between_the_position_and_order_reads_keeps_its_stop(tmp_p
         await desk.tick()
         t = await trade(store)
         assert t["status"] == "OPEN" and t["sl_oid"] == stops[0]["oid"]
-        assert sorted(o["kind"] for o in hl.orders.values()) == ["sl", "tp", "tp"]
+        assert sorted(o["kind"] for o in hl.orders.values()) == ["sl", "target", "target"]
         assert not any("no longer on the book" in x for x in await outbox(store))
         await store.close()
 
